@@ -48,7 +48,7 @@ export function SettingsScreen({ navigate }: ScreenProps) {
   };
   return (
     <AppShell activeRoute="settings" onNavigate={navigate}>
-      <PageHeading>설정</PageHeading>
+      <PageHeading>내 프로필과 설정</PageHeading>
       <Surface>
         <Heading>내 프로필</Heading>
         <ProfilePhoto value={draft.photo} onChange={(photo) => setDraft({ ...draft, photo })} />

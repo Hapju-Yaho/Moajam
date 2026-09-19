@@ -5,6 +5,7 @@ import { useIdentity } from '../state/Identity';
 import { Modal, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import moajamLogo from '../../assets/logo.png';
 import type { AppRoute, ScreenProps } from '../navigation';
+import { BandJoinModal } from './BandJoinModal';
 import { Notifications } from './Notifications';
 import { usePreferences } from '../state/preferences';
 import { useMockAppState } from '../state/MockAppState';
@@ -28,6 +29,7 @@ const Sidebar = styled.View`
 const BrandMark = styled.Image`
   width: 44px;
   height: 44px;
+  border-radius: 12px;
 `;
 
 const BrandButton = styled.Pressable`
@@ -38,20 +40,26 @@ const BrandButton = styled.Pressable`
 `;
 
 const BrandName = styled.Text`
-  color: ${theme.colors.text};
-  font-size: 20px;
-  font-weight: 600;
+  color: #1d60ee;
+  font-size: 27px;
+  font-weight: 900;
+  letter-spacing: -1.5px;
+  font-family: 'Trebuchet MS';
+`;
+
+const WorkspaceCard = styled.View`
+  margin: 4px 0 10px;
+  overflow: hidden;
+  border: 1px solid #e1e7f0;
+  border-radius: 12px;
+  background-color: white;
 `;
 
 const WorkspaceSwitcher = styled.Pressable`
-  margin: 4px 0 10px;
   padding: 12px;
   gap: 10px;
   flex-direction: row;
   align-items: center;
-  border: 1px solid #e1e7f0;
-  border-radius: 12px;
-  background-color: white;
 `;
 
 const WorkspaceThumb = styled.View`
@@ -97,7 +105,7 @@ const NavGroupLabel = styled.Text`
   font-weight: 500;
 `;
 
-const Profile = styled.View`
+const Profile = styled.Pressable`
   padding: 12px 8px 0;
   gap: 10px;
   flex-direction: row;
@@ -216,6 +224,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
   } = useMockAppState();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [joining, setJoining] = useState(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [creatingBusy, setCreatingBusy] = useState(false);
@@ -259,7 +268,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
       accessibilityRole="button"
       accessibilityLabel="밴드 변경"
       accessibilityState={{ expanded: switcherOpen }}
-      onPress={() => setSwitcherOpen(true)}
+      onPress={() => setSwitcherOpen((open) => !open)}
       style={{ gap: 10 }}
     >
       <WorkspaceThumb style={{ backgroundColor: workspace?.color ?? '#43896b' }}>
@@ -269,7 +278,9 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
         <SidebarText numberOfLines={1}>{workspace?.name ?? '밴드 선택'}</SidebarText>
         <SidebarText small>{members.length}명의 멤버</SidebarText>
       </View>
-      <AppIcon name="chevron-down" color="#7b879f" size={16} />
+      <View style={{ transform: [{ rotate: switcherOpen ? '180deg' : '0deg' }] }}>
+        <AppIcon name="chevron-down" color="#7b879f" size={16} />
+      </View>
     </WorkspaceSwitcher>
   );
   return (
@@ -284,29 +295,83 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
               style={{ gap: 10, paddingHorizontal: 4 }}
             >
               <BrandMark source={brandLogoSource} resizeMode="contain" />
-              <BrandName>Moajam</BrandName>
+              <BrandName>moajam</BrandName>
             </BrandButton>
             <NavGroupLabel>개인 공간</NavGroupLabel>
-            <Stack gap={2}>{nav(personalItems)}</Stack>
+            <Stack gap={2}>
+              {nav(personalItems)}
+              <NavItem
+                accessibilityRole="button"
+                onPress={() => {
+                  setCreating(true);
+                  setSwitcherOpen(false);
+                }}
+              >
+                <NavIcon>
+                  <AppIcon name="users" size={18} color="#56657c" />
+                </NavIcon>
+                <NavLabel>밴드 만들기</NavLabel>
+              </NavItem>
+              <NavItem accessibilityRole="button" onPress={() => setJoining(true)}>
+                <NavIcon>
+                  <AppIcon name="user-plus" size={18} color="#56657c" />
+                </NavIcon>
+                <NavLabel>밴드 참여하기</NavLabel>
+              </NavItem>
+            </Stack>
             <NavGroupLabel>밴드 공간</NavGroupLabel>
-            {switcher}
+            <WorkspaceCard>
+              {switcher}
+              {switcherOpen && (
+                <Stack gap={4} style={{ padding: 6, borderTopWidth: 1, borderTopColor: '#e1e7f0' }}>
+                  {workspaces.map((band) => (
+                    <NavItem
+                      key={band.id}
+                      active={workspace?.id === band.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${band.name} 선택`}
+                      accessibilityState={{ selected: workspace?.id === band.id }}
+                      onPress={() => choose(band.id)}
+                    >
+                      <View
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 4,
+                          backgroundColor: band.color,
+                        }}
+                      />
+                      <NavLabel
+                        numberOfLines={1}
+                        style={{ flex: 1 }}
+                        active={workspace?.id === band.id}
+                      >
+                        {band.name}
+                      </NavLabel>
+                      {workspace?.id === band.id && <Meta>✓</Meta>}
+                    </NavItem>
+                  ))}
+                  {!workspaces.length && <Meta>참여 중인 밴드가 없어요.</Meta>}
+                </Stack>
+              )}
+            </WorkspaceCard>
             <Stack gap={2}>{workspace ? nav(bandItems) : null}</Stack>
           </ScrollView>
           <View style={{ paddingTop: 16 }}>
-            <Stack gap={2} style={{ marginBottom: 12 }}>
-              {nav([
-                { icon: 'settings', label: '설정', route: 'settings' },
-                { icon: 'help', label: '도움말', route: 'help' },
-              ])}
-            </Stack>
-            <Profile style={{ gap: 10 }}>
+            <Profile
+              accessibilityRole="button"
+              accessibilityLabel="내 프로필과 설정"
+              onPress={() => onNavigate('settings')}
+              style={{ gap: 10 }}
+            >
               <Avatar color="#ffd8c8">
                 <AvatarText>{profile.name.slice(-2)}</AvatarText>
               </Avatar>
-              <View>
+              <View style={{ flex: 1 }}>
                 <SidebarText>{profile.name}</SidebarText>
-                <SidebarText small>나의 음악, 우리의 합주</SidebarText>
+                <SidebarText small>{'나의 음악,\n우리의 합주'}</SidebarText>
               </View>
+              <AppIcon name="settings" size={19} color="#72819a" />
             </Profile>
           </View>
         </Sidebar>
@@ -464,10 +529,13 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
         )}
       </Main>
       <Modal
-        visible={switcherOpen}
+        visible={creating || (!desktop && switcherOpen)}
         transparent
         animationType="fade"
-        onRequestClose={() => setSwitcherOpen(false)}
+        onRequestClose={() => {
+          setSwitcherOpen(false);
+          setCreating(false);
+        }}
       >
         <View
           style={{
@@ -486,50 +554,62 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                 alignItems: 'center',
               }}
             >
-              <Heading>공간 변경</Heading>
-              <ActionButton secondary compact onPress={() => setSwitcherOpen(false)}>
+              <Heading>{creating ? '밴드 만들기' : '공간 변경'}</Heading>
+              <ActionButton
+                secondary
+                compact
+                onPress={() => {
+                  setSwitcherOpen(false);
+                  setCreating(false);
+                }}
+              >
                 닫기
               </ActionButton>
             </View>
-            <ActionButton
-              secondary
-              onPress={() => {
-                setSwitcherOpen(false);
-                onNavigate('personal-home');
-              }}
-            >
-              개인 공간 · 모든 밴드 모아보기
-            </ActionButton>
-            <Meta>내 밴드</Meta>
-            <ScrollView style={{ maxHeight: 310 }} contentContainerStyle={{ gap: 8 }}>
-              {workspaces.map((band) => (
-                <Pressable
-                  key={band.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${band.name} 선택`}
-                  onPress={() => choose(band.id)}
-                  style={{
-                    padding: 14,
-                    borderRadius: 12,
-                    backgroundColor: band.id === workspace?.id ? '#edf3ff' : '#f7f9fc',
-                    borderLeftWidth: 4,
-                    borderLeftColor: band.color,
+            {!creating && (
+              <>
+                <ActionButton
+                  secondary
+                  onPress={() => {
+                    setSwitcherOpen(false);
+                    onNavigate('personal-home');
                   }}
                 >
-                  <Copy style={{ fontWeight: '500' }}>
-                    {band.name}
-                    {band.id === workspace?.id ? ' ✓' : ''}
-                  </Copy>
-                  <Meta>
-                    {band.members.find((member) => member.id === currentUserId)?.part} ·{' '}
-                    {band.members.find((member) => member.id === currentUserId)?.role === 'OWNER'
-                      ? '관리자'
-                      : '멤버'}{' '}
-                    · {band.members.length}명
-                  </Meta>
-                </Pressable>
-              ))}
-            </ScrollView>
+                  개인 공간 · 모든 밴드 모아보기
+                </ActionButton>
+                <Meta>내 밴드</Meta>
+                <ScrollView style={{ maxHeight: 310 }} contentContainerStyle={{ gap: 8 }}>
+                  {workspaces.map((band) => (
+                    <Pressable
+                      key={band.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${band.name} 선택`}
+                      onPress={() => choose(band.id)}
+                      style={{
+                        padding: 14,
+                        borderRadius: 12,
+                        backgroundColor: band.id === workspace?.id ? '#edf3ff' : '#f7f9fc',
+                        borderLeftWidth: 4,
+                        borderLeftColor: band.color,
+                      }}
+                    >
+                      <Copy style={{ fontWeight: '500' }}>
+                        {band.name}
+                        {band.id === workspace?.id ? ' ✓' : ''}
+                      </Copy>
+                      <Meta>
+                        {band.members.find((member) => member.id === currentUserId)?.part} ·{' '}
+                        {band.members.find((member) => member.id === currentUserId)?.role ===
+                        'OWNER'
+                          ? '관리자'
+                          : '멤버'}{' '}
+                        · {band.members.length}명
+                      </Meta>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </>
+            )}
             {creating ? (
               <View style={{ gap: 8 }}>
                 <Input
@@ -568,6 +648,17 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                 + 밴드 만들기
               </ActionButton>
             )}
+            {!creating && (
+              <ActionButton
+                secondary
+                onPress={() => {
+                  setSwitcherOpen(false);
+                  setJoining(true);
+                }}
+              >
+                밴드 참여하기
+              </ActionButton>
+            )}
             {!desktop && (
               <ActionButton
                 secondary
@@ -582,6 +673,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
           </Surface>
         </View>
       </Modal>
+      <BandJoinModal visible={joining} onClose={() => setJoining(false)} />
     </Shell>
   );
 }

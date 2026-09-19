@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useIdentity } from '../state/Identity';
-import { Pressable, useWindowDimensions, View } from 'react-native';
+import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { Notifications } from '../components/Notifications';
 import { AppShell } from '../components/AppShell';
 import {
   ActionButton,
@@ -32,6 +33,8 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
   const { workspaces, allSongs, allRehearsals, updatePreparation } = useMockAppState();
   const currentUserId = useIdentity();
   const { width } = useWindowDimensions();
+  const [bandWidth, setBandWidth] = useState(900);
+  const [calendarHeight, setCalendarHeight] = useState(600);
   const [bandFilter, setBandFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [preparationFilter, setPreparationFilter] = useState('all');
@@ -184,7 +187,7 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
           캘린더 파일 내보내기
         </ActionButton>
       ) : null}
-      {!calendar ? (
+      {!calendar && !home ? (
         <FlexRow wrap>
           {['all', 'NOT_READY', 'PRACTICING', 'READY'].map((status, index) => (
             <Pill
@@ -207,67 +210,74 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
             <StatTile icon="songs" label="참여 곡" value={`${allSongs.length}곡`} />
           </FlexRow>
           <Heading>내 밴드</Heading>
-          <FlexRow wrap style={{ alignItems: 'stretch' }}>
-            {workspaces.map((band) => (
-              <Pressable
-                key={band.id}
-                accessibilityRole="button"
-                accessibilityLabel={`${band.name} 밴드 홈`}
-                onPress={() => navigate('home', { workspaceId: band.id })}
-                style={{ flexGrow: 1, flexBasis: width < 650 ? '100%' : 260 }}
-              >
-                <Surface style={{ borderTopWidth: 4, borderTopColor: band.color, minHeight: 150 }}>
-                  <Meta style={{ color: band.color, fontWeight: '500' }}>MY BAND</Meta>
-                  <FlexBetween>
-                    <Heading>{band.name}</Heading>
-                    <Copy>↗</Copy>
-                  </FlexBetween>
-                  <Meta>{band.description}</Meta>
-                  <Meta>
-                    멤버 {band.members.length}명 · 내 파트{' '}
-                    {band.members.find((member) => member.id === currentUserId)?.part}
-                  </Meta>
-                </Surface>
-              </Pressable>
-            ))}
-          </FlexRow>
+          <View onLayout={(event) => setBandWidth(event.nativeEvent.layout.width)}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator
+              contentContainerStyle={{ gap: 16, paddingBottom: 16 }}
+            >
+              {workspaces.map((band) => (
+                <Pressable
+                  key={band.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${band.name} 밴드 홈`}
+                  onPress={() => navigate('home', { workspaceId: band.id })}
+                  style={{
+                    width: width < 650 ? Math.max(240, bandWidth - 24) : (bandWidth - 32) / 3,
+                    flexShrink: 0,
+                  }}
+                >
+                  <Surface
+                    style={{ borderTopWidth: 4, borderTopColor: band.color, minHeight: 150 }}
+                  >
+                    <Meta style={{ color: band.color, fontWeight: '500' }}>MY BAND</Meta>
+                    <FlexBetween>
+                      <Heading>{band.name}</Heading>
+                      <Copy>↗</Copy>
+                    </FlexBetween>
+                    <Meta>{band.description}</Meta>
+                    <Meta>
+                      멤버 {band.members.length}명 · 내 파트{' '}
+                      {band.members.find((member) => member.id === currentUserId)?.part}
+                    </Meta>
+                  </Surface>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
         </>
       )}
       {filtered}
       {home || calendar ? (
         <ResponsiveGrid stacked={width < 1100}>
-          <View style={{ flex: 1.65 }}>
+          <View
+            style={{
+              flex: 1.65,
+              minWidth: 0,
+              alignSelf: 'flex-start',
+              width: width < 1100 ? '100%' : undefined,
+            }}
+            onLayout={(event) => setCalendarHeight(event.nativeEvent.layout.height)}
+          >
             <RehearsalCalendar events={events} navigate={navigate} compact={home} />
           </View>
-          <Stack style={{ flex: 1 }}>
-            <Surface>
+          <Stack style={{ flex: 1, minWidth: 0 }}>
+            <Surface style={{ height: calendarHeight / 2, minHeight: 230 }}>
               <Heading>다가오는 합주</Heading>
-              {upcoming.slice(0, home ? 3 : 8).map((event) => (
-                <EventRow
-                  key={`${event.workspaceId}/${event.id}`}
-                  event={event}
-                  navigate={navigate}
-                />
-              ))}
-              {!upcoming.length && (
-                <Meta>예정된 합주가 없어요. 밴드 공간에서 다음 일정을 만들어보세요.</Meta>
-              )}
-            </Surface>
-            <Surface tint="#f4f7ff">
-              <Heading>함께 맞출 다음 일정</Heading>
-              <Meta>새 합주 일정은 해당 밴드 공간에서 등록할 수 있어요.</Meta>
-              {workspaces
-                .filter((band) => bandFilter === 'all' || band.id === bandFilter)
-                .map((band) => (
-                  <ActionButton
-                    key={band.id}
-                    secondary
-                    onPress={() => navigate('rehearsals', { workspaceId: band.id })}
-                  >
-                    {band.name} 합주 보기 →
-                  </ActionButton>
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator>
+                {upcoming.map((event) => (
+                  <EventRow
+                    key={`${event.workspaceId}/${event.id}`}
+                    event={event}
+                    navigate={navigate}
+                  />
                 ))}
+                {!upcoming.length && (
+                  <Meta>예정된 합주가 없어요. 캘린더에서 다음 일정을 등록해보세요.</Meta>
+                )}
+              </ScrollView>
             </Surface>
+            <Notifications title="최근 알림" height={Math.max(230, calendarHeight / 2 - 16)} />
           </Stack>
         </ResponsiveGrid>
       ) : null}

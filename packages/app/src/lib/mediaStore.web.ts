@@ -1,5 +1,21 @@
 import { currentIdentity } from './remote';
 let database: Promise<IDBDatabase> | undefined;
+export async function deleteWorkspaceMedia(workspaceId: string): Promise<void> {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('entries', 'readwrite');
+    const request = transaction.objectStore('entries').openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      if (String(cursor.key).split('/').includes(workspaceId)) cursor.delete();
+      cursor.continue();
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
 function open() {
   database ??= new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open('moajam-media', 1);

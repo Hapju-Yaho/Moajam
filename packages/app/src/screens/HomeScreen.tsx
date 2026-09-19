@@ -1,5 +1,6 @@
 import { useIdentity } from '../state/Identity';
-import { useWindowDimensions, View } from 'react-native';
+import { useState } from 'react';
+import { Modal, useWindowDimensions, View } from 'react-native';
 import { AppShell } from '../components/AppShell';
 import {
   ActionButton,
@@ -27,7 +28,33 @@ import { Avatar, AvatarText } from '../styles/layout';
 export function HomeScreen({ navigate }: ScreenProps) {
   const currentUserId = useIdentity();
   const { width } = useWindowDimensions();
-  const { workspace, members, adoptedSongs, recommendations, rehearsals } = useMockAppState();
+  const { workspace, members, adoptedSongs, recommendations, rehearsals, leaveWorkspace } =
+    useMockAppState();
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState('');
+  const lastOwner =
+    members.length > 1 &&
+    members.find((member) => member.id === currentUserId)?.role === 'OWNER' &&
+    members.filter((member) => member.role === 'OWNER').length <= 1;
+  const leave = async () => {
+    if (leaving) return;
+    setLeaving(true);
+    setLeaveError('');
+    setConfirmDelete(false);
+    try {
+      await leaveWorkspace(confirmDelete);
+      setConfirmLeave(false);
+      navigate('personal-home');
+    } catch (error) {
+      setLeaveError(
+        error instanceof Error ? error.message : '탈퇴하지 못했습니다. 다시 시도해주세요.',
+      );
+    } finally {
+      setLeaving(false);
+    }
+  };
   const next = rehearsals
     .filter((event) => new Date(`${event.date}T${event.end}`) >= new Date())
     .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`))[0];
@@ -37,16 +64,28 @@ export function HomeScreen({ navigate }: ScreenProps) {
   );
   return (
     <AppShell activeRoute="home" onNavigate={navigate}>
-      <FlexBetween>
+      <FlexBetween
+        style={width < 650 ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
+      >
         <PageTop>
           <PageHeading>{workspace?.name}</PageHeading>
           <PageDescription>{workspace?.description}</PageDescription>
         </PageTop>
-        {width >= 650 && (
+        <FlexRow style={{ flexShrink: 0 }}>
           <ActionButton secondary onPress={() => navigate('members')}>
             멤버 보기
           </ActionButton>
-        )}
+          <ActionButton
+            secondary
+            danger
+            onPress={() => {
+              setLeaveError('');
+              setConfirmLeave(true);
+            }}
+          >
+            나가기
+          </ActionButton>
+        </FlexRow>
       </FlexBetween>
       <ResponsiveGrid stacked={width < 1050}>
         <Surface style={{ flex: 1.6 }}>
@@ -180,6 +219,61 @@ export function HomeScreen({ navigate }: ScreenProps) {
           </Surface>
         </Stack>
       </ResponsiveGrid>
+      <Modal
+        visible={confirmLeave}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!leaving) setConfirmLeave(false);
+        }}
+      >
+        <View
+          style={{
+            flex: 1,
+            padding: 20,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(16,29,53,0.48)',
+          }}
+        >
+          <Surface style={{ width: '100%', maxWidth: 440 }}>
+            <Heading>{confirmDelete ? '밴드 공간도 삭제할까요?' : '정말 나가실 건가요?'}</Heading>
+            <Copy>
+              {workspace?.name} 밴드를 탈퇴하면 밴드의 공유 자료에 접근할 수 없고, 내 밴드
+              목록에서도 제외됩니다.
+            </Copy>
+            {members.length === 1 && (
+              <Copy style={{ color: '#be3b4b' }}>
+                멤버가 없으면 밴드 공간도 지워집니다. 곡, 일정, 메모와 첨부 파일 등 관련 데이터가
+                모두 영구 삭제되며 복구할 수 없습니다.
+              </Copy>
+            )}
+            {lastOwner && (
+              <Meta>탈퇴하려면 멤버 보기에서 다른 멤버를 먼저 관리자로 지정해주세요.</Meta>
+            )}
+            {!!leaveError && (
+              <Copy accessibilityRole="alert" style={{ color: '#be3b4b' }}>
+                {leaveError}
+              </Copy>
+            )}
+            <FlexRow style={{ justifyContent: 'flex-end' }}>
+              <ActionButton secondary disabled={leaving} onPress={() => setConfirmLeave(false)}>
+                취소
+              </ActionButton>
+              <ActionButton
+                danger
+                disabled={leaving || lastOwner}
+                onPress={() => {
+                  if (members.length === 1 && !confirmDelete) setConfirmDelete(true);
+                  else void leave();
+                }}
+              >
+                {leaving ? '탈퇴 중…' : confirmDelete ? '모든 데이터 삭제 및 탈퇴' : '밴드 탈퇴'}
+              </ActionButton>
+            </FlexRow>
+          </Surface>
+        </View>
+      </Modal>
     </AppShell>
   );
 }

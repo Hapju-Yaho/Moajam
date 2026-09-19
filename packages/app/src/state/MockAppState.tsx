@@ -27,7 +27,9 @@ import {
   summarizeSong,
 } from './workspaceModel';
 import { useIdentity } from './Identity';
+import { deleteWorkspaceMedia } from '../lib/mediaStore';
 import {
+  api,
   serverConfigured,
   loadRemoteWorkspaces,
   saveRemoteWorkspace,
@@ -48,6 +50,7 @@ interface Store {
   setActionError: (message: string) => void;
   syncStatus: string;
   reloadRemote: () => Promise<void>;
+  leaveWorkspace: (id: string, confirmDelete?: boolean) => Promise<void>;
 }
 const StoreContext = createContext<Store | null>(null);
 const WorkspaceScope = createContext<string | undefined>(undefined);
@@ -127,6 +130,36 @@ export function MockAppStateProvider({ children }: PropsWithChildren) {
       setSyncStatus('서버 저장됨');
     });
   }, [workspaces, selectedWorkspaceId]);
+  const leaveWorkspace = useCallback(
+    async (id: string, confirmDelete = false) => {
+      const band = workspaces.find((item) => item.id === id);
+      const member = band?.members.find((item) => item.id === identity);
+      if (!band || !member) throw new Error('참여 중인 밴드를 찾을 수 없습니다.');
+      if (
+        band.members.length > 1 &&
+        member.role === 'OWNER' &&
+        band.members.filter((item) => item.role === 'OWNER').length <= 1
+      ) {
+        throw new Error('탈퇴하려면 다른 멤버를 먼저 관리자로 지정해주세요.');
+      }
+      if (band.members.length === 1 && !confirmDelete)
+        throw new Error('마지막 멤버입니다. 밴드와 모든 데이터 삭제를 확인해주세요.');
+      if (serverConfigured) {
+        await queue.current;
+        await api(
+          `/workspaces/${id}/members/${identity}${confirmDelete ? '?confirmDelete=true' : ''}`,
+          'DELETE',
+        );
+        acknowledged.current = acknowledged.current.filter((item) => item.id !== id);
+      }
+      await deleteWorkspaceMedia(id);
+      setWorkspaces((all) => all.filter((item) => item.id !== id));
+      selectWorkspace((selected) =>
+        selected === id ? (workspaces.find((item) => item.id !== id)?.id ?? '') : selected,
+      );
+    },
+    [identity, workspaces],
+  );
   const value = useMemo(
     () => ({
       workspaces,
@@ -138,8 +171,17 @@ export function MockAppStateProvider({ children }: PropsWithChildren) {
       setActionError,
       syncStatus,
       reloadRemote,
+      leaveWorkspace,
     }),
-    [workspaces, selectedWorkspaceId, storageError, actionError, syncStatus, reloadRemote],
+    [
+      workspaces,
+      selectedWorkspaceId,
+      storageError,
+      actionError,
+      syncStatus,
+      reloadRemote,
+      leaveWorkspace,
+    ],
   );
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
@@ -187,6 +229,7 @@ export function useMockAppState() {
     serverConfigured,
     syncStatus: store.syncStatus,
     reloadRemote: store.reloadRemote,
+    leaveWorkspace: (confirmDelete = false) => store.leaveWorkspace(workspaceId, confirmDelete),
     actionError: store.actionError,
     clearActionError: () => store.setActionError(''),
     setDocument: <T,>(key: string, value: T | ((previous: T) => T), initial: T) =>
@@ -328,7 +371,10 @@ export function useMockAppState() {
     updatePreparation: (bandId: string, songId: string, status: Preparation) =>
       update((band) => setSongPreparation(band, songId, status, currentUserId), bandId),
     saveRehearsal: (event: Rehearsal, bandId = workspaceId) => {
-      if (!canManage) {
+      const target = store.workspaces.find((band) => band.id === bandId);
+      if (
+        !target?.members.some((member) => member.id === currentUserId && member.role === 'OWNER')
+      ) {
         store.setActionError('합주 일정은 Owner가 변경할 수 있습니다.');
         return;
       }

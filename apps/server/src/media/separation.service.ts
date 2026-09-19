@@ -17,6 +17,7 @@ import { StorageService } from './storage.service.js';
 export class SeparationService implements OnModuleDestroy, OnModuleInit {
   private running = new Map<string, ChildProcess>();
   private cancelled = new Set<string>();
+  private executions = new Map<string, Promise<void>>();
   private queue = Promise.resolve();
   private accepting = true;
   constructor(
@@ -74,7 +75,20 @@ export class SeparationService implements OnModuleDestroy, OnModuleInit {
       });
     }
   }
-  private async run(id: string) {
+  async stopForSources(sourceIds: string[]) {
+    const jobs = await this.db.separationJob.findMany({ where: { sourceId: { in: sourceIds } } });
+    for (const job of jobs) {
+      this.cancelled.add(job.id);
+      this.running.get(job.id)?.kill();
+    }
+    await Promise.all(jobs.map((job) => this.executions.get(job.id)));
+  }
+  private run(id: string) {
+    const execution = this.execute(id).finally(() => this.executions.delete(id));
+    this.executions.set(id, execution);
+    return execution;
+  }
+  private async execute(id: string) {
     if (!this.accepting || this.cancelled.has(id)) return;
     let directory: string | undefined;
     try {
@@ -92,6 +106,7 @@ export class SeparationService implements OnModuleDestroy, OnModuleInit {
       directory = await mkdtemp(join(tmpdir(), 'moajam-separation-'));
       const input = join(directory, 'source.audio');
       await writeFile(input, data);
+      if (this.cancelled.has(id)) return;
       await new Promise<void>((resolve, reject) => {
         const child = spawn(
           this.config.get<string>('MEDIA_PYTHON') ?? 'python',
@@ -126,15 +141,21 @@ export class SeparationService implements OnModuleDestroy, OnModuleInit {
       if (this.cancelled.has(id)) return;
       const outputs: string[] = [];
       for (const stem of [job.instrument, `no_${job.instrument}`]) {
+        if (this.cancelled.has(id)) return;
         const blob = await readFile(join(directory, 'htdemucs_6s', 'source', `${stem}.wav`));
         const objectKey = `${job.ownerId}/${randomUUID()}`;
         const { error } = await this.storage
           .bucket()
           .upload(objectKey, blob, { contentType: 'audio/wav' });
         if (error) throw new Error();
+        if (this.cancelled.has(id)) {
+          await this.storage.bucket().remove([objectKey]);
+          return;
+        }
         const asset = await this.db.mediaAsset.create({
           data: {
             ownerId: job.ownerId,
+            workspaceId: source.workspaceId,
             scope: 'extraction',
             objectKey,
             name: `${stem}.wav`,
@@ -144,6 +165,7 @@ export class SeparationService implements OnModuleDestroy, OnModuleInit {
           },
         });
         outputs.push(asset.id);
+        await this.db.separationJob.update({ where: { id }, data: { outputs } });
       }
       if (!this.cancelled.has(id))
         await this.db.separationJob.update({

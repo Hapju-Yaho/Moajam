@@ -1,3 +1,4 @@
+import { ScheduleModal } from './ScheduleModal';
 import { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { ActionButton, Copy, FlexBetween, FlexRow, Heading, Meta, Surface } from './ProductUI';
@@ -15,6 +16,7 @@ export function RehearsalCalendar({
   navigate: ScreenProps['navigate'];
   compact?: boolean;
 }) {
+  const [registering, setRegistering] = useState(false);
   const today = dateKey(new Date());
   const [month, setMonth] = useState(
     () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
@@ -36,7 +38,7 @@ export function RehearsalCalendar({
   const selectedEvents = events.filter((event) => event.date === selected);
   return (
     <Surface>
-      <FlexBetween>
+      <FlexBetween style={{ flexWrap: 'wrap' }}>
         <Heading>
           {month.getFullYear()}년 {month.getMonth() + 1}월
         </Heading>
@@ -135,7 +137,12 @@ export function RehearsalCalendar({
           );
         })}
       </View>
-      <Heading style={{ fontSize: 15 }}>{selected} 일정</Heading>
+      <FlexBetween style={{ flexWrap: 'wrap' }}>
+        <Heading style={{ fontSize: 15 }}>{selected} 일정</Heading>
+        <ActionButton compact onPress={() => setRegistering(true)}>
+          + 일정 등록
+        </ActionButton>
+      </FlexBetween>
       {selectedEvents.length ? (
         selectedEvents.map((event) => (
           <EventRow key={`${event.workspaceId}/${event.id}`} event={event} navigate={navigate} />
@@ -143,6 +150,7 @@ export function RehearsalCalendar({
       ) : (
         <Meta>이날은 등록된 합주가 없어요.</Meta>
       )}
+      <ScheduleModal visible={registering} date={selected} onClose={() => setRegistering(false)} />
     </Surface>
   );
 }

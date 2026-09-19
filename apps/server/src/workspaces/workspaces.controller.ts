@@ -9,7 +9,9 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   ConflictException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { IsIn, IsInt, IsObject, IsString, MaxLength, Min, MinLength } from 'class-validator';
 import { createHash, randomBytes } from 'node:crypto';
@@ -18,6 +20,8 @@ import { CurrentUser } from '../common/auth/current-user.decorator.js';
 import type { AuthenticatedUser } from '../common/auth/supabase.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { canWriteDocument } from './document-policy.js';
+import { StorageService } from '../media/storage.service.js';
+import { SeparationService } from '../media/separation.service.js';
 
 class CreateWorkspaceDto {
   @IsString() @MinLength(1) @MaxLength(80) name!: string;
@@ -43,7 +47,11 @@ const hash = (token: string) => createHash('sha256').update(token).digest('hex')
 
 @Controller()
 export class WorkspacesController {
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    private readonly storage: StorageService,
+    private readonly separation: SeparationService,
+  ) {}
   private async membership(workspaceId: string, userId: string, owner = false) {
     const member = await this.db.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } },
@@ -161,14 +169,59 @@ export class WorkspacesController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('workspaceId') workspaceId: string,
     @Param('userId') userId: string,
+    @Query('confirmDelete') confirmDelete?: string,
   ) {
     await this.membership(workspaceId, user.id, user.id !== userId);
+    if (
+      confirmDelete === 'true' &&
+      (await this.db.workspaceMember.count({ where: { workspaceId } })) === 1
+    ) {
+      const assets = await this.db.mediaAsset.findMany({ where: { workspaceId } });
+      await this.separation.stopForSources(assets.map((asset) => asset.id));
+    }
     return this.db.$transaction(
       async (tx) => {
         const target = await tx.workspaceMember.findUnique({
           where: { workspaceId_userId: { workspaceId, userId } },
         });
         if (!target) throw new NotFoundException();
+        const memberCount = await tx.workspaceMember.count({ where: { workspaceId } });
+        if (memberCount === 1) {
+          if (confirmDelete !== 'true')
+            throw new ConflictException(
+              '멤버가 없으면 밴드 공간도 지워집니다. 모든 데이터 삭제를 확인해주세요.',
+            );
+          const assets = await tx.mediaAsset.findMany({ where: { workspaceId } });
+          const sourceIds = assets.map((asset) => asset.id);
+          const jobs = await tx.separationJob.findMany({ where: { sourceId: { in: sourceIds } } });
+          const outputIds = jobs.flatMap((job) =>
+            Array.isArray(job.outputs)
+              ? job.outputs.filter((id): id is string => typeof id === 'string')
+              : [],
+          );
+          const allAssets = await tx.mediaAsset.findMany({
+            where: { OR: [{ workspaceId }, { id: { in: outputIds } }] },
+          });
+          for (let index = 0; index < allAssets.length; index += 100) {
+            const { error } = await this.storage
+              .bucket()
+              .remove(allAssets.slice(index, index + 100).map((asset) => asset.objectKey));
+            if (error)
+              throw new ServiceUnavailableException(
+                '첨부 파일을 삭제하지 못했습니다. 다시 시도해주세요.',
+              );
+          }
+          await tx.separationJob.deleteMany({
+            where: { sourceId: { in: allAssets.map((asset) => asset.id) } },
+          });
+          await tx.mediaAsset.deleteMany({
+            where: { id: { in: allAssets.map((asset) => asset.id) } },
+          });
+          await tx.notification.deleteMany({ where: { workspaceId } });
+          // Documents, invitations and memberships are removed by the workspace foreign keys.
+          await tx.workspace.delete({ where: { id: workspaceId } });
+          return { removed: true, workspaceDeleted: true };
+        }
         if (
           target.role === 'OWNER' &&
           (await tx.workspaceMember.count({ where: { workspaceId, role: 'OWNER' } })) <= 1
@@ -177,7 +230,7 @@ export class WorkspacesController {
         await tx.workspaceMember.delete({ where: { workspaceId_userId: { workspaceId, userId } } });
         return { removed: true };
       },
-      { isolationLevel: 'Serializable' },
+      { isolationLevel: 'Serializable', timeout: 60000 },
     );
   }
   @Get('workspaces/:workspaceId/documents') async documents(
