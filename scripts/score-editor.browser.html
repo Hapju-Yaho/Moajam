@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="ko">
+  <meta charset="utf-8" />
+  <title>TAB / MusicXML 검증</title>
+  <h1>TAB / MusicXML 검증</h1>
+  <pre id="result">검사 중…</pre>
+  <script type="module">
+    import {
+      scoreToMusicXml,
+      setScoreFret,
+      noteTones,
+      appendScoreNoteAt,
+      setScoreBeatChord,
+      scoreChordPositions,
+      setScoreConnection,
+    } from '../packages/app/src/lib/score.ts';
+    import { scoreFromMusicXml } from '../packages/app/src/lib/scoreImport.web.ts';
+    import {
+      createScoreOutput,
+      scheduleScoreNote,
+      scheduleScoreBacking,
+      scheduleScorePassage,
+    } from '../packages/app/src/lib/scoreAudio.web.ts';
+    const results = [];
+    const check = (condition, text) => {
+      if (!condition) throw new Error(text);
+      results.push(`PASS ${text}`);
+    };
+    try {
+      const linkNote = (id, pitch, beats = 1) => ({
+        id,
+        part: 'Guitar',
+        pitch,
+        beats,
+        rest: false,
+        accent: false,
+        chord: '',
+        lyric: '',
+        tones: [{ pitch, string: 1, fret: pitch - 64 }],
+      });
+      let linked = {
+        title: '연결 주법',
+        bpm: 120,
+        parts: ['Guitar'],
+        sync: {},
+        notes: [
+          linkNote('a', 64, 3.5),
+          linkNote('b', 64),
+          linkNote('c', 67, 0.5),
+          linkNote('d', 65),
+          linkNote('e', 69, 2),
+        ],
+      };
+      for (const [i, type] of ['tie', 'hammer', 'pull', 'slide'].entries())
+        linked = setScoreConnection(linked, [linked.notes[i].id], type);
+      const linkedXml = scoreToMusicXml(linked),
+        linkedRestored = scoreFromMusicXml(linkedXml);
+      check(
+        linkedRestored.notes
+          .slice(0, 5)
+          .map((n) => n.beats)
+          .join(',') === '3.5,1,0.5,1,2',
+        '직접 붙임줄은 개별 음표를 유지하고 자동 마디 붙임줄만 병합',
+      );
+      check(
+        linkedRestored.notes
+          .slice(0, 4)
+          .every(
+            (n, i) =>
+              n.connection?.type === ['tie', 'hammer', 'pull', 'slide'][i] &&
+              n.connection.targetId === linkedRestored.notes[i + 1].id,
+          ),
+        '해머링·풀링·슬라이드·직접 붙임줄 MusicXML 왕복 보존',
+      );
+      check(
+        linkedXml.includes('<hammer-on type="start"') &&
+          linkedXml.includes('<pull-off type="stop"') &&
+          linkedXml.includes('<slide type="start"'),
+        '연결 주법을 표준 MusicXML 요소로 내보내기',
+      );
+      let brokenConnectionRejected = false;
+      try {
+        scoreFromMusicXml(linkedXml.replace('<hammer-on type="stop" number="1">H</hammer-on>', ''));
+      } catch {
+        brokenConnectionRejected = true;
+      }
+      check(brokenConnectionRejected, '끝 음표가 없는 연결 주법 거부');
+      const renderConnection = async (type, from = 0, quietTarget = false) => {
+        const context = new OfflineAudioContext(1, 72000, 48000);
+        const base = {
+          title: '',
+          bpm: 120,
+          parts: ['Guitar'],
+          sync: {},
+          notes: [
+            linkNote('one', type === 'pull' ? 81 : 69),
+            { ...linkNote('two', type === 'tie' || type === 'pull' ? 69 : 81), ghost: quietTarget },
+          ],
+        };
+        scheduleScorePassage(
+          context,
+          context.destination,
+          setScoreConnection(base, ['one'], type),
+          'Guitar',
+          0,
+          from,
+          2,
+        );
+        return (await context.startRendering()).getChannelData(0);
+      };
+      const tiedOutput = await renderConnection('tie');
+      const rms = (samples, start, end) =>
+        Math.sqrt(
+          samples.slice(start * 48000, end * 48000).reduce((sum, v) => sum + v * v, 0) /
+            ((end - start) * 48000),
+        );
+      check(
+        rms(tiedOutput, 0.48, 0.5) > 0.05 &&
+          Math.abs(rms(tiedOutput, 0.48, 0.5) - rms(tiedOutput, 0.5, 0.52)) < 0.01,
+        '붙임줄 경계에서 재타격이나 음량 단절 없이 재생',
+      );
+      const crossings = (samples, start, end) =>
+        samples
+          .slice(start * 48000, end * 48000)
+          .reduce((sum, v, i, a) => sum + (i > 0 && a[i - 1] <= 0 && v > 0 ? 1 : 0), 0) /
+        (end - start);
+      const hammerOutput = await renderConnection('hammer'),
+        slideOutput = await renderConnection('slide');
+      const pullOutput = await renderConnection('pull');
+      check(
+        Math.abs(crossings(pullOutput, 0.2, 0.3) - 880) < 20 &&
+          Math.abs(crossings(pullOutput, 0.6, 0.7) - 440) < 20,
+        '풀링은 낮은 목표 음으로 연결 재생',
+      );
+      const quietConnection = await renderConnection('hammer', 0, true);
+      check(
+        rms(quietConnection, 0.6, 0.7) < rms(hammerOutput, 0.6, 0.7) * 0.4,
+        '연결한 뒤 음표의 약하게 주법도 재생에 반영',
+      );
+      check(
+        Math.abs(crossings(hammerOutput, 0.2, 0.3) - 440) < 20 &&
+          Math.abs(crossings(hammerOutput, 0.6, 0.7) - 880) < 20,
+        '해머링은 연결 지점에서 목표 음높이로 재생',
+      );
+      check(
+        crossings(slideOutput, 0.4, 0.45) > 550 && crossings(slideOutput, 0.4, 0.45) < 800,
+        '슬라이드는 두 음 사이의 연속 음높이로 재생',
+      );
+      const partialSlide = await renderConnection('slide', 0.85);
+      check(
+        crossings(partialSlide, 0, 0.05) > 600 && crossings(partialSlide, 0, 0.05) < 860,
+        '슬라이드 중간부터 재생할 때 현재 음높이 유지',
+      );
+      check(
+        (await renderConnection('tie', 1)).slice(24000).every((v) => v === 0),
+        '붙임줄 중간부터 재생할 때 남은 길이만 재생',
+      );
+      const externalNote = (duration) =>
+        `<note><pitch><step>C</step><octave>4</octave></pitch><duration>${duration}</duration></note>`;
+      const externalHarmony = `<harmony><root><root-step>A</root-step></root><kind>minor</kind></harmony>${externalNote(8)}<harmony><root><root-step>G</root-step></root><kind>dominant</kind><bass><bass-step>B</bass-step></bass></harmony>${externalNote(8)}`;
+      const external = `<score-partwise><part-list><score-part id="P1"><part-name>Guitar</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>4</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>${externalHarmony}</measure><measure number="2">${externalNote(4)}</measure><measure number="3">${externalNote(16)}</measure></part></score-partwise>`;
+      const externalScore = scoreFromMusicXml(external);
+      check(
+        externalScore.beatChords.Guitar[0] === 'Am' &&
+          externalScore.beatChords.Guitar[2] === 'G7/B',
+        '외부 MusicXML 코드 기호와 슬래시 베이스 가져오기',
+      );
+      check(
+        externalScore.notes[3].blank &&
+          externalScore.notes[3].beats === 3 &&
+          externalScore.notes.slice(0, 4).reduce((sum, note) => sum + note.beats, 0) === 8,
+        '부족한 마디를 무음으로 채워 다음 마디 위치 보존',
+      );
+      for (const [label, input] of [
+        [
+          '잘못된 박 단위',
+          external.replace('<divisions>4</divisions>', '<divisions>0</divisions>'),
+        ],
+        [
+          '범위 밖 BPM',
+          external.replace('</part>', '<direction><sound tempo="400"/></direction></part>'),
+        ],
+        [
+          '못갖춘마디',
+          external.replace('<measure number="2">', '<measure number="2" implicit="yes">'),
+        ],
+        [
+          '템포 변화',
+          external.replace(
+            '</part>',
+            '<direction><sound tempo="120"/></direction><direction><sound tempo="130"/></direction></part>',
+          ),
+        ],
+        [
+          '지원하지 않는 코드 구성',
+          external.replace(
+            '<kind>minor</kind>',
+            '<kind>minor</kind><degree><degree-value>9</degree-value><degree-alter>0</degree-alter><degree-type>add</degree-type></degree>',
+          ),
+        ],
+      ]) {
+        let refused = false;
+        try {
+          scoreFromMusicXml(input);
+        } catch {
+          refused = true;
+        }
+        check(refused, `${label} 정보를 조용히 버리지 않음`);
+      }
+      let score = {
+        title: 'TAB & 코드',
+        bpm: 138,
+        parts: ['리드'],
+        instruments: { 리드: 'dropD' },
+        sync: {},
+        notes: [
+          {
+            id: 'a',
+            part: '리드',
+            pitch: 60,
+            rest: true,
+            beats: 5.5,
+            chord: 'D',
+            lyric: '노래',
+            accent: true,
+            staccato: true,
+            ghost: true,
+          },
+        ],
+      };
+      score = setScoreFret(setScoreFret(score, 'a', 6, 0), 'a', 1, 2);
+      const xml = scoreToMusicXml(score);
+      const restored = scoreFromMusicXml(xml);
+      const mutedScore = {
+        ...score,
+        notes: score.notes.map((note) => ({ ...note, dead: true, ghost: false })),
+      };
+      const mutedXml = scoreToMusicXml(mutedScore);
+      const mutedRestored = scoreFromMusicXml(mutedXml);
+      check(
+        mutedXml.includes('<notehead>x</notehead>') &&
+          mutedRestored.notes[0].dead &&
+          !mutedRestored.notes[0].ghost &&
+          mutedRestored.notes[0].beats === 5.5,
+        '뮤트 X 표기와 마디를 넘는 길이 복원',
+      );
+      check(
+        JSON.stringify(
+          noteTones(mutedRestored.notes[0]).map(({ pitch, string, fret }) => [pitch, string, fret]),
+        ) ===
+          JSON.stringify(
+            noteTones(score.notes[0]).map(({ pitch, string, fret }) => [pitch, string, fret]),
+          ),
+        '뮤트 해제에 필요한 원래 프렛 보존',
+      );
+      check(restored.title === score.title && restored.bpm === 138, '제목과 템포 보존');
+      check(restored.instruments['리드'] === 'dropD', '사용자 파트의 튜닝 보존');
+      check(restored.notes[0].beats === 5.5, '마디를 넘는 코드 붙임줄 복원');
+      const tones = (note) =>
+        noteTones(note).map(({ pitch, string, fret }) => [pitch, string, fret]);
+      check(
+        JSON.stringify(tones(restored.notes[0])) === JSON.stringify(tones(score.notes[0])),
+        '코드의 모든 음정·줄·프렛 보존',
+      );
+      check(
+        restored.notes[0].lyric === '노래' &&
+          restored.notes[0].chord === 'D' &&
+          restored.notes[0].accent,
+        '가사·코드 이름·악센트 보존',
+      );
+      check(restored.notes[1].rest && restored.notes[1].beats === 2.5, '내보내기의 남은 마디 쉼표');
+      const barChords = {
+        ...score,
+        measureChords: { 리드: { 0: 'Am7', 1: 'D/F♯', 2: '<C & G>' } },
+      };
+      const barRestored = scoreFromMusicXml(scoreToMusicXml(barChords));
+      const changedChords = setScoreBeatChord(
+        setScoreBeatChord(barChords, '리드', 6, 'G'),
+        '리드',
+        6.5,
+        'D/F♯',
+      );
+      const changedRestored = scoreFromMusicXml(scoreToMusicXml(changedChords));
+      check(
+        JSON.stringify(scoreChordPositions(changedRestored, '리드')) ===
+          JSON.stringify(scoreChordPositions(changedChords, '리드')),
+        '한 마디 안의 1박·3박·3.5박 코드 위치를 왕복 보존',
+      );
+      check(
+        changedRestored.notes[0].beats === 5.5 &&
+          changedRestored.notes.slice(1).every((note) => !note.chord),
+        '박 위치 코드를 음표 코드로 중복하지 않고 음표 길이 유지',
+      );
+      check(
+        JSON.stringify(barRestored.measureChords) === JSON.stringify(barChords.measureChords),
+        '마디 코드와 빈 마디 코드 보존',
+      );
+      check(
+        barRestored.notes[0].chord === 'D' && barRestored.notes[0].beats === 5.5,
+        '마디 코드와 박별 코드 및 붙임줄 분리 보존',
+      );
+      check(
+        barRestored.notes.slice(1).every((note) => !note.chord),
+        '마디 코드를 음표 코드로 중복해서 가져오지 않음',
+      );
+      check(
+        restored.notes[0].staccato && restored.notes[0].ghost,
+        '스타카토·고스트 코드 붙임줄 보존',
+      );
+      const tiny = {
+        ...score,
+        notes: [0.125, 0.0625, 0.1875].map((beats, i) => ({
+          ...score.notes[0],
+          id: `tiny${i}`,
+          beats,
+        })),
+      };
+      const tinyRestored = scoreFromMusicXml(scoreToMusicXml(tiny));
+      check(
+        JSON.stringify(tinyRestored.notes.slice(0, 3).map((n) => n.beats)) ===
+          '[0.125,0.0625,0.1875]',
+        '32분·64분·점32분음표 길이 보존',
+      );
+      check(
+        tinyRestored.notes
+          .slice(0, 3)
+          .every((n) => n.staccato && n.ghost && noteTones(n).length === 2),
+        '짧은 코드의 주법과 프렛 보존',
+      );
+      const spaced = appendScoreNoteAt(
+        { ...score, notes: [] },
+        { ...score.notes[0], beats: 1 },
+        3,
+        () => crypto.randomUUID(),
+      );
+      const spaces = scoreFromMusicXml(scoreToMusicXml(spaced));
+      check(
+        spaces.notes.slice(0, 3).every((note) => note.blank && note.rest && note.beats === 1),
+        '빈 박의 길이와 숨김 상태 보존',
+      );
+      check(
+        spaces.notes[3].beats === 1 && noteTones(spaces.notes[3]).length === 2,
+        '빈 박 뒤 코드의 위치 보존',
+      );
+      for (const [name, invalid] of [
+        ['3/4', xml.replace('<beats>4</beats>', '<beats>3</beats>')],
+        ['다성부', xml.replace('</measure>', '<backup><duration>16</duration></backup></measure>')],
+        ['꾸밈음', xml.replace('<note>', '<note><grace/>')],
+        ['잇단음표', xml.replace('<note>', '<note><time-modification/>')],
+        [
+          '코드 길이 불일치',
+          xml
+            .replace('<chord/><pitch>', '<chord/><pitch>')
+            .replace(
+              '<chord/><pitch><step>D</step><octave>2</octave></pitch><duration>64</duration>',
+              '<chord/><pitch><step>D</step><octave>2</octave></pitch><duration>32</duration>',
+            ),
+        ],
+      ]) {
+        let rejected = false;
+        try {
+          scoreFromMusicXml(invalid);
+        } catch {
+          rejected = true;
+        }
+        check(rejected, `${name}의 조용한 데이터 손실 방지`);
+      }
+      const renderVolume = async (volume, changed) => {
+        const context = new OfflineAudioContext(1, 4800, 48000);
+        const output = createScoreOutput(context, volume);
+        const source = context.createConstantSource();
+        source.offset.value = 0.5;
+        source.connect(output.input);
+        if (changed !== undefined) output.setVolume(changed);
+        source.start();
+        return (await context.startRendering()).getChannelData(0);
+      };
+      check(
+        Math.abs((await renderVolume(1))[100] - 0.5) < 0.000001,
+        '악보 음량 100% 실제 오디오 출력',
+      );
+      check(
+        Math.abs((await renderVolume(0.5))[100] - 0.25) < 0.000001,
+        '악보 음량 50% 실제 오디오 출력',
+      );
+      check(
+        (await renderVolume(0)).every((sample) => sample === 0),
+        '악보 음소거 출력',
+      );
+      check(
+        Math.abs((await renderVolume(1, 0))[4799]) < 0.0001,
+        '재생 출력에 연결된 음량 변경 적용',
+      );
+      const renderNote = async (changes, remaining = 1) => {
+        const context = new OfflineAudioContext(1, 48000, 48000);
+        scheduleScoreNote(
+          context,
+          context.destination,
+          { ...score.notes[0], beats: 1, accent: false, ghost: false, staccato: false, ...changes },
+          0,
+          120,
+          remaining,
+        );
+        return (await context.startRendering()).getChannelData(0);
+      };
+      const normal = await renderNote({}),
+        ghost = await renderNote({ ghost: true }),
+        staccato = await renderNote({ staccato: true });
+      const energy = (samples, from, to) =>
+        samples.slice(from, to).reduce((sum, value) => sum + value * value, 0);
+      const muted = await renderNote({ dead: true });
+      check(
+        energy(muted, 0, 3120) > 0 && energy(muted, 4800, 24000) === 0,
+        '뮤트 노트는 짧은 타격음 뒤 무음',
+      );
+      check(
+        (await renderNote({ dead: true }, 0.5)).every((v) => v === 0),
+        '뮤트 타격이 끝난 위치부터 재생하면 무음',
+      );
+      const tinyMuted = await renderNote({ dead: true, beats: 0.0625 }, 0.0625);
+      check(
+        energy(tinyMuted, 0, 1500) > 0 && energy(tinyMuted, 2400, 48000) === 0,
+        '64분 뮤트 타격이 다음 박을 침범하지 않음',
+      );
+      check(
+        energy(staccato, 13000, 24000) === 0 && energy(normal, 13000, 24000) > 0,
+        '스타카토는 박 위치를 유지하고 음을 일찍 끊음',
+      );
+      check(
+        energy(ghost, 0, 4800) < energy(normal, 0, 4800) * 0.3 && energy(ghost, 0, 4800) > 0,
+        '고스트 노트는 같은 음정을 약하게 재생',
+      );
+      check(
+        (await renderNote({ staccato: true }, 0.25)).every((v) => v === 0),
+        '스타카토가 끝난 지점부터 선택 재생하면 무음',
+      );
+      const shortest = await renderNote({ beats: 0.0625, staccato: true, ghost: true }, 0.0625);
+      check(
+        energy(shortest, 0, 675) > 0 && energy(shortest, 700, 48000) === 0,
+        '64분 고스트 스타카토의 실제 재생 길이',
+      );
+      const renderBacking = async (start, end, offset, cancel = false) => {
+        const context = new OfflineAudioContext(1, 144000, 48000);
+        const buffer = context.createBuffer(1, 192000, 48000);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = (Math.floor(i / 48000) + 1) / 10;
+        const source = scheduleScoreBacking(
+          context,
+          context.destination,
+          buffer,
+          0.1,
+          start,
+          end,
+          120,
+          offset,
+        );
+        if (cancel) source?.stop(0.3);
+        return (await context.startRendering()).getChannelData(0);
+      };
+      const backing = await renderBacking(2, 6, 0.5);
+      check(
+        backing[0] === 0 &&
+          Math.abs(backing[9600] - 0.2) < 0.00001 &&
+          Math.abs(backing[48000] - 0.3) < 0.00001 &&
+          backing[110000] === 0,
+        '선택 박과 전주 위치에 맞춰 음원을 예약하고 마디 끝에서 정지',
+      );
+      const delayed = await renderBacking(0, 4, -0.5);
+      check(
+        delayed[24000] === 0 && Math.abs(delayed[33600] - 0.1) < 0.00001,
+        '음수 시작 위치는 음원이 시작될 때까지 무음 유지',
+      );
+      const shortBacking = await renderBacking(7, 12, 0);
+      check(
+        Math.abs(shortBacking[9600] - 0.4) < 0.00001 && shortBacking[33600] === 0,
+        '짧은 음원이 끝나면 반복 없이 무음',
+      );
+      const cancelled = await renderBacking(0, 4, 0, true);
+      check(cancelled[19200] === 0, '함께 예약한 음원 재생 취소');
+      document.querySelector('#result').textContent = results.join('\n');
+    } catch (error) {
+      document.querySelector('#result').textContent =
+        `${results.join('\n')}\nFAIL ${error.message}`;
+    }
+  </script>
+</html>

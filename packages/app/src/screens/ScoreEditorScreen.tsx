@@ -6,6 +6,7 @@ import { readMedia, writeMedia } from '../lib/mediaStore';
 import { downloadText } from '../lib/platformActions';
 import {
   pitchName,
+  noteTones,
   scoreToMusicXml,
   renameScorePart,
   removeScorePart,
@@ -101,7 +102,17 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   function update(changes: Partial<ScoreNote>) {
     edit({
       ...score,
-      notes: score.notes.map((item) => (item.id === selected ? { ...item, ...changes } : item)),
+      notes: score.notes.map((item) =>
+        item.id === selected
+          ? {
+              ...item,
+              ...changes,
+              ...(changes.pitch !== undefined
+                ? { tones: [{ pitch: changes.pitch }], blank: false }
+                : {}),
+            }
+          : item,
+      ),
     });
   }
   return (
@@ -240,7 +251,15 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
           .map((note, index) => (
             <FlexRow key={note.id} wrap>
               <ActionButton secondary={selected !== note.id} onPress={() => setSelected(note.id)}>
-                {index + 1}. {note.rest ? '쉼표' : pitchName(note.pitch)} · {note.beats}박
+                {index + 1}.{' '}
+                {note.blank
+                  ? '빈 박'
+                  : note.rest
+                    ? '쉼표'
+                    : noteTones(note)
+                        .map((tone) => pitchName(tone.pitch))
+                        .join(' / ')}{' '}
+                · {note.beats}박
               </ActionButton>
               <ActionButton secondary onPress={() => edit(removeScoreNotes(score, [note.id]))}>
                 삭제

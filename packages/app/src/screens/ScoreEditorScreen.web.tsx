@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { AppShell } from '../components/AppShell';
 import {
   ActionButton,
-  Copy,
   FlexRow,
   Heading,
   Meta,
@@ -18,16 +17,23 @@ import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
 import type { ScreenProps } from '../navigation';
 import {
   scoreToMusicXml,
-  pitchName,
+  cleanScoreConnections,
+  scorePlaybackFrom,
   renameScorePart,
   removeScorePart,
-  removeScoreNotes,
-  insertScoreNote,
-  moveScoreNote,
+  MIN_SCORE_BEATS,
+  SCORE_DIVISIONS,
   type Score,
-  type ScoreNote as Note,
+  type ScoreClipboardNote,
 } from '../lib/score';
-import { ScoreStaff } from '../components/ScoreStaff.web';
+import {
+  createScoreOutput,
+  scheduleScorePassage,
+  scheduleScoreBacking,
+} from '../lib/scoreAudio.web';
+import { validateAudioFile } from '../lib/trackParts';
+import { GuitarTabEditor } from '../components/GuitarTabEditor.web';
+import { scoreFromMusicXml } from '../lib/scoreImport.web';
 import { useIdentity } from '../state/Identity';
 export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   const userId = useIdentity();
@@ -49,18 +55,26 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
     sync: {},
   });
   const [history, setHistory] = useState<Score[]>([]);
+  const editGroup = useRef<string | null>(null);
+  const pendingSave = useRef<(() => void) | null>(null);
   const [future, setFuture] = useState<Score[]>([]);
   const [loaded, setLoaded] = useState(false);
   const loadedKey = useRef('');
   const [status, setStatus] = useState('악보 불러오는 중…');
   const [part, setPart] = useState('Guitar');
   const [selected, setSelected] = useState<string | null>(null);
-  const [pitch, setPitch] = useState(60);
-  const [beats, setBeats] = useState(1);
-  const [rest, setRest] = useState(false);
-  const [zoom, setZoom] = useState(100);
+  const [clipboard, setClipboard] = useState<ScoreClipboardNote[]>([]);
   const [playing, setPlaying] = useState(false);
+  const [playbackBeat, setPlaybackBeat] = useState<number | null>(null);
+  const playbackTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
+  const output = useRef<ReturnType<typeof createScoreOutput> | null>(null);
+  const volume = Math.max(0, Math.min(1, score.playbackVolume ?? 0.8));
+  const changeVolume = (value: number) => {
+    const next = Math.max(0, Math.min(1, value));
+    output.current?.setVolume(next);
+    setScore((current) => ({ ...current, playbackVolume: next }));
+  };
   const context = useRef<AudioContext | null>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const alive = useRef(true);
@@ -68,6 +82,53 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   const [audioUrl, setAudioUrl] = useState('');
   const [referenceAudio, setReferenceAudio] = useState<Blob | null>(null);
   const [audioPosition, setAudioPosition] = useState(0);
+  const [audioMessage, setAudioMessage] = useState('');
+  const [audioLoading, setAudioLoading] = useState(false);
+  const audioFileInput = useRef<HTMLInputElement>(null);
+  const audioLoadRequest = useRef(0);
+  const decodedAudio = useRef<{ file: Blob; buffer: AudioBuffer } | null>(null);
+  const referenceOutput = useRef<ReturnType<typeof createScoreOutput> | null>(null);
+  const referenceVolume = score.referenceAudioVolume ?? 0.8;
+  const referenceOffset = score.referenceAudioOffset ?? 0;
+  const referenceEnabled = score.referenceAudioEnabled ?? true;
+  const latestVolumes = useRef({ score: volume, reference: referenceVolume });
+  latestVolumes.current = { score: volume, reference: referenceVolume };
+  const changeReferenceVolume = (value: number) => {
+    referenceOutput.current?.setVolume(value);
+    setScore((current) => ({ ...current, referenceAudioVolume: value }));
+  };
+  const loadAudio = async (file: File) => {
+    const request = ++audioLoadRequest.current;
+    setAudioMessage('');
+    setAudioLoading(true);
+    try {
+      validateAudioFile(file);
+      const decoder = new OfflineAudioContext(1, 1, 44100);
+      const buffer = await decoder.decodeAudioData(await file.arrayBuffer());
+      if (!alive.current || request !== audioLoadRequest.current || loadedKey.current !== key)
+        return;
+      decodedAudio.current = { file, buffer };
+      setReferenceAudio(file);
+      setAudioUrl(URL.createObjectURL(file));
+      setAudioPosition(0);
+      setScore((current) => ({
+        ...current,
+        referenceAudioName: file.name,
+        referenceAudioEnabled: true,
+        referenceAudioOffset: 0,
+        sync: {},
+      }));
+    } catch (error) {
+      if (alive.current && request === audioLoadRequest.current)
+        setAudioMessage(
+          error instanceof Error && error.name !== 'EncodingError'
+            ? error.message
+            : '재생할 수 없는 음원이에요. 다른 MP3 또는 WAV 파일을 선택해주세요.',
+        );
+    } finally {
+      if (alive.current && request === audioLoadRequest.current) setAudioLoading(false);
+    }
+  };
   const [partName, setPartName] = useState('');
   const [partMessage, setPartMessage] = useState('');
   const [confirmPartDelete, setConfirmPartDelete] = useState(false);
@@ -81,6 +142,11 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
     setFuture([]);
     setSelected(null);
     setPlaying(false);
+    setPlaybackBeat(null);
+    audioLoadRequest.current++;
+    decodedAudio.current = null;
+    setAudioLoading(false);
+    setAudioMessage('');
     void readMedia<Score & { referenceAudio?: Blob }>(key, userId)
       .then((value) => {
         if (active) {
@@ -88,7 +154,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
           setAudioUrl(value?.referenceAudio ? URL.createObjectURL(value.referenceAudio) : '');
           setAudioPosition(0);
           if (value) {
-            setScore(value);
+            setScore(cleanScoreConnections(value));
             setPart(value.parts[0] ?? 'Guitar');
           } else
             setScore({
@@ -110,28 +176,47 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
       active = false;
       alive.current = false;
       timers.current.forEach(clearTimeout);
+      if (playbackTimer.current !== null) clearInterval(playbackTimer.current);
       void context.current?.close();
+      context.current = null;
+    };
+  }, [key, userId]);
+  useEffect(() => {
+    const flush = () => pendingSave.current?.();
+    window.addEventListener('pagehide', flush);
+    return () => {
+      flush();
+      window.removeEventListener('pagehide', flush);
     };
   }, [key, userId]);
   useEffect(() => {
     if (!loaded || loadedKey.current !== key) return;
     let active = true;
+    let started = false;
     setSaveFailed(false);
     setStatus('저장 중…');
-    void writeMedia(key, { ...score, referenceAudio }, userId)
-      .then(() => {
-        if (active) setStatus('자동 저장됨');
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setSaveFailed(true);
-          setStatus(
-            error instanceof Error ? error.message : '저장 실패 · 내보내기로 보관해주세요.',
-          );
-        }
-      });
+    const save = () => {
+      if (started) return;
+      started = true;
+      if (pendingSave.current === save) pendingSave.current = null;
+      void writeMedia(key, { ...score, referenceAudio }, userId)
+        .then(() => {
+          if (active) setStatus('자동 저장됨');
+        })
+        .catch((error: unknown) => {
+          if (active) {
+            setSaveFailed(true);
+            setStatus(
+              error instanceof Error ? error.message : '저장 실패 · 내보내기로 보관해주세요.',
+            );
+          }
+        });
+    };
+    pendingSave.current = save;
+    const timer = setTimeout(save, 300);
     return () => {
       active = false;
+      clearTimeout(timer);
     };
   }, [key, score, loaded, referenceAudio, userId]);
   useEffect(() => {
@@ -145,55 +230,112 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
     },
     [audioUrl],
   );
-  const edit = (next: Score) => {
-    if (!loaded || playing) return;
-    setHistory((all) => [...all.slice(-49), score]);
-    setFuture([]);
-    setScore(next);
+  const finishEdit = () => {
+    editGroup.current = null;
+    pendingSave.current?.();
   };
-  const update = (changes: Partial<Note>) => {
-    edit({
-      ...score,
-      notes: score.notes.map((note) => (note.id === selected ? { ...note, ...changes } : note)),
-    });
+  const edit = (next: Score, group?: string) => {
+    if (!loaded || playing) return;
+    if (!group || editGroup.current !== group) setHistory((all) => [...all.slice(-49), score]);
+    editGroup.current = group ?? null;
+    setFuture([]);
+    setScore(cleanScoreConnections(next));
   };
   const visible = score.notes.filter((note) => note.part === part);
-  const note = score.notes.find((note) => note.id === selected);
   const stop = () => {
+    if (playbackTimer.current !== null) clearInterval(playbackTimer.current);
+    playbackTimer.current = null;
+    setPlaybackBeat(null);
     timers.current.forEach(clearTimeout);
     timers.current = [];
     void context.current?.close();
     context.current = null;
+    output.current = null;
+    referenceOutput.current = null;
     setPlaying(false);
     setCursor(null);
+    setAudioMessage('');
     audio.current?.pause();
   };
-  const play = () => {
-    if (playing) {
+  const play = async (from = 0) => {
+    if (context.current) {
       stop();
       return;
     }
-    if (!visible.length) return;
+    if (!loaded || audioLoading || !visible.length) return;
+    const { startBeat, endBeat, events } = scorePlaybackFrom(score, part, from);
+    if (startBeat >= endBeat) return;
     const ctx = new AudioContext();
     context.current = ctx;
     setPlaying(true);
-    let elapsed = 0;
-    for (const item of visible) {
-      const duration = (item.beats * 60) / score.bpm;
-      timers.current.push(setTimeout(() => setCursor(item.id), elapsed * 1000));
-      if (!item.rest) {
-        const oscillator = ctx.createOscillator();
-        const gain = ctx.createGain();
-        oscillator.frequency.value = 440 * Math.pow(2, (item.pitch - 69) / 12);
-        gain.gain.setValueAtTime(0.12, ctx.currentTime + elapsed);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + elapsed + duration * 0.95);
-        oscillator.connect(gain).connect(ctx.destination);
-        oscillator.start(ctx.currentTime + elapsed);
-        oscillator.stop(ctx.currentTime + elapsed + duration);
+    setAudioMessage('');
+    audio.current?.pause();
+    try {
+      await ctx.resume();
+      if (context.current !== ctx) return;
+      let backing: AudioBuffer | null = null;
+      if (referenceAudio && referenceEnabled) {
+        setAudioMessage('함께 재생할 음원 준비 중…');
+        backing =
+          decodedAudio.current?.file === referenceAudio
+            ? decodedAudio.current.buffer
+            : await ctx.decodeAudioData(await referenceAudio.arrayBuffer());
+        if (context.current !== ctx) return;
+        decodedAudio.current = { file: referenceAudio, buffer: backing };
       }
-      elapsed += duration;
+      if (context.current !== ctx) return;
+      setAudioMessage('');
+      const destination = createScoreOutput(ctx, latestVolumes.current.score);
+      output.current = destination;
+      const startAt = ctx.currentTime + 0.04;
+      if (backing) {
+        referenceOutput.current = createScoreOutput(ctx, latestVolumes.current.reference);
+        scheduleScoreBacking(
+          ctx,
+          referenceOutput.current.input,
+          backing,
+          startAt,
+          startBeat,
+          endBeat,
+          score.bpm,
+          referenceOffset,
+        );
+        setAudioPosition(
+          Math.max(0, Math.min(backing.duration, referenceOffset + (startBeat * 60) / score.bpm)),
+        );
+      }
+      setPlaybackBeat(startBeat);
+      playbackTimer.current = setInterval(() => {
+        const beat = Math.min(
+          endBeat - MIN_SCORE_BEATS,
+          startBeat + Math.max(0, ((ctx.currentTime - startAt) * score.bpm) / 60),
+        );
+        setPlaybackBeat(Math.floor(beat * SCORE_DIVISIONS) / SCORE_DIVISIONS);
+        if (backing)
+          setAudioPosition(
+            Math.max(
+              0,
+              Math.min(
+                backing.duration,
+                referenceOffset +
+                  (startBeat * 60) / score.bpm +
+                  Math.max(0, ctx.currentTime - startAt),
+              ),
+            ),
+          );
+        if (ctx.currentTime >= startAt + ((endBeat - startBeat) * 60) / score.bpm) stop();
+      }, 40);
+      scheduleScorePassage(ctx, destination.input, score, part, startAt, startBeat, endBeat);
+      for (const { note: item, offset } of events) {
+        const elapsed = (offset * 60) / score.bpm;
+        timers.current.push(setTimeout(() => setCursor(item.id), (elapsed + 0.04) * 1000));
+      }
+    } catch {
+      if (context.current === ctx) {
+        stop();
+        setAudioMessage('함께 재생하지 못했어요. 음원을 다시 선택하거나 함께 재생을 꺼주세요.');
+      }
     }
-    timers.current.push(setTimeout(stop, elapsed * 1000 + 50));
   };
   const exportXml = () => {
     try {
@@ -208,559 +350,436 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   };
   return (
     <AppShell activeRoute="score-editor" onNavigate={navigate}>
-      <PageHeading>악보 편집</PageHeading>
-      {song && (
-        <ActionButton
-          secondary
-          onPress={() => navigate('song', { id: song.id, workspaceId, songTab: 'resources' })}
-        >
-          ← {song.title} 자료로 돌아가기
-        </ActionButton>
-      )}
+      <FlexRow wrap>
+        <PageHeading>악보 편집</PageHeading>
+        {song && (
+          <ActionButton
+            secondary
+            compact
+            onPress={() => navigate('song', { id: song.id, workspaceId, songTab: 'resources' })}
+          >
+            ← {song.title} 자료로 돌아가기
+          </ActionButton>
+        )}
+      </FlexRow>
       <Meta accessibilityLiveRegion="polite" style={saveFailed ? { color: '#be3b4b' } : undefined}>
-        개인 악보 · {status}
+        개인 악보 · {status} · TAB의 줄을 선택하고 숫자로 프렛을 입력하세요. 같은 박의 다른 줄에
+        입력하면 코드가 됩니다.
       </Meta>
-      <Meta>
-        4/4박자 · 파트별 단선율 악보. 음표를 선택해 수정하거나 복제하고, MusicXML로 내보낼 수
-        있어요.
-      </Meta>
-      <Surface>
-        <Input
-          accessibilityLabel="악보 제목"
-          value={score.title}
-          editable={loaded && !playing}
-          onChangeText={(title) => edit({ ...score, title })}
-        />
-        <FlexRow wrap>
-          <Meta>BPM</Meta>
-          <input
-            aria-label="악보 BPM"
-            type="number"
-            min="30"
-            max="300"
-            value={score.bpm}
-            disabled={!loaded || playing}
-            onChange={(event) =>
-              edit({ ...score, bpm: Math.min(300, Math.max(30, Number(event.target.value) || 30)) })
-            }
-          />
-          {!!arrangement.bpm && song && (
-            <ActionButton
-              secondary
-              compact
-              disabled={!loaded || playing}
-              onPress={() =>
-                edit({ ...score, bpm: Math.max(30, Math.min(300, Number(arrangement.bpm) || 120)) })
-              }
-            >
-              밴드 기준 {arrangement.bpm} BPM 가져오기
-            </ActionButton>
-          )}
-          <ActionButton
-            secondary
-            disabled={!history.length || playing}
+      <FlexRow wrap>
+        {score.parts.map((name) => (
+          <Pill
+            key={name}
+            accessibilityRole="button"
+            accessibilityState={{ selected: part === name }}
+            active={part === name}
             onPress={() => {
-              setFuture((all) => [score, ...all]);
-              setScore(history[history.length - 1]);
-              setHistory(history.slice(0, -1));
+              stop();
+              setPart(name);
+              setSelected(null);
             }}
           >
-            되돌리기
-          </ActionButton>
-          <ActionButton
-            secondary
-            disabled={!future.length || playing}
-            onPress={() => {
-              setHistory((all) => [...all, score]);
-              setScore(future[0]);
-              setFuture(future.slice(1));
-            }}
+            <PillText active={part === name}>{name}</PillText>
+          </Pill>
+        ))}
+      </FlexRow>
+      <section className="score-backing" aria-label="음원과 함께 재생">
+        <div className="score-backing-row">
+          <strong>함께 재생할 음원</strong>
+          <button
+            type="button"
+            disabled={!loaded || playing || audioLoading}
+            onClick={() => audioFileInput.current?.click()}
           >
-            다시 실행
-          </ActionButton>
-          <ActionButton secondary disabled={!loaded} onPress={exportXml}>
-            MusicXML 내보내기
-          </ActionButton>
-          <ActionButton secondary onPress={() => window.print()}>
-            인쇄 / PDF
-          </ActionButton>
-        </FlexRow>
-        <label>
-          MusicXML 가져오기{' '}
+            {audioLoading ? '음원 준비 중…' : referenceAudio ? '음원 교체' : '＋ 음원 추가'}
+          </button>
           <input
+            ref={audioFileInput}
             type="file"
-            accept=".musicxml,.xml"
-            aria-label="MusicXML 가져오기"
-            disabled={!loaded || playing}
+            hidden
+            accept="audio/*,.mp3,.wav,.m4a,.flac,.ogg"
+            aria-label="함께 재생할 음원 파일"
+            disabled={!loaded || playing || audioLoading}
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (!file) return;
-              if (file.size > 5 * 1024 * 1024) {
-                setStatus('5MB 이하 MusicXML 파일을 선택해주세요.');
-                return;
-              }
-              void file
-                .text()
-                .then((text) => {
-                  if (!alive.current || loadedKey.current !== key) return;
-                  try {
-                    const doc = new DOMParser().parseFromString(text, 'application/xml');
-                    if (doc.querySelector('parsererror') || !doc.querySelector('score-partwise'))
-                      throw new Error();
-                    const names = Array.from(doc.querySelectorAll('score-part')).map(
-                      (element) => element.querySelector('part-name')?.textContent || 'Part',
-                    );
-                    const partNames = new Map(
-                      Array.from(doc.querySelectorAll('score-part')).map((element, index) => [
-                        element.getAttribute('id'),
-                        names[index],
-                      ]),
-                    );
-                    const notes: Note[] = [];
-                    if (doc.querySelector('backup,forward,chord,grace,time-modification'))
-                      throw new Error();
-                    if (
-                      Array.from(doc.querySelectorAll('time')).some(
-                        (time) =>
-                          time.querySelector('beats')?.textContent !== '4' ||
-                          time.querySelector('beat-type')?.textContent !== '4',
-                      )
-                    )
-                      throw new Error();
-                    if (
-                      Array.from(doc.querySelectorAll('key fifths')).some(
-                        (key) => Number(key.textContent) !== 0,
-                      )
-                    )
-                      throw new Error();
-                    if (new Set(names).size !== names.length) throw new Error();
-                    Array.from(doc.querySelectorAll('part')).forEach((element) => {
-                      const partName = partNames.get(element.getAttribute('id'));
-                      if (!partName) throw new Error();
-                      let tied: Note | undefined;
-                      let division = 1;
-                      element.querySelectorAll('measure').forEach((measure) => {
-                        division =
-                          Number(measure.querySelector('divisions')?.textContent) || division;
-                        measure.querySelectorAll('note').forEach((node) => {
-                          const step = node.querySelector('step')?.textContent || 'C';
-                          const octave = Number(node.querySelector('octave')?.textContent || 4);
-                          const alter = Number(node.querySelector('alter')?.textContent || 0);
-                          const pitch =
-                            (octave + 1) * 12 +
-                            ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[step as 'C'] ?? 0) +
-                            alter;
-                          const item: Note = {
-                            id: crypto.randomUUID(),
-                            part: partName,
-                            pitch,
-                            beats:
-                              (Number(node.querySelector('duration')?.textContent) || division) /
-                              division,
-                            rest: !!node.querySelector('rest'),
-                            lyric: node.querySelector('lyric text')?.textContent || '',
-                            chord:
-                              node.previousElementSibling?.querySelector('direction-type words')
-                                ?.textContent || '',
-                            accent: !!node.querySelector('accent'),
-                          };
-                          if (node.querySelector('tie[type="stop"]')) {
-                            if (!tied || tied.pitch !== item.pitch || item.rest) throw new Error();
-                            tied.beats += item.beats;
-                          } else {
-                            if (tied) throw new Error();
-                            notes.push(item);
-                          }
-                          tied = node.querySelector('tie[type="start"]')
-                            ? (tied ?? item)
-                            : undefined;
-                        });
-                      });
-                      if (tied) throw new Error();
-                    });
-                    if (!names.length || names.length > 16 || notes.length > 2000)
-                      throw new Error();
-                    if (
-                      notes.some(
-                        (item) =>
-                          !Number.isFinite(item.beats) ||
-                          item.beats <= 0 ||
-                          item.beats > 64 ||
-                          !Number.isInteger(item.beats * 4) ||
-                          !Number.isInteger(item.pitch) ||
-                          item.pitch < 0 ||
-                          item.pitch > 127,
-                      )
-                    )
-                      throw new Error();
-                    edit({
-                      title: doc.querySelector('work-title')?.textContent || file.name,
-                      bpm: Math.max(
-                        30,
-                        Math.min(
-                          300,
-                          Number(doc.querySelector('sound[tempo]')?.getAttribute('tempo')) || 120,
-                        ),
-                      ),
-                      parts: names,
-                      notes,
-                      sync: {},
-                    });
-                    setPart(names[0]);
-                    setSelected(null);
-                  } catch {
-                    setStatus(
-                      '4/4박자·조표 없는 단선율 MusicXML을 선택해주세요. 최대 16파트·2,000개 음표를 지원하며 다성부·꾸밈음·잇단음표는 지원하지 않습니다.',
-                    );
-                  }
-                })
-                .catch(() => setStatus('파일을 읽지 못했어요. 다시 선택해주세요.'));
               event.target.value = '';
+              if (file) void loadAudio(file);
             }}
           />
-        </label>
-      </Surface>
-      <Surface>
-        <FlexRow wrap>
-          {score.parts.map((name) => (
-            <Pill
-              key={name}
-              accessibilityRole="button"
-              accessibilityState={{ selected: part === name }}
-              active={part === name}
-              onPress={() => {
-                stop();
-                setPart(name);
-                setSelected(null);
-                setConfirmPartDelete(false);
-                setPartName('');
+          <span className="score-backing-name">
+            {referenceAudio
+              ? score.referenceAudioName || '연결된 음원'
+              : 'MP3, WAV 등 · 최대 100MB'}
+          </span>
+          {referenceAudio && (
+            <button
+              disabled={playing || audioLoading}
+              onClick={() => {
+                audioLoadRequest.current++;
+                decodedAudio.current = null;
+                audio.current?.pause();
+                setReferenceAudio(null);
+                setAudioUrl('');
+                setAudioPosition(0);
+                setAudioMessage('');
+                setScore((current) => ({
+                  ...current,
+                  referenceAudioName: undefined,
+                  referenceAudioOffset: 0,
+                  referenceAudioVolume: undefined,
+                  referenceAudioEnabled: undefined,
+                  sync: {},
+                }));
               }}
             >
-              <PillText active={part === name}>{name}</PillText>
-            </Pill>
-          ))}
-        </FlexRow>
-        <FlexRow wrap>
-          <Input
-            accessibilityLabel="파트 이름"
-            placeholder="예: 리드 기타"
-            value={partName}
-            maxLength={40}
-            editable={loaded && !playing}
-            onChangeText={setPartName}
-            style={{ minWidth: 160, flex: 1 }}
-          />
-          <ActionButton
-            secondary
-            disabled={!loaded || playing || !partName.trim()}
-            onPress={() => {
-              try {
-                const next = renameScorePart(score, null, partName);
-                edit(next);
-                setPart(partName.trim());
-                setPartName('');
-                setPartMessage('');
-                setConfirmPartDelete(false);
-              } catch (error) {
-                setPartMessage((error as Error).message);
-              }
-            }}
-          >
-            파트 추가
-          </ActionButton>
-          <ActionButton
-            secondary
-            disabled={!loaded || playing || !partName.trim()}
-            onPress={() => {
-              try {
-                edit(renameScorePart(score, part, partName));
-                setPart(partName.trim());
-                setPartName('');
-                setPartMessage('');
-              } catch (error) {
-                setPartMessage((error as Error).message);
-              }
-            }}
-          >
-            이름 변경
-          </ActionButton>
-          <ActionButton
-            secondary
-            danger
-            disabled={!loaded || playing || score.parts.length <= 1}
-            onPress={() => setConfirmPartDelete(!confirmPartDelete)}
-          >
-            파트 삭제
-          </ActionButton>
-        </FlexRow>
-        {!!partMessage && <Meta accessibilityRole="alert">{partMessage}</Meta>}
-        {confirmPartDelete && (
-          <FlexRow wrap>
-            <Meta>
-              {part}의 음표 {visible.length}개도 삭제됩니다. 되돌리기로 복원할 수 있어요.
-            </Meta>
-            <ActionButton
-              danger
-              disabled={!loaded || playing}
-              onPress={() => {
-                edit(removeScorePart(score, part));
-                setConfirmPartDelete(false);
-              }}
-            >
-              삭제 적용
-            </ActionButton>
-            <ActionButton secondary onPress={() => setConfirmPartDelete(false)}>
-              취소
-            </ActionButton>
-          </FlexRow>
+              음원 연결 해제
+            </button>
+          )}
+        </div>
+        {referenceAudio && (
+          <>
+            <div className="score-backing-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={referenceEnabled}
+                  disabled={playing || audioLoading}
+                  onChange={(event) =>
+                    edit({ ...score, referenceAudioEnabled: event.target.checked })
+                  }
+                />
+                악보와 함께 재생
+              </label>
+              <label>
+                음원 음량
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  aria-label="음원 재생 음량"
+                  value={referenceVolume}
+                  onChange={(event) => changeReferenceVolume(Number(event.target.value))}
+                />
+              </label>
+              <output>{Math.round(referenceVolume * 100)}%</output>
+              <label>
+                첫 박의 음원 위치
+                <input
+                  key={referenceOffset}
+                  type="number"
+                  min="-36000"
+                  max="36000"
+                  step="0.01"
+                  aria-label="악보 첫 박의 음원 위치"
+                  defaultValue={referenceOffset}
+                  disabled={playing || audioLoading}
+                  onBlur={(event) => {
+                    const raw = Number(event.currentTarget.value);
+                    const value =
+                      event.currentTarget.value.trim() && Number.isFinite(raw)
+                        ? Math.max(-36000, Math.min(36000, raw))
+                        : referenceOffset;
+                    event.currentTarget.value = String(value);
+                    if (value !== referenceOffset) edit({ ...score, referenceAudioOffset: value });
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur();
+                  }}
+                />
+                초
+              </label>
+              {playing && referenceEnabled && (
+                <span role="status">음원 {audioPosition.toFixed(2)}초</span>
+              )}
+            </div>
+            <p>
+              아래 악보의 재생 버튼이나 Space로 함께 재생합니다. 전주가 5초면 첫 박의 음원 위치를
+              5초로 맞추세요. 음원 속도는 그대로이므로 BPM을 음원 템포에 맞춰주세요.
+            </p>
+          </>
         )}
-        <Heading>{part}</Heading>
-        <FlexRow wrap>
-          <label>
-            음정{' '}
-            <select
-              aria-label="입력 음정"
-              value={pitch}
-              onChange={(event) => setPitch(Number(event.target.value))}
-            >
-              {Array.from({ length: 37 }, (_, i) => i + 48).map((value) => (
-                <option key={value} value={value}>
-                  {pitchName(value)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            길이{' '}
-            <select
-              aria-label="음표 길이"
-              value={beats}
-              onChange={(event) => setBeats(Number(event.target.value))}
-            >
-              {[0.25, 0.5, 1, 2, 4].map((value) => (
-                <option key={value} value={value}>
-                  {value}박
-                </option>
-              ))}
-            </select>
-          </label>
-          <ActionButton secondary onPress={() => setRest(!rest)}>
-            {rest ? '쉼표 입력' : '음표 입력'}
-          </ActionButton>
-          <ActionButton
-            disabled={!loaded || playing}
-            onPress={() => {
-              const item = {
-                id: crypto.randomUUID(),
-                part,
-                pitch,
-                beats,
-                rest,
-                chord: '',
-                lyric: '',
-                accent: false,
-              };
-              try {
-                edit(insertScoreNote(score, item, selected));
-                setSelected(item.id);
-              } catch (error) {
-                setPartMessage((error as Error).message);
-              }
-            }}
-          >
-            {selected ? '선택 뒤에 추가' : '음표 추가'}
-          </ActionButton>
-          <ActionButton
-            secondary
-            disabled={!loaded || playing || score.notes.length >= 2000}
-            onPress={() => {
-              const used = visible.reduce((sum, item) => sum + item.beats, 0) % 4;
-              const item: Note = {
-                id: crypto.randomUUID(),
-                part,
-                pitch: 60,
-                beats: used ? 4 - used : 4,
-                rest: true,
-                chord: '',
-                lyric: '',
-                accent: false,
-              };
-              edit(insertScoreNote(score, item));
-              setSelected(item.id);
-            }}
-          >
-            쉼표로 마디 채우기
-          </ActionButton>
-          <ActionButton secondary disabled={!visible.length} onPress={play}>
-            {playing ? '재생 정지' : '파트 재생'}
-          </ActionButton>
-          <ActionButton secondary onPress={() => setZoom(Math.max(50, zoom - 10))}>
-            −
-          </ActionButton>
-          <Meta>{zoom}%</Meta>
-          <ActionButton secondary onPress={() => setZoom(Math.min(180, zoom + 10))}>
-            +
-          </ActionButton>
-        </FlexRow>
-        <ScoreStaff
-          score={score}
-          part={part}
-          selected={selected}
-          cursor={cursor}
-          zoom={zoom}
-          onSelect={setSelected}
-        />
-        {/* Accessible note list complements the staff. */}
-
-        <FlexRow wrap>
-          {visible.map((item, index) => (
-            <ActionButton key={item.id} secondary compact onPress={() => setSelected(item.id)}>
-              {index + 1}: {item.rest ? '쉼표' : pitchName(item.pitch)}
-            </ActionButton>
-          ))}
-        </FlexRow>
-        {!visible.length ? <Meta>음정과 길이를 고른 뒤 첫 음표를 추가해보세요.</Meta> : null}
-      </Surface>
-      {note ? (
+        {audioMessage && <p role="status">{audioMessage}</p>}
+      </section>
+      <GuitarTabEditor
+        onEditComplete={finishEdit}
+        clipboard={clipboard}
+        onCopy={setClipboard}
+        key={part}
+        score={score}
+        part={part}
+        selected={selected}
+        cursor={cursor}
+        playbackBeat={playbackBeat}
+        loaded={loaded && !audioLoading}
+        playing={playing}
+        onSelect={setSelected}
+        onEdit={edit}
+        onPlay={play}
+        volume={volume}
+        onVolumeChange={changeVolume}
+        canUndo={!!history.length}
+        canRedo={!!future.length}
+        onUndo={() => {
+          editGroup.current = null;
+          if (!history.length || playing) return;
+          setFuture((all) => [score, ...all]);
+          setScore(history[history.length - 1]);
+          setHistory(history.slice(0, -1));
+        }}
+        onRedo={() => {
+          editGroup.current = null;
+          if (!future.length || playing) return;
+          setHistory((all) => [...all, score]);
+          setScore(future[0]);
+          setFuture(future.slice(1));
+        }}
+      />
+      <details className="score-advanced">
+        <summary>악보 설정 · 파트 관리 · MusicXML 가져오기 / 내보내기</summary>
         <Surface>
-          <Heading>선택한 음표</Heading>
-          <Copy>
-            {pitchName(note.pitch)} · {note.beats}박
-          </Copy>
+          <Input
+            accessibilityLabel="악보 제목"
+            value={score.title}
+            editable={loaded && !playing}
+            onChangeText={(title) => edit({ ...score, title }, 'title')}
+            onBlur={finishEdit}
+          />
           <FlexRow wrap>
+            {!!arrangement.bpm && song && (
+              <ActionButton
+                secondary
+                compact
+                disabled={!loaded || playing}
+                onPress={() =>
+                  edit({
+                    ...score,
+                    bpm: Math.max(30, Math.min(300, Number(arrangement.bpm) || 120)),
+                  })
+                }
+              >
+                밴드 기준 {arrangement.bpm} BPM 가져오기
+              </ActionButton>
+            )}
             <ActionButton
               secondary
-              disabled={playing}
-              onPress={() => update({ pitch: Math.min(127, note.pitch + 1) })}
-            >
-              반음 올림
-            </ActionButton>
-            <ActionButton
-              secondary
-              disabled={playing}
-              onPress={() => update({ pitch: Math.max(0, note.pitch - 1) })}
-            >
-              반음 내림
-            </ActionButton>
-            <ActionButton secondary onPress={() => update({ beats, rest })}>
-              선택한 길이·종류 적용
-            </ActionButton>
-            <ActionButton
-              secondary
-              disabled={!loaded || playing || score.notes.length >= 2000}
+              disabled={!history.length || playing}
               onPress={() => {
-                const copy = { ...note, id: crypto.randomUUID() };
-                edit(insertScoreNote(score, copy, note.id));
-                setSelected(copy.id);
+                editGroup.current = null;
+                setFuture((all) => [score, ...all]);
+                setScore(history[history.length - 1]);
+                setHistory(history.slice(0, -1));
               }}
             >
-              음표 복제
+              되돌리기
             </ActionButton>
             <ActionButton
               secondary
-              disabled={playing || visible[0]?.id === note.id}
-              onPress={() => edit(moveScoreNote(score, note.id, -1))}
+              disabled={!future.length || playing}
+              onPress={() => {
+                editGroup.current = null;
+                setHistory((all) => [...all, score]);
+                setScore(future[0]);
+                setFuture(future.slice(1));
+              }}
             >
-              앞으로 이동
+              다시 실행
+            </ActionButton>
+            <ActionButton secondary disabled={!loaded} onPress={exportXml}>
+              MusicXML 내보내기
+            </ActionButton>
+            <ActionButton secondary onPress={() => window.print()}>
+              인쇄 / PDF
+            </ActionButton>
+          </FlexRow>
+          <label>
+            MusicXML 가져오기{' '}
+            <input
+              type="file"
+              accept=".musicxml,.xml"
+              aria-label="MusicXML 가져오기"
+              disabled={!loaded || playing}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                if (file.size > 5 * 1024 * 1024) {
+                  setStatus('5MB 이하 MusicXML 파일을 선택해주세요.');
+                  return;
+                }
+                void file
+                  .text()
+                  .then((text) => {
+                    if (!alive.current || loadedKey.current !== key) return;
+                    try {
+                      const imported = scoreFromMusicXml(text);
+                      edit(imported);
+                      setPart(imported.parts[0]);
+                      setSelected(null);
+                    } catch (error) {
+                      setStatus(
+                        error instanceof Error ? error.message : 'MusicXML 파일을 읽지 못했어요.',
+                      );
+                    }
+                  })
+                  .catch(() => setStatus('파일을 읽지 못했어요. 다시 선택해주세요.'));
+                event.target.value = '';
+              }}
+            />
+          </label>
+        </Surface>
+        <Surface>
+          <FlexRow wrap>
+            {score.parts.map((name) => (
+              <Pill
+                key={name}
+                accessibilityRole="button"
+                accessibilityState={{ selected: part === name }}
+                active={part === name}
+                onPress={() => {
+                  stop();
+                  setPart(name);
+                  setSelected(null);
+                  setConfirmPartDelete(false);
+                  setPartName('');
+                }}
+              >
+                <PillText active={part === name}>{name}</PillText>
+              </Pill>
+            ))}
+          </FlexRow>
+          <FlexRow wrap>
+            <Input
+              accessibilityLabel="파트 이름"
+              placeholder="예: 리드 기타"
+              value={partName}
+              maxLength={40}
+              editable={loaded && !playing}
+              onChangeText={setPartName}
+              style={{ minWidth: 160, flex: 1 }}
+            />
+            <ActionButton
+              secondary
+              disabled={!loaded || playing || !partName.trim()}
+              onPress={() => {
+                try {
+                  const next = renameScorePart(score, null, partName);
+                  edit(next);
+                  setPart(partName.trim());
+                  setPartName('');
+                  setPartMessage('');
+                  setConfirmPartDelete(false);
+                } catch (error) {
+                  setPartMessage((error as Error).message);
+                }
+              }}
+            >
+              파트 추가
             </ActionButton>
             <ActionButton
               secondary
-              disabled={playing || visible.at(-1)?.id === note.id}
-              onPress={() => edit(moveScoreNote(score, note.id, 1))}
+              disabled={!loaded || playing || !partName.trim()}
+              onPress={() => {
+                try {
+                  edit(renameScorePart(score, part, partName));
+                  setPart(partName.trim());
+                  setPartName('');
+                  setPartMessage('');
+                } catch (error) {
+                  setPartMessage((error as Error).message);
+                }
+              }}
             >
-              뒤로 이동
-            </ActionButton>
-            <ActionButton
-              secondary
-              disabled={playing}
-              onPress={() => update({ accent: !note.accent })}
-            >
-              {note.accent ? '악센트 해제' : '악센트'}
+              이름 변경
             </ActionButton>
             <ActionButton
               secondary
               danger
-              onPress={() => {
-                edit(removeScoreNotes(score, [note.id]));
-                setSelected(null);
-              }}
+              disabled={!loaded || playing || score.parts.length <= 1}
+              onPress={() => setConfirmPartDelete(!confirmPartDelete)}
             >
-              삭제
+              파트 삭제
             </ActionButton>
           </FlexRow>
-          <Input
-            accessibilityLabel="선택 음표 코드"
-            editable={!playing}
-            value={note.chord}
-            onChangeText={(chord) => update({ chord })}
-            placeholder="코드"
-          />
-          <Input
-            accessibilityLabel="선택 음표 가사"
-            editable={!playing}
-            value={note.lyric}
-            onChangeText={(lyric) => update({ lyric })}
-            placeholder="가사"
-          />
+          {!!partMessage && <Meta accessibilityRole="alert">{partMessage}</Meta>}
+          {confirmPartDelete && (
+            <FlexRow wrap>
+              <Meta>
+                {part}의 음표 {visible.length}개도 삭제됩니다. 되돌리기로 복원할 수 있어요.
+              </Meta>
+              <ActionButton
+                danger
+                disabled={!loaded || playing}
+                onPress={() => {
+                  edit(removeScorePart(score, part));
+                  setConfirmPartDelete(false);
+                }}
+              >
+                삭제 적용
+              </ActionButton>
+              <ActionButton secondary onPress={() => setConfirmPartDelete(false)}>
+                취소
+              </ActionButton>
+            </FlexRow>
+          )}
         </Surface>
-      ) : null}
-      <Surface>
-        <Heading>기준 음원과 싱크</Heading>
-        <input
-          aria-label="악보 기준 음원"
-          disabled={!loaded}
-          type="file"
-          accept="audio/*"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) {
-              if (file.size > 104857600) {
-                setStatus('100MB 이하 음원을 선택해주세요.');
-                return;
+      </details>
+      <details className="score-advanced">
+        <summary>기준 음원과 악보 싱크</summary>
+        <Surface>
+          <Heading>기준 음원과 싱크</Heading>
+          <Meta>상단에서 추가한 음원을 미리 듣고 악보의 시작 위치를 맞출 수 있어요.</Meta>
+          {audioUrl ? (
+            <audio
+              ref={audio}
+              controls={!playing}
+              src={audioUrl}
+              onPlay={(event) => {
+                if (playing) event.currentTarget.pause();
+              }}
+              onTimeUpdate={(event) => {
+                if (playing) return;
+                const time = event.currentTarget.currentTime;
+                setAudioPosition(time);
+                const current = Object.entries(score.sync)
+                  .filter(([, value]) => value <= time)
+                  .sort((a, b) => b[1] - a[1])[0];
+                if (current) setCursor(current[0]);
+              }}
+              style={{ width: '100%' }}
+            />
+          ) : null}
+          <Meta>
+            {audioPosition.toFixed(2)}초 · 음표를 선택해 현재 음원 위치와 연결하세요. 기준 음원도
+            비공개로 저장됩니다.
+          </Meta>
+          <ActionButton
+            secondary
+            disabled={!selected || !audioUrl || playing || audioLoading}
+            onPress={() => {
+              const index = visible.findIndex((item) => item.id === selected);
+              if (index >= 0 && selected) {
+                const beat = visible.slice(0, index).reduce((sum, note) => sum + note.beats, 0);
+                const time = audio.current?.currentTime ?? audioPosition;
+                edit({
+                  ...score,
+                  sync: { ...score.sync, [selected]: time },
+                  referenceAudioOffset: time - (beat * 60) / score.bpm,
+                });
               }
-              setReferenceAudio(file);
-              setAudioUrl(URL.createObjectURL(file));
-            }
-          }}
-        />
-        {audioUrl ? (
-          <audio
-            ref={audio}
-            controls
-            src={audioUrl}
-            onTimeUpdate={(event) => {
-              const time = event.currentTarget.currentTime;
-              setAudioPosition(time);
-              const current = Object.entries(score.sync)
-                .filter(([, value]) => value <= time)
-                .sort((a, b) => b[1] - a[1])[0];
-              if (current) setCursor(current[0]);
             }}
-            style={{ width: '100%' }}
-          />
-        ) : null}
-        <Meta>
-          {audioPosition.toFixed(2)}초 · 음표를 선택해 현재 음원 위치와 연결하세요. 기준 음원도
-          비공개로 저장됩니다.
-        </Meta>
-        <ActionButton
-          secondary
-          disabled={!selected || !audioUrl}
-          onPress={() => {
-            if (selected) edit({ ...score, sync: { ...score.sync, [selected]: audioPosition } });
-          }}
-        >
-          선택 음표 싱크 저장
-        </ActionButton>
-        <ActionButton
-          secondary
-          onPress={() =>
-            navigate('personal-practice', entityId ? { id: entityId, workspaceId } : undefined)
-          }
-        >
-          연습실로 이동
-        </ActionButton>
-      </Surface>
+          >
+            선택 음표와 음원 위치 맞추기
+          </ActionButton>
+          <ActionButton
+            secondary
+            onPress={() =>
+              navigate('personal-practice', entityId ? { id: entityId, workspaceId } : undefined)
+            }
+          >
+            연습실로 이동
+          </ActionButton>
+        </Surface>
+      </details>
     </AppShell>
   );
 }
