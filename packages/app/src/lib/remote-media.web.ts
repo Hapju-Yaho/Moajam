@@ -1,0 +1,79 @@
+import { api, currentIdentity, uploadRemoteFile } from './remote';
+import { readPersonal, writePersonal } from './personal-store';
+const assets = new WeakMap<Blob, { user: string; id: Promise<string> }>();
+const queues = new Map<string, Promise<unknown>>();
+type AssetRef = { __moajamAssetId: string };
+async function encode(
+  value: unknown,
+  key: string,
+  user: string,
+  name = 'recording.webm',
+): Promise<unknown> {
+  if (value instanceof Blob) {
+    let cached = assets.get(value);
+    if (!cached || cached.user !== user) {
+      const uploaded = uploadRemoteFile(
+        value,
+        value instanceof File ? value.name : name,
+        `personal/${key}`,
+        undefined,
+        user,
+      );
+      cached = { user, id: uploaded };
+      assets.set(value, cached);
+      uploaded.catch(() => assets.delete(value));
+    }
+    return { __moajamAssetId: await cached.id };
+  }
+  if (Array.isArray(value)) return Promise.all(value.map((item) => encode(item, key, user, name)));
+  if (value && typeof value === 'object') {
+    const row = value as Record<string, unknown>;
+    return Object.fromEntries(
+      await Promise.all(
+        Object.entries(row).map(async ([field, item]) => [
+          field,
+          await encode(item, key, user, typeof row.name === 'string' ? row.name : name),
+        ]),
+      ),
+    );
+  }
+  return value;
+}
+async function decode(value: unknown, user: string): Promise<unknown> {
+  if (Array.isArray(value)) return Promise.all(value.map((item) => decode(item, user)));
+  if (value && typeof value === 'object') {
+    if ('__moajamAssetId' in value) {
+      const id = (value as AssetRef).__moajamAssetId;
+      const { url } = await api<{ url: string }>(`/assets/${id}/download`, 'GET', undefined, user);
+      const result = await fetch(url);
+      if (!result.ok) throw new Error('개인 파일을 불러오지 못했습니다.');
+      const blob = await result.blob();
+      assets.set(blob, { user, id: Promise.resolve(id) });
+      return blob;
+    }
+    return Object.fromEntries(
+      await Promise.all(Object.entries(value).map(async ([k, v]) => [k, await decode(v, user)])),
+    );
+  }
+  return value;
+}
+export async function readRemoteMedia<T>(key: string, owner?: string): Promise<T | undefined> {
+  const user = owner ?? (await currentIdentity());
+  if (!user) throw new Error('로그인이 필요합니다.');
+  await queues.get(`${user}/${key}`)?.catch(() => {});
+  return (await decode(await readPersonal(key, user), user)) as T | undefined;
+}
+export async function writeRemoteMedia(key: string, value: unknown, owner?: string) {
+  const user = owner ?? (await currentIdentity());
+  if (!user) throw new Error('로그인이 필요합니다.');
+  const ref = `${user}/${key}`;
+  const task = (queues.get(ref) ?? Promise.resolve())
+    .catch(() => {})
+    .then(async () => writePersonal(key, await encode(value, key, user), user));
+  queues.set(ref, task);
+  try {
+    await task;
+  } finally {
+    if (queues.get(ref) === task) queues.delete(ref);
+  }
+}

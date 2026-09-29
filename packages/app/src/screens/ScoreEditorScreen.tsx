@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AppShell } from '../components/AppShell';
 import { ActionButton, FlexRow, Heading, Meta, Surface } from '../components/ProductUI';
 import { Input } from '../styles/layout';
@@ -10,6 +10,8 @@ import type { ScreenProps } from '../navigation';
 export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   const { workspaceId, adoptedSongs } = useMockAppState();
   const key = `score/${entityId ? workspaceId + '/' + entityId : 'personal'}`;
+  const defaultTitle = useRef('나의 악보');
+  defaultTitle.current = adoptedSongs.find((song) => song.id === entityId)?.title ?? '나의 악보';
   const [score, setScore] = useState<Score>({
     title: adoptedSongs.find((song) => song.id === entityId)?.title ?? '나의 악보',
     bpm: 120,
@@ -18,6 +20,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
     sync: {},
   });
   const [ready, setReady] = useState(false);
+  const loadedKey = useRef('');
   const [message, setMessage] = useState('');
   const [part, setPart] = useState('Guitar');
   const [pitch, setPitch] = useState(60);
@@ -27,13 +30,25 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   const [future, setFuture] = useState<Score[]>([]);
   useEffect(() => {
     let active = true;
+    loadedKey.current = '';
+    setReady(false);
+    setHistory([]);
+    setFuture([]);
     void readMedia<Score>(key)
       .then((value) => {
         if (active) {
           if (value) {
             setScore(value);
             setPart(value.parts[0]);
-          }
+          } else
+            setScore({
+              title: defaultTitle.current,
+              bpm: 120,
+              notes: [],
+              parts: ['Guitar', 'Vocal', 'Bass', 'Drums'],
+              sync: {},
+            });
+          loadedKey.current = key;
           setReady(true);
         }
       })
@@ -43,9 +58,9 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
     };
   }, [key]);
   useEffect(() => {
-    if (ready)
+    if (ready && loadedKey.current === key)
       void writeMedia(key, score)
-        .then(() => setMessage('이 기기에 저장됨'))
+        .then(() => setMessage('저장됨 · 비공개'))
         .catch(() => setMessage('저장에 실패했습니다. 파일로 내보내주세요.'));
   }, [key, ready, score]);
   function edit(next: Score) {
@@ -56,6 +71,14 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   return (
     <AppShell activeRoute="score-editor" onNavigate={navigate}>
       <Heading>악보 편집</Heading>
+      {entityId && (
+        <ActionButton
+          secondary
+          onPress={() => navigate('song', { id: entityId, workspaceId, songTab: 'resources' })}
+        >
+          ← 곡 자료로 돌아가기
+        </ActionButton>
+      )}
       <Meta>{message}</Meta>
       <Surface>
         <Input

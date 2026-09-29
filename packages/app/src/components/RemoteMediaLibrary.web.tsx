@@ -11,9 +11,11 @@ type Asset = {
   visibility: string;
 };
 export function RemoteMediaLibrary({ scopeKey }: { scopeKey: string }) {
-  const { workspaceId, currentUserId } = useMockAppState();
+  const { currentUserId } = useMockAppState();
   const band =
-    scopeKey.startsWith('song/') || scopeKey.startsWith('session/') ? workspaceId : undefined;
+    scopeKey.startsWith('song/') || scopeKey.startsWith('session/')
+      ? scopeKey.split('/')[1]
+      : undefined;
   const [files, setFiles] = useState<Asset[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -63,7 +65,8 @@ export function RemoteMediaLibrary({ scopeKey }: { scopeKey: string }) {
           const list = Array.from(event.target.files ?? []);
           event.target.value = '';
           void perform(async () => {
-            for (const file of list) await uploadRemoteFile(file, file.name, scopeKey, band);
+            for (const file of list)
+              await uploadRemoteFile(file, file.name, scopeKey, band, currentUserId);
           });
         }}
       />

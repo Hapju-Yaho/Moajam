@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useIdentity } from '../state/Identity';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
-import { Notifications } from '../components/Notifications';
+import { ScheduleDashboard } from '../components/ScheduleDashboard';
 import { AppShell } from '../components/AppShell';
 import {
   ActionButton,
@@ -15,26 +15,24 @@ import {
   PageTop,
   Pill,
   PillText,
-  ResponsiveGrid,
   SongCover,
-  Stack,
   StatTile,
   Surface,
 } from '../components/ProductUI';
-import { EventRow, RehearsalCalendar } from '../components/RehearsalCalendar';
 import { useMockAppState } from '../state/MockAppState';
 import type { AppRoute, ScreenProps } from '../navigation';
 import { Input } from '../styles/layout';
 import { conflictingRehearsals } from '../state/workspaceModel';
 import { downloadText } from '../lib/platformActions';
 import { dateKey } from '../mocks/workspaces';
+import { usePersonalSchedules } from '../state/personalSchedules';
 
 export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRoute }) {
   const { workspaces, allSongs, allRehearsals, updatePreparation } = useMockAppState();
   const currentUserId = useIdentity();
+  const personal = usePersonalSchedules();
   const { width } = useWindowDimensions();
   const [bandWidth, setBandWidth] = useState(900);
-  const [calendarHeight, setCalendarHeight] = useState(600);
   const [bandFilter, setBandFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [preparationFilter, setPreparationFilter] = useState('all');
@@ -43,21 +41,35 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
   const songs = allSongs
     .filter(
       (song) =>
-        (bandFilter === 'all' || song.workspaceId === bandFilter) &&
+        (bandFilter === 'all' || bandFilter === 'personal' || song.workspaceId === bandFilter) &&
         (preparationFilter === 'all' || song.myStatus === preparationFilter) &&
         `${song.title} ${song.artist}`.toLowerCase().includes(query.toLowerCase()),
     )
     .sort((a, b) => Number(a.myStatus === 'READY') - Number(b.myStatus === 'READY'));
-  const events = allRehearsals.filter(
-    (event) => bandFilter === 'all' || event.workspaceId === bandFilter,
-  );
+  const personalEvents = personal.events.map((event) => ({
+    ...event,
+    personal: true,
+    workspaceId: 'personal',
+    bandName: '개인 일정',
+    bandColor: '#8963bd',
+  }));
+  const events = [...allRehearsals, ...personalEvents]
+    .filter((event) => bandFilter === 'all' || event.workspaceId === bandFilter)
+    .sort((a, b) => `${a.date}T${a.start}`.localeCompare(`${b.date}T${b.start}`));
   const upcoming = events.filter((event) => new Date(`${event.date}T${event.end}`) >= new Date());
-  const title = home ? '우리의 다음 합주' : calendar ? '합주 일정' : '참여 곡';
+  const title = home ? '우리의 다음 합주' : calendar ? '내 캘린더' : '참여 곡';
   const filtered = (
     <FlexRow wrap>
       <Pill active={bandFilter === 'all'} onPress={() => setBandFilter('all')}>
-        <PillText active={bandFilter === 'all'}>모든 밴드</PillText>
+        <PillText active={bandFilter === 'all'}>
+          {home || calendar ? '전체 일정' : '모든 밴드'}
+        </PillText>
       </Pill>
+      {(home || calendar) && (
+        <Pill active={bandFilter === 'personal'} onPress={() => setBandFilter('personal')}>
+          <PillText active={bandFilter === 'personal'}>개인 일정</PillText>
+        </Pill>
+      )}
       {workspaces.map((band) => (
         <Pill key={band.id} active={bandFilter === band.id} onPress={() => setBandFilter(band.id)}>
           <PillText active={bandFilter === band.id}>{band.name}</PillText>
@@ -134,7 +146,7 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
             {home
               ? '함께할 밴드, 함께 맞출 곡. 나의 음악 활동을 한곳에서.'
               : calendar
-                ? '내가 속한 모든 밴드의 합주를 한눈에 확인해요.'
+                ? '나만의 개인 일정과 밴드에 공유된 팀 일정을 한눈에 확인해요.'
                 : '밴드마다 맡은 파트와 연습할 곡을 모아봐요.'}
           </PageDescription>
         </PageTop>
@@ -144,7 +156,7 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
       </FlexBetween>
       {conflictingRehearsals(upcoming).length ? (
         <Surface tint="#fff7ed">
-          <Heading>겹치는 합주 일정</Heading>
+          <Heading>겹치는 일정</Heading>
           {conflictingRehearsals(upcoming).map((event) => (
             <Meta key={`${event.workspaceId}/${event.id}`}>
               {event.date} {event.start}–{event.end} · {event.bandName}
@@ -206,7 +218,7 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
         <>
           <FlexRow wrap>
             <StatTile icon="users" label="함께하는 밴드" value={`${workspaces.length}개`} />
-            <StatTile icon="calendar" label="다가오는 합주" value={`${upcoming.length}회`} />
+            <StatTile icon="calendar" label="다가오는 일정" value={`${upcoming.length}건`} />
             <StatTile icon="songs" label="참여 곡" value={`${allSongs.length}곡`} />
           </FlexRow>
           <Heading>내 밴드</Heading>
@@ -248,38 +260,13 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
         </>
       )}
       {filtered}
+      {(home || calendar) && personal.error && (
+        <Meta accessibilityRole="alert">
+          개인 일정을 불러오지 못했어요. 새로고침 후 다시 시도해주세요.
+        </Meta>
+      )}
       {home || calendar ? (
-        <ResponsiveGrid stacked={width < 1100}>
-          <View
-            style={{
-              flex: 1.65,
-              minWidth: 0,
-              alignSelf: 'flex-start',
-              width: width < 1100 ? '100%' : undefined,
-            }}
-            onLayout={(event) => setCalendarHeight(event.nativeEvent.layout.height)}
-          >
-            <RehearsalCalendar events={events} navigate={navigate} compact={home} />
-          </View>
-          <Stack style={{ flex: 1, minWidth: 0 }}>
-            <Surface style={{ height: calendarHeight / 2, minHeight: 230 }}>
-              <Heading>다가오는 합주</Heading>
-              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator>
-                {upcoming.map((event) => (
-                  <EventRow
-                    key={`${event.workspaceId}/${event.id}`}
-                    event={event}
-                    navigate={navigate}
-                  />
-                ))}
-                {!upcoming.length && (
-                  <Meta>예정된 합주가 없어요. 캘린더에서 다음 일정을 등록해보세요.</Meta>
-                )}
-              </ScrollView>
-            </Surface>
-            <Notifications title="최근 알림" height={Math.max(230, calendarHeight / 2 - 16)} />
-          </Stack>
-        </ResponsiveGrid>
+        <ScheduleDashboard events={events} navigate={navigate} compact={home} />
       ) : null}
       {!calendar && (
         <Surface>

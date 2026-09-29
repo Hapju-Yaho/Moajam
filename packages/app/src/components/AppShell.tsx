@@ -244,6 +244,51 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
     setSwitcherOpen(false);
     onNavigate('home', { workspaceId: id });
   };
+  const openCreate = () => {
+    setSwitcherOpen(false);
+    setCreateError('');
+    setCreating(true);
+  };
+  const openJoin = () => {
+    setSwitcherOpen(false);
+    setJoining(true);
+  };
+  const bandActions = (
+    <Stack
+      gap={4}
+      style={{ paddingTop: 6, marginTop: 4, borderTopWidth: 1, borderTopColor: '#e1e7f0' }}
+    >
+      <NavItem accessibilityRole="button" onPress={openCreate} style={{ minHeight: 40 }}>
+        <NavIcon>
+          <SidebarText style={{ fontSize: 20, color: theme.colors.primary }}>＋</SidebarText>
+        </NavIcon>
+        <NavLabel active>밴드 만들기</NavLabel>
+      </NavItem>
+      <NavItem accessibilityRole="button" onPress={openJoin} style={{ minHeight: 40 }}>
+        <NavIcon>
+          <AppIcon name="user-plus" size={18} color="#56657c" />
+        </NavIcon>
+        <NavLabel>밴드 참여하기</NavLabel>
+      </NavItem>
+    </Stack>
+  );
+  const emptyBand = (
+    <View style={{ padding: 14, gap: 14 }}>
+      <WorkspaceThumb style={{ backgroundColor: '#eaf0fc' }}>
+        <AppIcon name="guitar" color={theme.colors.primary} size={20} />
+      </WorkspaceThumb>
+      <View style={{ gap: 6 }}>
+        <SidebarText style={{ fontWeight: '600' }}>밴드와 함께 시작해요</SidebarText>
+        <Meta>새 밴드를 만들거나 초대받은 밴드에 참여해보세요.</Meta>
+      </View>
+      <Stack gap={8}>
+        <ActionButton onPress={openCreate}>밴드 만들기</ActionButton>
+        <ActionButton secondary onPress={openJoin}>
+          밴드 참여하기
+        </ActionButton>
+      </Stack>
+    </View>
+  );
   const nav = (items: typeof bandItems) =>
     items.map((item) => {
       const active = activeGroup(activeRoute, item.route);
@@ -298,31 +343,11 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
               <BrandName>moajam</BrandName>
             </BrandButton>
             <NavGroupLabel>개인 공간</NavGroupLabel>
-            <Stack gap={2}>
-              {nav(personalItems)}
-              <NavItem
-                accessibilityRole="button"
-                onPress={() => {
-                  setCreating(true);
-                  setSwitcherOpen(false);
-                }}
-              >
-                <NavIcon>
-                  <AppIcon name="users" size={18} color="#56657c" />
-                </NavIcon>
-                <NavLabel>밴드 만들기</NavLabel>
-              </NavItem>
-              <NavItem accessibilityRole="button" onPress={() => setJoining(true)}>
-                <NavIcon>
-                  <AppIcon name="user-plus" size={18} color="#56657c" />
-                </NavIcon>
-                <NavLabel>밴드 참여하기</NavLabel>
-              </NavItem>
-            </Stack>
+            <Stack gap={2}>{nav(personalItems)}</Stack>
             <NavGroupLabel>밴드 공간</NavGroupLabel>
             <WorkspaceCard>
-              {switcher}
-              {switcherOpen && (
+              {workspaces.length ? switcher : emptyBand}
+              {workspaces.length > 0 && switcherOpen && (
                 <Stack gap={4} style={{ padding: 6, borderTopWidth: 1, borderTopColor: '#e1e7f0' }}>
                   {workspaces.map((band) => (
                     <NavItem
@@ -351,7 +376,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                       {workspace?.id === band.id && <Meta>✓</Meta>}
                     </NavItem>
                   ))}
-                  {!workspaces.length && <Meta>참여 중인 밴드가 없어요.</Meta>}
+                  {bandActions}
                 </Stack>
               )}
             </WorkspaceCard>
@@ -479,7 +504,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                     <ActionButton
                       onPress={() => {
                         setConfirmReload(false);
-                        void reloadRemote();
+                        void reloadRemote().catch(() => {});
                       }}
                     >
                       서버 기록으로 교체
@@ -577,40 +602,47 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                 >
                   개인 공간 · 모든 밴드 모아보기
                 </ActionButton>
-                <Meta>내 밴드</Meta>
-                <ScrollView style={{ maxHeight: 310 }} contentContainerStyle={{ gap: 8 }}>
-                  {workspaces.map((band) => (
-                    <Pressable
-                      key={band.id}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${band.name} 선택`}
-                      onPress={() => choose(band.id)}
-                      style={{
-                        padding: 14,
-                        borderRadius: 12,
-                        backgroundColor: band.id === workspace?.id ? '#edf3ff' : '#f7f9fc',
-                        borderLeftWidth: 4,
-                        borderLeftColor: band.color,
-                      }}
-                    >
-                      <Copy style={{ fontWeight: '500' }}>
-                        {band.name}
-                        {band.id === workspace?.id ? ' ✓' : ''}
-                      </Copy>
-                      <Meta>
-                        {band.members.find((member) => member.id === currentUserId)?.part} ·{' '}
-                        {band.members.find((member) => member.id === currentUserId)?.role ===
-                        'OWNER'
-                          ? '관리자'
-                          : '멤버'}{' '}
-                        · {band.members.length}명
-                      </Meta>
-                    </Pressable>
-                  ))}
-                </ScrollView>
+                {workspaces.length > 0 ? (
+                  <>
+                    <Meta>내 밴드</Meta>
+                    <ScrollView style={{ maxHeight: 310 }} contentContainerStyle={{ gap: 8 }}>
+                      {workspaces.map((band) => (
+                        <Pressable
+                          key={band.id}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${band.name} 선택`}
+                          onPress={() => choose(band.id)}
+                          style={{
+                            padding: 14,
+                            borderRadius: 12,
+                            backgroundColor: band.id === workspace?.id ? '#edf3ff' : '#f7f9fc',
+                            borderLeftWidth: 4,
+                            borderLeftColor: band.color,
+                          }}
+                        >
+                          <Copy style={{ fontWeight: '500' }}>
+                            {band.name}
+                            {band.id === workspace?.id ? ' ✓' : ''}
+                          </Copy>
+                          <Meta>
+                            {band.members.find((member) => member.id === currentUserId)?.part} ·{' '}
+                            {band.members.find((member) => member.id === currentUserId)?.role ===
+                            'OWNER'
+                              ? '관리자'
+                              : '멤버'}{' '}
+                            · {band.members.length}명
+                          </Meta>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                    {bandActions}
+                  </>
+                ) : (
+                  <WorkspaceCard>{emptyBand}</WorkspaceCard>
+                )}
               </>
             )}
-            {creating ? (
+            {creating && (
               <View style={{ gap: 8 }}>
                 <Input
                   accessibilityLabel="새 밴드 이름"
@@ -643,21 +675,6 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                 </ActionButton>
                 {createError ? <Meta accessibilityRole="alert">{createError}</Meta> : null}
               </View>
-            ) : (
-              <ActionButton secondary onPress={() => setCreating(true)}>
-                + 밴드 만들기
-              </ActionButton>
-            )}
-            {!creating && (
-              <ActionButton
-                secondary
-                onPress={() => {
-                  setSwitcherOpen(false);
-                  setJoining(true);
-                }}
-              >
-                밴드 참여하기
-              </ActionButton>
             )}
             {!desktop && (
               <ActionButton

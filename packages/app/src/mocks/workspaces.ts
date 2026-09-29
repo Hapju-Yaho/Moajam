@@ -2,6 +2,7 @@ import { adoptedSongs, members, recommendations } from './data';
 
 export type Preparation = 'NOT_READY' | 'PRACTICING' | 'READY';
 export type WorkspaceSong = (typeof recommendations)[number] & {
+  goal?: string;
   participants?: Record<string, { part: string; status: Preparation }>;
   archived?: boolean;
   ready: number;

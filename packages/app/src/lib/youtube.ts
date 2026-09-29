@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { api, serverConfigured } from './remote';
 
 export interface YouTubeReference {
   videoId: string;
@@ -62,15 +63,20 @@ export async function fetchYouTubeMetadata(
 ): Promise<YouTubeMetadata> {
   const baseUrl = Platform.OS === 'web' ? '/api/youtube-oembed' : 'https://www.youtube.com/oembed';
   const endpoint = `${baseUrl}?url=${encodeURIComponent(reference.canonicalUrl)}&format=json`;
-  const response = await fetch(endpoint, { signal });
-
-  if (!response.ok) throw new Error('영상 정보를 불러오지 못했습니다.');
-
-  const data = (await response.json()) as {
+  if (signal?.aborted) throw new Error('조회가 취소되었습니다.');
+  const fetchDirect = async () => {
+    const response = await fetch(endpoint, { signal });
+    if (!response.ok) throw new Error('영상 정보를 불러오지 못했습니다.');
+    return response.json();
+  };
+  const data = (
+    serverConfigured ? await api(`/integrations/youtube/${reference.videoId}`) : await fetchDirect()
+  ) as {
     title?: string;
     author_name?: string;
     thumbnail_url?: string;
   };
+  if (signal?.aborted) throw new Error('조회가 취소되었습니다.');
   const rawTitle = data.title?.trim();
   const rawArtist = data.author_name?.trim();
 

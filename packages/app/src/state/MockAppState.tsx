@@ -75,28 +75,49 @@ export function MockAppStateProvider({ children }: PropsWithChildren) {
   const failed = useRef(false);
   const acknowledged = useRef<Workspace[]>([]);
   const queue = useRef(Promise.resolve());
-  const reloadRemote = useCallback(async () => {
-    try {
-      await queue.current;
-      const bands = (await loadRemoteWorkspaces()).map((band) =>
-        normalizeWorkspace(band, identity),
-      );
-      acknowledged.current = bands;
-      remoteReady.current = true;
-      failed.current = false;
-      setWorkspaces(bands);
-      selectWorkspace((selected) =>
-        bands.some((band) => band.id === selected) ? selected : (bands[0]?.id ?? ''),
-      );
-      setSyncStatus('서버 저장됨');
-      setActionError('');
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : '서버에 연결하지 못했습니다.');
-      setSyncStatus('서버 연결 실패');
-    }
-  }, [identity]);
+  const currentWorkspaces = useRef(workspaces);
+  currentWorkspaces.current = workspaces;
+  const refreshing = useRef(false);
+  const reloadRemote = useCallback(
+    async (background = false) => {
+      if (refreshing.current) return;
+      refreshing.current = true;
+      try {
+        await queue.current;
+        if (
+          background &&
+          (failed.current ||
+            JSON.stringify(currentWorkspaces.current) !== JSON.stringify(acknowledged.current))
+        )
+          return;
+        const snapshot = currentWorkspaces.current;
+        const remote = await loadRemoteWorkspaces(() => currentWorkspaces.current === snapshot);
+        if (!remote) return;
+        const bands = remote.map((band) => normalizeWorkspace(band, identity));
+        acknowledged.current = bands;
+        remoteReady.current = true;
+        failed.current = false;
+        setWorkspaces(bands);
+        selectWorkspace((selected) =>
+          bands.some((band) => band.id === selected) ? selected : (bands[0]?.id ?? ''),
+        );
+        setSyncStatus('서버 저장됨');
+        setActionError('');
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : '서버에 연결하지 못했습니다.');
+        setSyncStatus('서버 연결 실패');
+        if (!background) throw error;
+      } finally {
+        refreshing.current = false;
+      }
+    },
+    [identity],
+  );
   useEffect(() => {
-    if (serverConfigured) void reloadRemote();
+    if (!serverConfigured) return;
+    void reloadRemote().catch(() => {});
+    const timer = setInterval(() => void reloadRemote(true), 15000);
+    return () => clearInterval(timer);
   }, [reloadRemote]);
 
   useEffect(() => {
@@ -113,7 +134,7 @@ export function MockAppStateProvider({ children }: PropsWithChildren) {
         if (!previous || JSON.stringify(previous) === JSON.stringify(band)) continue;
         setSyncStatus('서버에 저장 중…');
         try {
-          await saveRemoteWorkspace(previous, band);
+          await saveRemoteWorkspace(previous, band, identity);
           acknowledged.current = acknowledged.current.map((item) =>
             item.id === band.id ? band : item,
           );
@@ -129,7 +150,7 @@ export function MockAppStateProvider({ children }: PropsWithChildren) {
       }
       setSyncStatus('서버 저장됨');
     });
-  }, [workspaces, selectedWorkspaceId]);
+  }, [workspaces, selectedWorkspaceId, identity]);
   const leaveWorkspace = useCallback(
     async (id: string, confirmDelete = false) => {
       const band = workspaces.find((item) => item.id === id);

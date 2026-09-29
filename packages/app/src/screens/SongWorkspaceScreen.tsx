@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { useIdentity } from '../state/Identity';
-import { View, Linking } from 'react-native';
+import { View, useWindowDimensions } from 'react-native';
 import { AppShell } from '../components/AppShell';
 import {
   ActionButton,
   CheckItem,
   Copy,
+  FlexBetween,
   FlexRow,
   Heading,
   Meta,
@@ -15,45 +15,45 @@ import {
   Progress,
   ProgressValue,
   Surface,
+  ResponsiveGrid,
+  Stack,
 } from '../components/ProductUI';
+import { ReferenceVideo } from '../components/ReferenceVideo';
 import { Discussion } from '../components/Discussion';
-import { MediaLibrary } from '../components/MediaLibrary';
 import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
-import { Input } from '../styles/layout';
-import type { ScreenProps } from '../navigation';
+import { songTabs, buildAppPath, type ScreenProps, type SongTab } from '../navigation';
 import { shareLink } from '../lib/platformActions';
+import { SongOverview, type Arrangement } from '../components/song/SongOverview';
+import { SongResources, type SongLink } from '../components/song/SongResources';
+import { SongHistory } from '../components/song/SongHistory';
+import { PreparationControl, SongPractice } from '../components/song/SongPractice';
+import type { SongCheck } from '../components/song/SongChecks';
 
-const tabs = ['개요', '의견', '자료', '연습', '합주 기록'] as const;
-export function SongWorkspaceScreen({ navigate, entityId }: ScreenProps) {
-  const currentUserId = useIdentity();
-  const {
-    adoptedSongs,
-    workspaceId,
-    members,
-    canManage,
-    updateSong,
-    updatePreparation,
-    rehearsals,
-  } = useMockAppState();
+const labels: Record<SongTab, string> = {
+  main: '메인',
+  overview: '개요',
+  discussion: '의견',
+  resources: '자료',
+  practice: '연습',
+  history: '합주 기록',
+};
+export function SongWorkspaceScreen({ navigate, entityId, songTab = 'main' }: ScreenProps) {
+  const { width } = useWindowDimensions();
+  const { adoptedSongs, workspaceId, members, currentUserId, rehearsals, syncStatus } =
+    useMockAppState();
   const song = adoptedSongs.find((item) => item.id === entityId);
-  const [tab, setTab] = useState<(typeof tabs)[number]>('개요');
-  const [arrangement, setArrangement] = useWorkspaceValue(`song/${entityId}/arrangement`, {
-    key: 'C',
-    bpm: '120',
+  const [opinions] = useWorkspaceValue<
+    { id: string; text: string; resolved?: boolean; videoUrl?: string }[]
+  >(`song/${entityId}/discussion`, []);
+  const [arrangement] = useWorkspaceValue<Arrangement>(`song/${entityId}/arrangement`, {
+    key: '',
+    bpm: '',
     structure: '',
   });
-  const [checks, setChecks] = useWorkspaceValue<{ id: string; label: string; done: boolean }[]>(
-    `song/${entityId}/checks`,
-    [],
-  );
-  const [draft, setDraft] = useState('');
+  const [checks, setChecks] = useWorkspaceValue<SongCheck[]>(`song/${entityId}/checks`, []);
+  const [links] = useWorkspaceValue<SongLink[]>(`song/${entityId}/links`, []);
   const [message, setMessage] = useState('');
-  const [links, setLinks] = useWorkspaceValue<{ id: string; title: string; url: string }[]>(
-    `song/${entityId}/links`,
-    [],
-  );
-  const [linkTitle, setLinkTitle] = useState('');
-  const [linkUrl, setLinkUrl] = useState('');
+  const [showVideo, setShowVideo] = useState(false);
   if (!song)
     return (
       <AppShell activeRoute="song" onNavigate={navigate}>
@@ -63,282 +63,258 @@ export function SongWorkspaceScreen({ navigate, entityId }: ScreenProps) {
         </Surface>
       </AppShell>
     );
-  const sessions = rehearsals
-    .filter((event) => event.songIds?.includes(song.id))
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const selectTab = (tab: SongTab) => navigate('song', { id: song.id, workspaceId, songTab: tab });
+  const sessions = rehearsals.filter((event) => event.songIds?.includes(song.id));
+  const nextSession = sessions
+    .filter((event) => !event.cancelled && new Date(`${event.date}T${event.end}`) >= new Date())
+    .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`))[0];
+  const pending = checks
+    .filter((item) => !item.done)
+    .sort(
+      (a, b) => Number(b.assigneeId === currentUserId) - Number(a.assigneeId === currentUserId),
+    );
+  const decisions = opinions.filter((item) => item.resolved);
+  const upcomingCard = (
+    <Surface>
+      <Heading>다음 합주</Heading>
+      {nextSession ? (
+        <>
+          <Copy>{nextSession.title}</Copy>
+          <Meta>
+            {nextSession.date} · {nextSession.start}–{nextSession.end}
+          </Meta>
+          <Meta>{nextSession.place || '장소 미정'}</Meta>
+          {!!nextSession.goal && <Copy>{nextSession.goal}</Copy>}
+          <ActionButton
+            secondary
+            onPress={() => navigate('rehearsals', { id: nextSession.id, workspaceId })}
+          >
+            합주 일정 보기 →
+          </ActionButton>
+        </>
+      ) : (
+        <Copy>이 곡이 포함된 예정 합주가 없어요.</Copy>
+      )}
+      <ActionButton secondary onPress={() => selectTab('history')}>
+        합주 연결·기록 보기 →
+      </ActionButton>
+    </Surface>
+  );
   return (
     <AppShell activeRoute="song" onNavigate={navigate}>
       <Surface>
-        <PageHeading>{song.title}</PageHeading>
+        <FlexBetween>
+          <ActionButton secondary compact onPress={() => navigate('songs', { workspaceId })}>
+            ← 채택곡 목록
+          </ActionButton>
+          <Meta accessibilityLiveRegion="polite">{syncStatus}</Meta>
+        </FlexBetween>
+        <FlexRow wrap>
+          <PageHeading>{song.title}</PageHeading>
+          <Pill>
+            <PillText>
+              {song.archived
+                ? '보관 중'
+                : !song.total
+                  ? '파트 배정 필요'
+                  : song.status === 'READY'
+                    ? '합주 준비 완료'
+                    : '함께 연습 중'}
+            </PillText>
+          </Pill>
+        </FlexRow>
         <Copy>
-          {song.artist} · 내 파트 {song.myPart || '미참여'}
+          {song.artist} · Key {arrangement.key || '미정'} · BPM {arrangement.bpm || '미정'}
         </Copy>
         <FlexRow wrap>
-          <ActionButton
-            secondary
-            onPress={() => navigate('score-editor', { id: song.id, workspaceId })}
-          >
-            악보 편집
-          </ActionButton>
+          <ActionButton onPress={() => selectTab('practice')}>이 곡 연습하기</ActionButton>
           <ActionButton
             secondary
             onPress={() =>
               void shareLink(
-                `/workspaces/${encodeURIComponent(workspaceId)}/songs/${encodeURIComponent(song.id)}`,
+                buildAppPath(
+                  'song',
+                  { id: song.id, workspaceId, songTab },
+                  { route: 'song', workspaceId },
+                ),
               )
-                .then(() => setMessage('곡 링크를 공유했습니다. 밴드 멤버만 열 수 있습니다.'))
+                .then(() => setMessage('현재 탭 링크를 공유했어요. 밴드 멤버만 열 수 있어요.'))
                 .catch(() => setMessage('공유하지 못했어요. 주소창의 링크를 복사해주세요.'))
             }
           >
-            공유
+            현재 탭 공유
           </ActionButton>
-          {canManage ? (
-            <ActionButton
-              secondary
-              onPress={() => updateSong(song.id, { archived: !song.archived })}
-            >
-              {song.archived ? '연습 재개' : '보관하기'}
-            </ActionButton>
-          ) : null}
         </FlexRow>
-        {message ? <Meta accessibilityLiveRegion="polite">{message}</Meta> : null}
+        {!!message && <Meta accessibilityLiveRegion="polite">{message}</Meta>}
         <FlexRow wrap>
-          {tabs.map((item) => (
+          {songTabs.map((tab) => (
             <Pill
-              key={item}
-              active={tab === item}
-              onPress={() =>
-                item === '연습' ? navigate('practice', { id: song.id }) : setTab(item)
-              }
+              key={tab}
+              accessibilityRole="button"
+              accessibilityState={{ selected: songTab === tab }}
+              active={songTab === tab}
+              onPress={() => selectTab(tab)}
             >
-              <PillText active={tab === item}>{item}</PillText>
+              <PillText active={songTab === tab}>
+                {labels[tab]}
+                {tab === 'discussion'
+                  ? ` ${opinions.length}`
+                  : tab === 'history'
+                    ? ` ${sessions.length}`
+                    : ''}
+              </PillText>
             </Pill>
           ))}
         </FlexRow>
       </Surface>
-      {tab === '개요' ? (
-        <>
-          <Surface>
-            <Heading>파트 준비 상태</Heading>
-            <Copy>
-              {song.ready} / {song.total} 파트 준비 완료
-            </Copy>
-            <Progress>
-              <ProgressValue value={song.total ? (song.ready / song.total) * 100 : 0} />
-            </Progress>
-            {song.participants?.[currentUserId] ? (
-              <FlexRow wrap>
-                {(['NOT_READY', 'PRACTICING', 'READY'] as const).map((status, index) => (
-                  <Pill
-                    key={status}
-                    active={song.myStatus === status}
-                    onPress={() => updatePreparation(workspaceId, song.id, status)}
-                  >
-                    <PillText active={song.myStatus === status}>
-                      {['준비 전', '연습 중', '준비 완료'][index]}
-                    </PillText>
-                  </Pill>
-                ))}
-              </FlexRow>
-            ) : (
-              <Meta>이 곡에 참여자로 배정되지 않았습니다.</Meta>
-            )}
-            <ActionButton onPress={() => navigate('practice', { id: song.id })}>
-              이 곡 연습하기
-            </ActionButton>
-            {members.map((member) => {
-              const participation = song.participants?.[member.id];
-              return (
-                <FlexRow wrap key={member.id}>
-                  <Copy>{member.name}</Copy>
-                  <Meta>
-                    {participation?.part || '미참여'} ·{' '}
-                    {participation?.status === 'READY'
-                      ? '준비 완료'
-                      : participation?.status === 'PRACTICING'
-                        ? '연습 중'
-                        : '준비 전'}
-                  </Meta>
-                  {canManage ? (
-                    <>
-                      <Input
-                        accessibilityLabel={`${member.name} 곡 파트`}
-                        value={participation?.part ?? ''}
-                        placeholder="곡 파트"
-                        style={{ width: 150 }}
-                        onChangeText={(part) =>
-                          updateSong(song.id, {
-                            participants: {
-                              ...song.participants,
-                              [member.id]: { part, status: participation?.status ?? 'NOT_READY' },
-                            },
-                          })
-                        }
-                      />
-                      <ActionButton
-                        secondary
-                        compact
-                        onPress={() => {
-                          const participants = { ...song.participants };
-                          if (participation) delete participants[member.id];
-                          else participants[member.id] = { part: member.part, status: 'NOT_READY' };
-                          updateSong(song.id, { participants });
-                        }}
-                      >
-                        {participation ? '참여 해제' : '참여 배정'}
-                      </ActionButton>
-                    </>
-                  ) : null}
-                </FlexRow>
-              );
-            })}
-          </Surface>
-          <Surface>
-            <Heading>편곡</Heading>
-            <Meta>Key와 BPM, 곡 구성을 기록하세요. 변경 내용은 자동 저장됩니다.</Meta>
-            <FlexRow wrap>
-              <Input
-                editable={canManage}
-                accessibilityLabel="곡 Key"
-                value={arrangement.key}
-                onChangeText={(key) => setArrangement({ ...arrangement, key })}
-                style={{ width: 100 }}
-              />
-              <Input
-                editable={canManage}
-                accessibilityLabel="곡 BPM"
-                value={arrangement.bpm}
-                keyboardType="numeric"
-                onChangeText={(bpm) => {
-                  if (/^\d{0,3}$/.test(bpm)) setArrangement({ ...arrangement, bpm });
-                }}
-                style={{ width: 100 }}
-              />
-            </FlexRow>
-            <Input
-              editable={canManage}
-              multiline
-              value={arrangement.structure}
-              onChangeText={(structure) => setArrangement({ ...arrangement, structure })}
-              placeholder="Intro / Verse / Chorus / Ending"
-            />
-          </Surface>
-          <Surface>
-            <Heading>다음 합주 확인사항</Heading>
-            {checks.map((item) => (
-              <FlexRow key={item.id}>
-                <View style={{ flex: 1 }}>
+      {songTab === 'main' && (
+        <ResponsiveGrid stacked={width < 900}>
+          <Stack style={{ flex: 1.35 }}>
+            <Surface tint="#f5f7ff">
+              <Heading>지금 준비할 것</Heading>
+              <PreparationControl song={song} />
+              <Meta>
+                남은 할 일 {pending.length}개 · 내 담당{' '}
+                {pending.filter((item) => item.assigneeId === currentUserId).length}개
+              </Meta>
+              {pending.slice(0, 3).map((item) => (
+                <View key={item.id} style={{ gap: 4 }}>
                   <CheckItem
-                    checked={item.done}
+                    checked={false}
                     label={item.label}
                     onPress={() =>
                       setChecks((all) =>
                         all.map((value) =>
-                          value.id === item.id ? { ...value, done: !value.done } : value,
+                          value.id === item.id ? { ...value, done: true } : value,
                         ),
                       )
                     }
                   />
+                  <Meta>
+                    {members.find((member) => member.id === item.assigneeId)?.name ??
+                      '담당자 미지정'}
+                  </Meta>
                 </View>
-                <ActionButton
-                  secondary
-                  compact
-                  onPress={() => setChecks((all) => all.filter((value) => value.id !== item.id))}
-                >
-                  삭제
-                </ActionButton>
-              </FlexRow>
-            ))}
-            <Input value={draft} onChangeText={setDraft} placeholder="확인할 내용" />
-            <ActionButton
-              secondary
-              disabled={!draft.trim()}
-              onPress={() => {
-                setChecks((all) => [
-                  ...all,
-                  { id: `check-${Date.now()}`, label: draft.trim(), done: false },
-                ]);
-                setDraft('');
-              }}
-            >
-              항목 추가
-            </ActionButton>
-          </Surface>
-        </>
-      ) : null}
-      {tab === '의견' ? <Discussion documentKey={`song/${song.id}/discussion`} /> : null}
-      {tab === '자료' ? (
-        <>
-          <MediaLibrary
-            key={`${workspaceId}/${song.id}`}
-            scopeKey={`song/${workspaceId}/${song.id}`}
-          />
-          <Surface>
-            <Heading>레퍼런스</Heading>
-            {links.map((link) => (
-              <FlexRow wrap key={link.id}>
-                <Copy style={{ flex: 1 }}>
-                  {link.title} · {link.url}
+              ))}
+              {!pending.length && (
+                <Copy>
+                  {checks.length
+                    ? '등록된 할 일을 모두 마쳤어요.'
+                    : '개요에서 다음 합주까지 할 일을 정해보세요.'}
                 </Copy>
-                <ActionButton secondary compact onPress={() => void Linking.openURL(link.url)}>
-                  열기
-                </ActionButton>
-                <ActionButton
-                  secondary
-                  compact
-                  onPress={() => setLinks((all) => all.filter((item) => item.id !== link.id))}
-                >
-                  삭제
-                </ActionButton>
-              </FlexRow>
-            ))}
-            <Input value={linkTitle} onChangeText={setLinkTitle} placeholder="레퍼런스 이름" />
-            <Input value={linkUrl} onChangeText={setLinkUrl} placeholder="https://" />
-            <ActionButton
-              secondary
-              disabled={!linkTitle.trim()}
-              onPress={() => {
-                try {
-                  const url = new URL(linkUrl);
-                  if (!['https:', 'http:'].includes(url.protocol)) throw new Error();
-                  setLinks((all) => [
-                    ...all,
-                    { id: `link-${Date.now()}`, title: linkTitle.trim(), url: url.href },
-                  ]);
-                  setLinkTitle('');
-                  setLinkUrl('');
-                } catch {
-                  setMessage('http 또는 https 링크를 입력해주세요.');
-                }
-              }}
-            >
-              링크 추가
-            </ActionButton>
-          </Surface>
-        </>
-      ) : null}
-      {tab === '합주 기록' ? (
-        <Surface>
-          <Heading>이 곡의 합주</Heading>
-          {sessions.map((event) => (
-            <FlexRow wrap key={event.id}>
-              <Copy style={{ flex: 1 }}>
-                {event.date} · {event.title}
-                {event.cancelled ? ' · 취소됨' : ''}
-              </Copy>
-              <ActionButton secondary onPress={() => navigate('rehearsals', { id: event.id })}>
-                기록 열기
+              )}
+              <ActionButton secondary onPress={() => selectTab('overview')}>
+                개요·할 일 관리 →
               </ActionButton>
-            </FlexRow>
-          ))}
-          {!sessions.length ? (
-            <Meta>합주 화면에서 이 곡을 세트리스트에 추가하면 기록이 표시됩니다.</Meta>
-          ) : null}
-          <ActionButton secondary onPress={() => navigate('rehearsals')}>
-            밴드 합주 보기
-          </ActionButton>
-        </Surface>
-      ) : null}
+            </Surface>
+            {width < 900 && upcomingCard}
+            <Surface>
+              <Heading>우리의 연주 방향</Heading>
+              <Copy>{song.goal || song.reason || '개요에서 이 곡의 연주 목표를 정해보세요.'}</Copy>
+              <Meta>{arrangement.structure || '아직 정해진 곡 구성과 편곡이 없어요.'}</Meta>
+              {!!song.referenceUrl && (
+                <>
+                  <ActionButton secondary onPress={() => setShowVideo(!showVideo)}>
+                    {showVideo ? '대표 영상 접기' : '대표 영상 보기'}
+                  </ActionButton>
+                  {showVideo && (
+                    <ReferenceVideo
+                      referenceUrl={song.referenceUrl}
+                      thumbnailUrl={song.thumbnailUrl}
+                      title={song.title}
+                    />
+                  )}
+                </>
+              )}
+            </Surface>
+            <Surface>
+              <Heading>최근 결정과 의견</Heading>
+              <Meta>
+                결정 {decisions.length}개 · 전체 의견 {opinions.length}개 · 자료 링크 {links.length}
+                개
+              </Meta>
+              {(decisions.length ? decisions : opinions).slice(0, 3).map((item) => (
+                <View key={item.id} style={{ gap: 4 }}>
+                  <Meta>
+                    {item.resolved ? '결정됨' : '논의 중'}
+                    {item.videoUrl ? ' · 영상 첨부' : ''}
+                  </Meta>
+                  <Copy numberOfLines={2}>{item.text || '영상으로 남긴 의견'}</Copy>
+                </View>
+              ))}
+              {!opinions.length && (
+                <Copy>아직 의견이 없어요. 편곡 아이디어나 참고 영상을 나눠보세요.</Copy>
+              )}
+              <ActionButton secondary onPress={() => selectTab('discussion')}>
+                의견 이어가기 →
+              </ActionButton>
+            </Surface>
+          </Stack>
+          <Stack style={{ flex: 1 }}>
+            {width >= 900 && upcomingCard}
+            <Surface>
+              <Heading>팀 준비 현황</Heading>
+              <Copy>
+                {song.ready} / {song.total} 파트 준비 완료
+              </Copy>
+              <Progress>
+                <ProgressValue value={song.total ? (song.ready / song.total) * 100 : 0} />
+              </Progress>
+              {members
+                .filter((member) => song.participants?.[member.id])
+                .map((member) => {
+                  const part = song.participants![member.id];
+                  return (
+                    <FlexBetween key={member.id}>
+                      <Copy>{member.name}</Copy>
+                      <Meta>
+                        {part.part || '파트 미정'} ·{' '}
+                        {part.status === 'READY'
+                          ? '준비 완료'
+                          : part.status === 'PRACTICING'
+                            ? '연습 중'
+                            : '준비 전'}
+                      </Meta>
+                    </FlexBetween>
+                  );
+                })}
+              {!song.total && <Meta>개요에서 참여 멤버와 파트를 배정해주세요.</Meta>}
+              <ActionButton secondary onPress={() => selectTab('overview')}>
+                파트 배정 보기 →
+              </ActionButton>
+            </Surface>
+          </Stack>
+        </ResponsiveGrid>
+      )}
+      {songTab === 'overview' && <SongOverview song={song} />}
+      {songTab === 'discussion' && (
+        <Discussion
+          documentKey={`song/${song.id}/discussion`}
+          linkedOpinionIds={checks
+            .map((item) => item.sourceOpinionId)
+            .filter((id): id is string => !!id)}
+          onCreateTask={(item) => {
+            setChecks((all) =>
+              all.some((check) => check.sourceOpinionId === item.id)
+                ? all
+                : [
+                    ...all,
+                    {
+                      id: `check-${Date.now()}`,
+                      label: (item.text || '의견에 첨부된 영상 확인').slice(0, 2000),
+                      done: false,
+                      assigneeId: currentUserId,
+                      sourceOpinionId: item.id,
+                    },
+                  ],
+            );
+            setMessage('개요의 할 일에 추가했어요. 담당자를 변경할 수 있어요.');
+          }}
+        />
+      )}
+      {songTab === 'resources' && <SongResources songId={song.id} navigate={navigate} />}
+      {songTab === 'practice' && <SongPractice song={song} />}
+      {songTab === 'history' && <SongHistory songId={song.id} navigate={navigate} />}
     </AppShell>
   );
 }

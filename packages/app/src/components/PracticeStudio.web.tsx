@@ -6,6 +6,7 @@ import { api, serverConfigured, uploadRemoteFile } from '../lib/remote';
 import { usePreferences } from '../state/preferences';
 import { readMedia, writeMedia } from '../lib/mediaStore';
 import { ActionButton, Copy, FlexBetween, FlexRow, Heading, Meta, Surface } from './ProductUI';
+import { PracticeSources } from './PracticeSources.web';
 
 type Track = {
   blob: Blob;
@@ -18,13 +19,24 @@ type Track = {
   duration: number;
 };
 type Note = { id: string; time: number; text: string };
-type Session = { tracks: Track[]; notes: Note[] };
+type Session = {
+  tracks: Track[];
+  notes: Note[];
+  loop?: boolean;
+  loopStart?: number;
+  loopEnd?: number;
+  solo?: string | null;
+  metronome?: boolean;
+  memo?: string;
+};
 const timeLabel = (value: number) =>
   `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
-export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
+export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: number }) {
   const userId = useIdentity();
   const urls = useRef(new Set<string>());
   const preferences = usePreferences();
+  const initialMetronome = useRef(preferences.metronome);
+  const beatBpm = bpm ?? preferences.bpm;
   const { workspaceId } = useMockAppState();
   const [publishing, setPublishing] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
@@ -32,6 +44,8 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const loadedScope = useRef('');
+  const sessionExtras = useRef<{ memo?: string }>({});
   const [saved, setSaved] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
@@ -51,6 +65,11 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
   const positionRef = useRef(0);
   useEffect(() => {
     let active = true;
+    loadedScope.current = '';
+    setLoaded(false);
+    setError('');
+    setPlaying(false);
+    setPosition(0);
     void readMedia<Session>(`practice/${scopeKey}`)
       .then((session) => {
         if (!active) return;
@@ -58,6 +77,9 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
           (session?.tracks ?? []).map((track) => ({
             ...track,
             offset: track.offset ?? 0,
+            volume: track.volume ?? 1,
+            muted: track.muted ?? false,
+            duration: track.duration ?? 0,
             url: (() => {
               const url = URL.createObjectURL(track.blob);
               urls.current.add(url);
@@ -66,6 +88,13 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
           })),
         );
         setNotes(session?.notes ?? []);
+        sessionExtras.current = { memo: session?.memo };
+        setLoop(session?.loop ?? false);
+        setLoopStart(session?.loopStart ?? 0);
+        setLoopEnd(session?.loopEnd ?? 0);
+        setSolo(session?.solo ?? null);
+        setMetronome(session?.metronome ?? initialMetronome.current);
+        loadedScope.current = scopeKey;
         setLoaded(true);
       })
       .catch(() => {
@@ -77,11 +106,17 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
     };
   }, [scopeKey]);
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || loadedScope.current !== scopeKey) return;
     setSaved(false);
     void writeMedia(`practice/${scopeKey}`, {
       tracks: tracks.map((track) => ({ ...track, url: '' })),
       notes,
+      ...sessionExtras.current,
+      loop,
+      loopStart,
+      loopEnd,
+      solo,
+      metronome,
     })
       .then(() => {
         if (alive.current) setSaved(true);
@@ -90,7 +125,7 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
         if (alive.current)
           setError('저장 공간이 부족하거나 저장 권한이 없습니다. 파일을 내려받아 보관하세요.');
       });
-  }, [scopeKey, tracks, notes, loaded]);
+  }, [scopeKey, tracks, notes, loaded, loop, loopStart, loopEnd, solo, metronome]);
   useEffect(() => {
     alive.current = true;
     const audio = players.current;
@@ -246,7 +281,7 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
           oscillator.connect(gain).connect(context.destination);
           oscillator.start();
           oscillator.stop(context.currentTime + 0.05);
-          await new Promise((resolve) => setTimeout(resolve, 60000 / preferences.bpm));
+          await new Promise((resolve) => setTimeout(resolve, 60000 / beatBpm));
         }
         await context.close();
         setCountdown(0);
@@ -298,25 +333,39 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
       oscillator.stop(context.currentTime + 0.04);
     };
     tick();
-    const timer = setInterval(tick, 60000 / preferences.bpm);
+    const timer = setInterval(tick, 60000 / beatBpm);
     return () => {
       clearInterval(timer);
       void context.close();
     };
-  }, [playing, metronome, preferences.bpm]);
+  }, [playing, metronome, beatBpm]);
   return (
     <>
       <Surface>
         <FlexBetween>
           <Heading>트랙 연습</Heading>
           <Meta>
-            {loaded ? (saved ? '이 브라우저에 저장됨 · 비공개' : '저장 중…') : '불러오는 중…'}
+            {loaded
+              ? saved
+                ? serverConfigured
+                  ? '서버에 저장됨 · 비공개'
+                  : '이 브라우저에 저장됨 · 비공개'
+                : '저장 중…'
+              : '불러오는 중…'}
           </Meta>
         </FlexBetween>
         <Meta>
           오디오 파일을 올려 함께 재생하거나 내 파트를 녹음해보세요. 트랙과 메모는 이 브라우저에
           저장되어 새로고침 후에도 유지됩니다. 다른 기기에서는 파일을 따로 가져와야 합니다.
         </Meta>
+        {!scopeKey.startsWith('session/') && (
+          <PracticeSources
+            scopeKey={scopeKey}
+            workspaceId={workspaceId}
+            disabled={!loaded || recording || requesting}
+            onAdd={addBlob}
+          />
+        )}
         <label
           style={{
             display: 'block',
@@ -350,7 +399,7 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
         </label>
         <FlexRow wrap>
           <ActionButton secondary compact onPress={() => setMetronome(!metronome)}>
-            {metronome ? '메트로놈 켜짐' : '메트로놈 꺼짐'} · {preferences.bpm} BPM
+            {metronome ? '메트로놈 켜짐' : '메트로놈 꺼짐'} · {beatBpm} BPM
           </ActionButton>
           {countdown ? <Copy>녹음까지 {countdown}박</Copy> : null}
         </FlexRow>
@@ -512,7 +561,10 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
                   }
                 />
               </label>
-              {serverConfigured ? (
+              {serverConfigured &&
+              workspaceId &&
+              (scopeKey.startsWith(`${workspaceId}/`) ||
+                scopeKey.startsWith(`session/${workspaceId}/`)) ? (
                 <ActionButton
                   secondary
                   compact

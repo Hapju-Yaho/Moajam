@@ -6,15 +6,19 @@ import { dateKey } from '../mocks/workspaces';
 import { useMockAppState } from '../state/MockAppState';
 import type { ScreenProps } from '../navigation';
 
-type CalendarEvent = ReturnType<typeof useMockAppState>['allRehearsals'][number];
+export type CalendarEvent = ReturnType<typeof useMockAppState>['allRehearsals'][number] & {
+  personal?: boolean;
+};
 export function RehearsalCalendar({
   events,
   navigate,
   compact = false,
+  workspaceId,
 }: {
   events: CalendarEvent[];
   navigate: ScreenProps['navigate'];
   compact?: boolean;
+  workspaceId?: string;
 }) {
   const [registering, setRegistering] = useState(false);
   const today = dateKey(new Date());
@@ -85,7 +89,7 @@ export function RehearsalCalendar({
               key={index}
               disabled={!valid}
               accessibilityRole="button"
-              accessibilityLabel={valid ? `${key} 합주 ${daily.length}건` : undefined}
+              accessibilityLabel={valid ? `${key} 일정 ${daily.length}건` : undefined}
               accessibilityState={{ selected: selected === key }}
               onPress={() => setSelected(key)}
               style={{
@@ -148,9 +152,14 @@ export function RehearsalCalendar({
           <EventRow key={`${event.workspaceId}/${event.id}`} event={event} navigate={navigate} />
         ))
       ) : (
-        <Meta>이날은 등록된 합주가 없어요.</Meta>
+        <Meta>이날은 등록된 일정이 없어요.</Meta>
       )}
-      <ScheduleModal visible={registering} date={selected} onClose={() => setRegistering(false)} />
+      <ScheduleModal
+        visible={registering}
+        date={selected}
+        workspaceId={workspaceId}
+        onClose={() => setRegistering(false)}
+      />
     </Surface>
   );
 }
@@ -161,33 +170,49 @@ export function EventRow({
   event: CalendarEvent;
   navigate: ScreenProps['navigate'];
 }) {
+  const [editing, setEditing] = useState(false);
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${event.bandName} ${event.title} 보기`}
-      onPress={() => navigate('rehearsals', { workspaceId: event.workspaceId, id: event.id })}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }}
-    >
-      <View
-        style={{
-          width: 48,
-          paddingVertical: 9,
-          borderRadius: 10,
-          backgroundColor: '#f1f5fb',
-          alignItems: 'center',
-        }}
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${event.bandName} ${event.title} 보기`}
+        onPress={() =>
+          event.personal
+            ? setEditing(true)
+            : navigate('rehearsals', { workspaceId: event.workspaceId, id: event.id })
+        }
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }}
       >
-        <Meta>{Number(event.date.slice(5, 7))}월</Meta>
-        <Heading>{Number(event.date.slice(8))}</Heading>
-      </View>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Meta style={{ color: event.bandColor, fontWeight: '500' }}>{event.bandName}</Meta>
-        <Copy style={{ fontWeight: '500' }}>
-          {event.title} · {event.start}–{event.end}
-        </Copy>
-        <Meta>{event.place}</Meta>
-      </View>
-      <Meta>→</Meta>
-    </Pressable>
+        <View
+          style={{
+            width: 48,
+            paddingVertical: 9,
+            borderRadius: 10,
+            backgroundColor: '#f1f5fb',
+            alignItems: 'center',
+          }}
+        >
+          <Meta>{Number(event.date.slice(5, 7))}월</Meta>
+          <Heading>{Number(event.date.slice(8))}</Heading>
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Meta style={{ color: event.bandColor, fontWeight: '500' }}>{event.bandName}</Meta>
+          <Copy style={{ fontWeight: '500' }}>
+            {event.title} · {event.start}–{event.end}
+          </Copy>
+          <Meta>{event.place}</Meta>
+          {!!event.goal && <Meta>{event.goal}</Meta>}
+        </View>
+        <Meta>→</Meta>
+      </Pressable>
+      {event.personal && (
+        <ScheduleModal
+          visible={editing}
+          date={event.date}
+          event={event}
+          onClose={() => setEditing(false)}
+        />
+      )}
+    </>
   );
 }

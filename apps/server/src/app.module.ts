@@ -8,18 +8,33 @@ import { WorkspacesController } from './workspaces/workspaces.controller.js';
 import { MediaController } from './media/media.controller.js';
 import { StorageService } from './media/storage.service.js';
 import { SeparationService } from './media/separation.service.js';
+import { ClientConfigController } from './config/client-config.controller.js';
+import { PersonalController } from './personal/personal.controller.js';
+import { WorkspaceSyncController } from './workspaces/workspace-sync.controller.js';
+import { LocalFilesController } from './media/local-files.controller.js';
+import { YouTubeController } from './media/youtube.controller.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       cache: true,
       isGlobal: true,
+      envFilePath: ['.env.local', '.env'],
       validate: validateEnvironment,
     }),
     AuthModule,
     DatabaseModule,
   ],
-  controllers: [HealthController, WorkspacesController, MediaController],
+  controllers: [
+    HealthController,
+    WorkspacesController,
+    MediaController,
+    ClientConfigController,
+    PersonalController,
+    WorkspaceSyncController,
+    LocalFilesController,
+    YouTubeController,
+  ],
   providers: [StorageService, SeparationService],
 })
 export class AppModule {}

@@ -2,6 +2,7 @@
   "expo": {
     "name": "Moajam",
     "slug": "moajam",
+    "scheme": "moajam",
     "version": "0.1.0",
     "icon": "../../packages/app/assets/logo.png",
     "orientation": "portrait",

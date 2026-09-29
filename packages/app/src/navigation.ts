@@ -16,14 +16,28 @@ export type AppRoute =
   | 'settings'
   | 'help';
 
+export const songTabs = [
+  'main',
+  'overview',
+  'discussion',
+  'resources',
+  'practice',
+  'history',
+] as const;
+export type SongTab = (typeof songTabs)[number];
+export function parseSongTab(value?: string | null): SongTab {
+  return songTabs.includes(value as SongTab) ? (value as SongTab) : 'main';
+}
 export interface NavigationOptions {
   id?: string;
   workspaceId?: string;
+  songTab?: SongTab;
 }
 
 export interface ScreenProps {
   navigate: (route: AppRoute, options?: NavigationOptions) => void;
   entityId?: string;
+  songTab?: SongTab;
 }
 
 export function buildAppPath(
@@ -63,7 +77,9 @@ export function buildAppPath(
     recommendation: options?.id
       ? `${base}/recommendations/${encodeURIComponent(options.id)}`
       : `${base}/recommendations`,
-    song: id ? `${base}/songs/${encodeURIComponent(id)}` : `${base}/songs`,
+    song: id
+      ? `${base}/songs/${encodeURIComponent(id)}${options?.songTab && options.songTab !== 'main' ? `?tab=${options.songTab}` : ''}`
+      : `${base}/songs`,
     practice: id ? `${base}/songs/${encodeURIComponent(id)}/practice` : '/me/practice',
   };
   return paths[next] ?? '/me';

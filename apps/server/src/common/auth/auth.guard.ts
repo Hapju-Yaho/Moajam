@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
-import { SupabaseService, type AuthenticatedUser } from './supabase.service.js';
+import { AuthService, type AuthenticatedUser } from './auth.service.js';
 
 export type AuthenticatedRequest = FastifyRequest & { user: AuthenticatedUser };
 
@@ -10,7 +10,7 @@ export type AuthenticatedRequest = FastifyRequest & { user: AuthenticatedUser };
 export class AuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly supabase: SupabaseService,
+    private readonly auth: AuthService,
   ) {}
 
   async canActivate(context: ExecutionContext) {
@@ -31,7 +31,7 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Bearer Access Token이 필요합니다.');
     }
 
-    request.user = await this.supabase.verifyAccessToken(token);
+    request.user = await this.auth.verifyAccessToken(token);
     return true;
   }
 }

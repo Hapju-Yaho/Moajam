@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   useAudioPlayer,
   useAudioPlayerStatus,
@@ -50,10 +50,12 @@ function NativeTrack({ track, onDelete }: { track: Track; onDelete: () => void }
     </Surface>
   );
 }
-export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
+export function PracticeStudio({ scopeKey }: { scopeKey: string; bpm?: number }) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [memo, setMemo] = useState('');
   const [ready, setReady] = useState(false);
+  const loadedScope = useRef('');
+  const extras = useRef<Record<string, unknown>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -61,11 +63,14 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
   useEffect(() => {
     let alive = true;
     setReady(false);
+    loadedScope.current = '';
     void readMedia<{ tracks: Track[]; memo: string }>(`practice/${scopeKey}`)
       .then((saved) => {
         if (alive) {
           setTracks(saved?.tracks ?? []);
           setMemo(saved?.memo ?? '');
+          extras.current = saved ?? {};
+          loadedScope.current = scopeKey;
           setReady(true);
         }
       })
@@ -77,9 +82,10 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string }) {
     };
   }, [scopeKey]);
   useEffect(() => {
-    if (ready)
-      void writeMedia(`practice/${scopeKey}`, { tracks, memo }).catch(() =>
-        setError('기록 저장 실패: 기기 저장 공간을 확인해주세요.'),
+    if (ready && loadedScope.current === scopeKey)
+      void writeMedia(`practice/${scopeKey}`, { ...extras.current, tracks, memo }).catch(
+        (failure: unknown) =>
+          setError(failure instanceof Error ? failure.message : '기록 저장에 실패했습니다.'),
       );
   }, [tracks, memo, scopeKey, ready]);
   async function record() {

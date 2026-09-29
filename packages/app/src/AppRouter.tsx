@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AppRoute, NavigationOptions } from './navigation';
+import type { AppRoute, NavigationOptions, SongTab } from './navigation';
 import { PersonalScreen } from './screens/PersonalScreen';
 import { WorkspaceScopeProvider, useMockAppState } from './state/MockAppState';
 import { AppShell } from './components/AppShell';
@@ -22,6 +22,7 @@ interface AppScreenProps {
   navigate: (route: AppRoute, options?: NavigationOptions) => void;
   entityId?: string;
   workspaceId?: string;
+  songTab?: SongTab;
 }
 
 export function AppScreen(props: AppScreenProps) {
@@ -39,7 +40,7 @@ export function AppScreen(props: AppScreenProps) {
     </WorkspaceScopeProvider>
   );
 }
-function ScopedScreen({ route, navigate, entityId, workspaceId }: AppScreenProps) {
+function ScopedScreen({ route, navigate, entityId, workspaceId, songTab }: AppScreenProps) {
   const { workspaces, workspace } = useMockAppState();
   if (workspaceId && !workspace)
     return (
@@ -79,9 +80,9 @@ function ScopedScreen({ route, navigate, entityId, workspaceId }: AppScreenProps
     case 'songs':
       return <SongsScreen navigate={navigate} />;
     case 'song':
-      return <SongWorkspaceScreen navigate={navigate} entityId={entityId} />;
+      return <SongWorkspaceScreen navigate={navigate} entityId={entityId} songTab={songTab} />;
     case 'practice':
-      return <PracticeScreen navigate={navigate} entityId={entityId} fromBand />;
+      return <SongWorkspaceScreen navigate={navigate} entityId={entityId} songTab="practice" />;
     case 'rehearsals':
       return <RehearsalsScreen navigate={navigate} entityId={entityId} />;
     case 'members':
@@ -100,7 +101,12 @@ function ScopedScreen({ route, navigate, entityId, workspaceId }: AppScreenProps
 }
 
 export function MoajamApp() {
-  const [location, setLocation] = useState<{ route: AppRoute; id?: string; workspaceId?: string }>({
+  const [location, setLocation] = useState<{
+    route: AppRoute;
+    id?: string;
+    workspaceId?: string;
+    songTab?: SongTab;
+  }>({
     route: 'personal-home',
   });
   const { selectedWorkspaceId } = useMockAppState();
@@ -109,10 +115,12 @@ export function MoajamApp() {
       route={location.route}
       entityId={location.id}
       workspaceId={location.workspaceId}
+      songTab={location.songTab}
       navigate={(route, options) =>
         setLocation({
           route,
           id: options?.id,
+          songTab: options?.songTab,
           workspaceId:
             options?.workspaceId ??
             (route.startsWith('personal-') ? undefined : selectedWorkspaceId),

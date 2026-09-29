@@ -24,6 +24,7 @@ import {
 import { useMockAppState } from '../state/MockAppState';
 import type { ScreenProps } from '../navigation';
 import { Avatar, AvatarText } from '../styles/layout';
+import { ScheduleDashboard } from '../components/ScheduleDashboard';
 
 export function HomeScreen({ navigate }: ScreenProps) {
   const currentUserId = useIdentity();
@@ -56,7 +57,7 @@ export function HomeScreen({ navigate }: ScreenProps) {
     }
   };
   const next = rehearsals
-    .filter((event) => new Date(`${event.date}T${event.end}`) >= new Date())
+    .filter((event) => !event.cancelled && new Date(`${event.date}T${event.end}`) >= new Date())
     .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`))[0];
   const ready = adoptedSongs.filter((song) => song.myStatus === 'READY').length;
   const candidates = recommendations.filter(
@@ -138,6 +139,21 @@ export function HomeScreen({ navigate }: ScreenProps) {
           </Progress>
         </Surface>
       </ResponsiveGrid>
+      <Heading>밴드 일정</Heading>
+      <Meta>이 밴드의 모든 멤버가 함께 확인하는 팀 일정이에요.</Meta>
+      <ScheduleDashboard
+        events={rehearsals
+          .filter((event) => !event.cancelled)
+          .map((event) => ({
+            ...event,
+            workspaceId: workspace!.id,
+            bandName: workspace!.name,
+            bandColor: workspace!.color,
+          }))}
+        navigate={navigate}
+        workspaceId={workspace?.id}
+        compact
+      />
       <ResponsiveGrid stacked={width < 1050}>
         <Stack style={{ flex: 1.4 }}>
           <Surface>

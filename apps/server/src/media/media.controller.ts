@@ -1,3 +1,4 @@
+import { ApiProperty, ApiPropertyOptional, ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   Body,
   Controller,
@@ -16,23 +17,25 @@ import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from '
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../common/database/prisma.service.js';
 import { CurrentUser } from '../common/auth/current-user.decorator.js';
-import type { AuthenticatedUser } from '../common/auth/supabase.service.js';
+import type { AuthenticatedUser } from '../common/auth/auth.service.js';
 import { StorageService } from './storage.service.js';
 import { SeparationService } from './separation.service.js';
 class UploadDto {
-  @IsString() @MaxLength(255) name!: string;
-  @IsString() @MaxLength(120) mime!: string;
-  @IsInt() @Min(1) @Max(104857600) size!: number;
-  @IsString() @MaxLength(240) scope!: string;
-  @IsOptional() @IsUUID() workspaceId?: string;
+  @ApiProperty() @IsString() @MaxLength(255) name!: string;
+  @ApiProperty() @IsString() @MaxLength(120) mime!: string;
+  @ApiProperty() @IsInt() @Min(1) @Max(104857600) size!: number;
+  @ApiProperty() @IsString() @MaxLength(240) scope!: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() workspaceId?: string;
 }
 class VisibilityDto {
-  @IsIn(['PRIVATE', 'WORKSPACE']) visibility!: 'PRIVATE' | 'WORKSPACE';
+  @ApiProperty() @IsIn(['PRIVATE', 'WORKSPACE']) visibility!: 'PRIVATE' | 'WORKSPACE';
 }
 class JobDto {
-  @IsUUID() sourceId!: string;
-  @IsIn(['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']) instrument!: string;
+  @ApiProperty({ format: 'uuid' }) @IsUUID() sourceId!: string;
+  @ApiProperty() @IsIn(['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']) instrument!: string;
 }
+@ApiTags('Media')
+@ApiBearerAuth()
 @Controller()
 export class MediaController {
   constructor(
@@ -98,6 +101,7 @@ export class MediaController {
     @Query('scope') scope: string,
     @Query('workspaceId') workspaceId?: string,
   ) {
+    if (!scope || scope.length > 240) throw new BadRequestException('자료 범위가 필요합니다.');
     if (
       workspaceId &&
       !(await this.db.workspaceMember.findUnique({
@@ -108,6 +112,7 @@ export class MediaController {
     return this.db.mediaAsset.findMany({
       where: {
         scope,
+        ...(workspaceId ? { workspaceId } : {}),
         ready: true,
         deletedAt: null,
         OR: [

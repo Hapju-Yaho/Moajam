@@ -1,10 +1,8 @@
-import 'dotenv/config';
+import { config } from 'dotenv';
 import { defineConfig } from 'prisma/config';
+import { databaseUrl } from './src/config/database-url.js';
 
-const migrationUrl =
-  process.env.DIRECT_URL ??
-  process.env.DATABASE_URL ??
-  'postgresql://postgres:postgres@localhost:5432/moajam';
+config({ path: ['.env.local', '.env'] });
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
@@ -12,6 +10,6 @@ export default defineConfig({
     path: 'prisma/migrations',
   },
   datasource: {
-    url: migrationUrl,
+    url: databaseUrl(process.env, true),
   },
 });

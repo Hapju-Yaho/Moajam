@@ -4,8 +4,17 @@ import { getDocumentAsync } from 'expo-document-picker';
 import { ActionButton, Meta, Surface, Heading, FlexRow } from './ProductUI';
 import { readMedia, writeMedia } from '../lib/mediaStore';
 import { keepNativeFile } from '../lib/nativeStorage';
+import { serverConfigured } from '../lib/remote';
+import { RemoteMediaLibrary } from './RemoteMediaLibrary';
 type Asset = { id: string; uri: string; name: string };
 export function MediaLibrary({ scopeKey }: { scopeKey: string }) {
+  return serverConfigured ? (
+    <RemoteMediaLibrary key={scopeKey} scopeKey={scopeKey} />
+  ) : (
+    <LocalMediaLibrary key={scopeKey} scopeKey={scopeKey} />
+  );
+}
+function LocalMediaLibrary({ scopeKey }: { scopeKey: string }) {
   const [files, setFiles] = useState<Asset[]>([]);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);

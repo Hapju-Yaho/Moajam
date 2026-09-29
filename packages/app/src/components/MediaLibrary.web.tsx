@@ -7,9 +7,9 @@ import { readMedia, writeMedia } from '../lib/mediaStore';
 type Asset = { id: string; name: string; type: string; blob: Blob; createdAt: string };
 export function MediaLibrary({ scopeKey }: { scopeKey: string }) {
   return serverConfigured ? (
-    <RemoteMediaLibrary scopeKey={scopeKey} />
+    <RemoteMediaLibrary key={scopeKey} scopeKey={scopeKey} />
   ) : (
-    <LocalMediaLibrary scopeKey={scopeKey} />
+    <LocalMediaLibrary key={scopeKey} scopeKey={scopeKey} />
   );
 }
 function LocalMediaLibrary({ scopeKey }: { scopeKey: string }) {

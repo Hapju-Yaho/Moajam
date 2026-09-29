@@ -14,12 +14,19 @@ import {
 import { Input } from '../styles/layout';
 import { readMedia, writeMedia } from '../lib/mediaStore';
 import { downloadText } from '../lib/platformActions';
-import { useMockAppState } from '../state/MockAppState';
+import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
 import type { ScreenProps } from '../navigation';
 import { scoreToMusicXml, pitchName, type Score, type ScoreNote as Note } from '../lib/score';
 export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   const { workspaceId, adoptedSongs } = useMockAppState();
   const song = adoptedSongs.find((item) => item.id === entityId);
+  const defaultTitle = useRef('나의 악보');
+  defaultTitle.current = song?.title ?? '나의 악보';
+  const [arrangement] = useWorkspaceValue(`song/${entityId}/arrangement`, {
+    key: '',
+    bpm: '',
+    structure: '',
+  });
   const key = `score/${entityId ? workspaceId + '/' + entityId : 'personal'}`;
   const [score, setScore] = useState<Score>({
     title: song?.title ?? '나의 악보',
@@ -31,6 +38,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   const [history, setHistory] = useState<Score[]>([]);
   const [future, setFuture] = useState<Score[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const loadedKey = useRef('');
   const [status, setStatus] = useState('악보 불러오는 중…');
   const [part, setPart] = useState('Guitar');
   const [selected, setSelected] = useState<string | null>(null);
@@ -45,17 +53,35 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   const alive = useRef(true);
   const audio = useRef<HTMLAudioElement | null>(null);
   const [audioUrl, setAudioUrl] = useState('');
+  const [referenceAudio, setReferenceAudio] = useState<Blob | null>(null);
   const [audioPosition, setAudioPosition] = useState(0);
   useEffect(() => {
     alive.current = true;
     let active = true;
-    void readMedia<Score>(key)
+    loadedKey.current = '';
+    setLoaded(false);
+    setHistory([]);
+    setFuture([]);
+    setSelected(null);
+    setPlaying(false);
+    void readMedia<Score & { referenceAudio?: Blob }>(key)
       .then((value) => {
         if (active) {
+          setReferenceAudio(value?.referenceAudio ?? null);
+          setAudioUrl(value?.referenceAudio ? URL.createObjectURL(value.referenceAudio) : '');
+          setAudioPosition(0);
           if (value) {
             setScore(value);
             setPart(value.parts[0] ?? 'Guitar');
-          }
+          } else
+            setScore({
+              title: defaultTitle.current,
+              bpm: 120,
+              notes: [],
+              parts: ['Guitar', 'Vocal', 'Bass', 'Drums'],
+              sync: {},
+            });
+          loadedKey.current = key;
           setLoaded(true);
           setStatus('저장됨');
         }
@@ -69,16 +95,16 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
     };
   }, [key]);
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || loadedKey.current !== key) return;
     setStatus('저장 중…');
-    void writeMedia(key, score)
+    void writeMedia(key, { ...score, referenceAudio })
       .then(() => {
         if (alive.current) setStatus('자동 저장됨');
       })
       .catch(() => {
         if (alive.current) setStatus('저장 실패 · 내보내기로 보관해주세요.');
       });
-  }, [key, score, loaded]);
+  }, [key, score, loaded, referenceAudio]);
   useEffect(
     () => () => {
       if (audioUrl) URL.revokeObjectURL(audioUrl);
@@ -148,6 +174,14 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   return (
     <AppShell activeRoute="score-editor" onNavigate={navigate}>
       <PageHeading>악보 편집</PageHeading>
+      {song && (
+        <ActionButton
+          secondary
+          onPress={() => navigate('song', { id: song.id, workspaceId, songTab: 'resources' })}
+        >
+          ← {song.title} 자료로 돌아가기
+        </ActionButton>
+      )}
       <Meta>개인 악보 · {status}</Meta>
       <Surface>
         <Input
@@ -168,6 +202,18 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
               edit({ ...score, bpm: Math.min(300, Math.max(30, Number(event.target.value) || 30)) })
             }
           />
+          {!!arrangement.bpm && song && (
+            <ActionButton
+              secondary
+              compact
+              disabled={!loaded || playing}
+              onPress={() =>
+                edit({ ...score, bpm: Math.max(30, Math.min(300, Number(arrangement.bpm) || 120)) })
+              }
+            >
+              밴드 기준 {arrangement.bpm} BPM 가져오기
+            </ActionButton>
+          )}
           <ActionButton
             secondary
             disabled={!history.length || playing}
@@ -496,11 +542,19 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
         <Heading>기준 음원과 싱크</Heading>
         <input
           aria-label="악보 기준 음원"
+          disabled={!loaded}
           type="file"
           accept="audio/*"
           onChange={(event) => {
             const file = event.target.files?.[0];
-            if (file) setAudioUrl(URL.createObjectURL(file));
+            if (file) {
+              if (file.size > 104857600) {
+                setStatus('100MB 이하 음원을 선택해주세요.');
+                return;
+              }
+              setReferenceAudio(file);
+              setAudioUrl(URL.createObjectURL(file));
+            }
           }}
         />
         {audioUrl ? (
@@ -520,8 +574,8 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
           />
         ) : null}
         <Meta>
-          {audioPosition.toFixed(2)}초 · 음표를 선택해 현재 음원 위치와 연결하세요. 기준 음원은 다시
-          열 때 직접 선택합니다.
+          {audioPosition.toFixed(2)}초 · 음표를 선택해 현재 음원 위치와 연결하세요. 기준 음원도
+          비공개로 저장됩니다.
         </Meta>
         <ActionButton
           secondary

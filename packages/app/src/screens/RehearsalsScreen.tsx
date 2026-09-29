@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { AppShell } from '../components/AppShell';
 import { PracticeStudio } from '../components/PracticeStudio';
+import { ScheduleDateTime } from '../components/ScheduleDateTime';
 import {
   ActionButton,
   CheckItem,
@@ -145,7 +146,7 @@ function FormField({
         onChangeText={onChangeText}
         placeholder={placeholder}
         multiline={multiline}
-        style={multiline ? { minHeight: 82, textAlignVertical: 'top' } : undefined}
+        style={multiline ? { minHeight: 120, textAlignVertical: 'top', lineHeight: 22 } : undefined}
       />
     </View>
   );
@@ -545,26 +546,12 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
           onChangeText={(value) => updateDraft('title', value)}
           placeholder="예: 정기 합주"
         />
-        <FormField
-          label="날짜"
-          value={draft.date}
-          onChangeText={(value) => updateDraft('date', value)}
-          placeholder="YYYY-MM-DD"
+        <ScheduleDateTime
+          date={draft.date}
+          start={draft.start}
+          end={draft.end}
+          onChange={(change) => setDraft((previous) => ({ ...previous, ...change }))}
         />
-        <FlexRow style={{ alignItems: 'stretch' }}>
-          <FormField
-            label="시작 시간"
-            value={draft.start}
-            onChangeText={(value) => updateDraft('start', value)}
-            placeholder="19:00"
-          />
-          <FormField
-            label="종료 시간"
-            value={draft.end}
-            onChangeText={(value) => updateDraft('end', value)}
-            placeholder="22:00"
-          />
-        </FlexRow>
         <FormField
           label="장소"
           value={draft.place}

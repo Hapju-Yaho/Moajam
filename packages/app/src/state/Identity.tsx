@@ -1,95 +1,100 @@
 import { createContext, useContext, useEffect, useState, type PropsWithChildren } from 'react';
 import { View } from 'react-native';
-import { currentIdentity, subscribeIdentity, signIn, serverConfigured, api } from '../lib/remote';
-import { activatePreferences } from './preferences';
-import { ActionButton, Heading, Meta, Surface } from '../components/ProductUI';
-import { Input } from '../styles/layout';
+import {
+  currentIdentity,
+  subscribeIdentity,
+  serverConfigured,
+  clientConfig,
+  api,
+} from '../lib/remote';
+import { activatePreferences, loadRemotePreferences } from './preferences';
+import { Meta } from '../components/ProductUI';
+import { LoginScreen } from '../screens/LoginScreen';
+import { OnboardingScreen, type OnboardingState } from '../screens/OnboardingScreen';
 const Identity = createContext('m1');
 export function IdentityProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<string | null>(serverConfigured ? null : 'm1');
   const [loading, setLoading] = useState(serverConfigured);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [temporary, setTemporary] = useState(false);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [onboarding, setOnboarding] = useState<OnboardingState | null>(null);
   useEffect(() => {
     let alive = true;
+    let sequence = 0;
+    let loadedIdentity: string | null = null;
     const refresh = () => {
-      void currentIdentity()
-        .then(async (id) => {
-          const profile =
-            id && serverConfigured ? await api<{ displayName: string } | null>('/me') : null;
-          if (alive) {
-            if (id) activatePreferences(id, profile?.displayName);
-            setUser(id);
-            setLoading(false);
-          }
-        })
-        .catch(() => {
-          if (alive) {
-            setError('로그인을 확인하지 못했어요. 새로고침해주세요.');
-            setLoading(false);
-          }
-        });
+      const run = ++sequence;
+      void (async () => {
+        if (serverConfigured) {
+          const config = await clientConfig();
+          if (alive && run === sequence) setTemporary(config.authMode === 'temporary');
+        }
+        const id = await currentIdentity();
+        if (id && id === loadedIdentity) return;
+        const profile =
+          id && serverConfigured ? await api<{ displayName: string } | null>('/me') : null;
+        const setup =
+          id && serverConfigured
+            ? await api<OnboardingState>('/me/onboarding', 'GET', undefined, id)
+            : null;
+        if (id && serverConfigured)
+          await loadRemotePreferences(id, profile?.displayName, () => alive && run === sequence);
+        if (alive && run === sequence) {
+          if (id && !serverConfigured) activatePreferences(id, profile?.displayName);
+          setUser(id);
+          setOnboarding(setup);
+          loadedIdentity = id;
+          setLoading(false);
+          setError('');
+        }
+      })().catch((failure: unknown) => {
+        if (alive && run === sequence) {
+          setUser(null);
+          loadedIdentity = null;
+          setError(failure instanceof Error ? failure.message : '계정을 확인하지 못했습니다.');
+          setLoading(false);
+        }
+      });
     };
-    refresh();
     const unsubscribe = subscribeIdentity(refresh);
+    refresh();
     return () => {
       alive = false;
       unsubscribe();
     };
-  }, []);
+  }, [retry]);
   if (loading)
     return (
       <View style={{ padding: 40 }}>
-        <Meta>계정 확인 중…</Meta>
+        <Meta>Moajam을 준비하고 있어요…</Meta>
       </View>
     );
   if (!user)
     return (
-      <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#f5f7fb' }}>
-        <Surface style={{ maxWidth: 440, width: '100%', alignSelf: 'center' }}>
-          <Heading>Moajam 로그인</Heading>
-          <Input
-            accessibilityLabel="이메일"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            placeholder="이메일"
-          />
-          <Input
-            accessibilityLabel="비밀번호"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-            placeholder="비밀번호"
-          />
-          {error ? <Meta accessibilityRole="alert">{error}</Meta> : null}
-          <ActionButton
-            disabled={busy || !email.trim() || !password}
-            onPress={() => {
-              setBusy(true);
-              setError('');
-              void signIn(email.trim(), password)
-                .catch((failure: unknown) =>
-                  setError(failure instanceof Error ? failure.message : '로그인하지 못했어요.'),
-                )
-                .finally(() => {
-                  setBusy(false);
-                  setPassword('');
-                });
-            }}
-          >
-            {busy ? '로그인 중…' : '로그인'}
-          </ActionButton>
-          <Meta>등록된 계정으로 로그인해주세요.</Meta>
-        </Surface>
-      </View>
+      <LoginScreen
+        temporary={temporary}
+        error={error}
+        onRetry={() => {
+          setLoading(true);
+          setRetry((value) => value + 1);
+        }}
+      />
     );
   return (
     <Identity.Provider key={user} value={user}>
-      {children}
+      {onboarding && !onboarding.completed ? (
+        <OnboardingScreen
+          user={user}
+          initial={onboarding}
+          onComplete={() => {
+            setLoading(true);
+            setRetry((value) => value + 1);
+          }}
+        />
+      ) : (
+        children
+      )}
     </Identity.Provider>
   );
 }

@@ -16,12 +16,38 @@ model Profile {
   id                String            @id @db.Uuid
   displayName       String            @map("display_name") @db.VarChar(80)
   avatarUrl         String?           @map("avatar_url")
+  parts             Json              @default("[]")
+  onboardingCompletedAt DateTime?     @map("onboarding_completed_at") @db.Timestamptz(3)
   createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
   memberships       WorkspaceMember[]
   createdWorkspaces Workspace[]       @relation("WorkspaceCreator")
+  authIdentities    AuthIdentity[]
+  authSessions      AuthSession[]
 
   @@map("profiles")
+}
+
+model AuthIdentity {
+  provider       String @db.VarChar(32)
+  providerUserId String @map("provider_user_id") @db.VarChar(128)
+  userId         String @map("user_id") @db.Uuid
+  user           Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  @@id([provider, providerUserId])
+  @@index([userId])
+  @@map("auth_identities")
+}
+
+model AuthSession {
+  id        String @id @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  user      Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("auth_sessions")
 }
 
 model Workspace {
@@ -119,4 +145,22 @@ model Notification {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   @@index([userId,readAt])
   @@map("notifications")
+}
+
+model PersonalSchedule {
+  ownerId String @map("owner_id") @db.Uuid
+  id String @db.VarChar(120)
+  value Json
+  @@id([ownerId, id])
+  @@map("personal_schedules")
+}
+
+model PersonalDocument {
+  ownerId String @map("owner_id") @db.Uuid
+  key String @db.VarChar(240)
+  value Json
+  revision Int @default(1)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  @@id([ownerId, key])
+  @@map("personal_documents")
 }

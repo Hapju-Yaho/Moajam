@@ -12,7 +12,22 @@ async function loadTypeScript(path) {
   });
   return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 }
-const { buildAppPath } = await loadTypeScript('../packages/app/src/navigation.ts');
+const { buildAppPath, parseSongTab, songTabs } = await loadTypeScript(
+  '../packages/app/src/navigation.ts',
+);
+test('song deep links preserve band, song and each tab across reloads', () => {
+  for (const songTab of songTabs) {
+    const path = buildAppPath(
+      'song',
+      { id: 'same song', workspaceId: 'band b', songTab },
+      { route: 'song', workspaceId: 'band a' },
+    );
+    const url = new URL(path, 'http://localhost');
+    assert.equal(url.pathname, '/workspaces/band%20b/songs/same%20song');
+    assert.equal(parseSongTab(url.searchParams.get('tab')), songTab);
+  }
+  assert.equal(parseSongTab('unknown'), 'main');
+});
 const { personalSongs, personalRehearsals, setSongPreparation } = await loadTypeScript(
   '../packages/app/src/state/workspaceModel.ts',
 );

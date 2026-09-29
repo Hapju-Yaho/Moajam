@@ -10,7 +10,33 @@ async function source(path) {
   });
   return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 }
-const { canWriteDocument } = await source('../apps/server/src/workspaces/document-policy.ts');
+const { canWriteDocument, isWorkspaceDocumentKey } = await source(
+  '../apps/server/src/workspaces/document-policy.ts',
+);
+test('song references protect authorship, including older links without an author', () => {
+  const link = { id: 'a', authorId: 'u', title: 'Live', url: 'https://example.com/live' };
+  const old = { id: 'legacy', title: 'Score', url: 'https://example.com/score' };
+  const key = 'song/s/links';
+  assert.equal(canWriteDocument(key, [], [link], 'u', false), true);
+  assert.equal(canWriteDocument(key, [], [link], 'v', true), false);
+  assert.equal(canWriteDocument(key, [link], [{ ...link, title: 'Edit' }], 'u', false), true);
+  assert.equal(canWriteDocument(key, [link], [{ ...link, title: 'Edit' }], 'v', false), false);
+  assert.equal(canWriteDocument(key, [link], [], 'v', false), false);
+  assert.equal(canWriteDocument(key, [old], [old, link], 'u', false), true);
+  assert.equal(canWriteDocument(key, [old], [], 'u', false), false);
+  assert.equal(canWriteDocument(key, [old], [{ ...old, title: 'Updated' }], 'owner', true), true);
+  assert.equal(
+    canWriteDocument(key, [], [{ ...link, url: 'javascript:alert(1)' }], 'u', false),
+    false,
+  );
+});
+test('song session reflections have scoped keys and bounded content', () => {
+  assert.equal(isWorkspaceDocumentKey('song/s-1/session/r-1/memo'), true);
+  assert.equal(isWorkspaceDocumentKey('song/s-1/session/../memo'), false);
+  assert.equal(isWorkspaceDocumentKey('song/s-1/session/r-1/admin'), false);
+  assert.equal(canWriteDocument('song/s/session/r/memo', '', '곡별 회고', 'u', false), true);
+  assert.equal(canWriteDocument('song/s/session/r/memo', '', 'x'.repeat(50001), 'u', false), false);
+});
 const { scoreToMusicXml } = await source('../packages/app/src/lib/score.ts');
 test('MusicXML splits notes crossing bar lines with ties and escapes metadata', () => {
   const notes = [3, 2].map((beats, index) => ({

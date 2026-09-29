@@ -1,5 +1,7 @@
+import { ApiProperty, ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   Body,
+  BadRequestException,
   Controller,
   Delete,
   ForbiddenException,
@@ -17,34 +19,45 @@ import { IsIn, IsInt, IsObject, IsString, MaxLength, Min, MinLength } from 'clas
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../common/database/prisma.service.js';
 import { CurrentUser } from '../common/auth/current-user.decorator.js';
-import type { AuthenticatedUser } from '../common/auth/supabase.service.js';
+import type { AuthenticatedUser } from '../common/auth/auth.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
-import { canWriteDocument } from './document-policy.js';
+import { canWriteDocument, isWorkspaceDocumentKey } from './document-policy.js';
 import { StorageService } from '../media/storage.service.js';
 import { SeparationService } from '../media/separation.service.js';
 
 class CreateWorkspaceDto {
-  @IsString() @MinLength(1) @MaxLength(80) name!: string;
+  @ApiProperty() @IsString() @MinLength(1) @MaxLength(80) name!: string;
 }
 class ProfileDto {
-  @IsString() @MinLength(1) @MaxLength(80) displayName!: string;
+  @ApiProperty() @IsString() @MinLength(1) @MaxLength(80) displayName!: string;
 }
 class MemberDto {
-  @IsIn(['OWNER', 'MEMBER']) role!: 'OWNER' | 'MEMBER';
-  @IsString() @MaxLength(80) part!: string;
+  @ApiProperty() @IsIn(['OWNER', 'MEMBER']) role!: 'OWNER' | 'MEMBER';
+  @ApiProperty() @IsString() @MaxLength(80) part!: string;
 }
 class DocumentDto {
-  @IsInt() @Min(0) revision!: number;
-  @IsObject() value!: Record<string, unknown>;
+  @ApiProperty() @IsInt() @Min(0) revision!: number;
+  @ApiProperty({ type: 'object', additionalProperties: true }) @IsObject() value!: Record<
+    string,
+    unknown
+  >;
 }
 class AcceptInviteDto {
-  @IsString() @MinLength(40) @MaxLength(128) token!: string;
+  @ApiProperty() @IsString() @MinLength(40) @MaxLength(128) token!: string;
 }
 class ReminderDto {
-  @IsString() @MinLength(1) @MaxLength(500) message!: string;
+  @ApiProperty() @IsString() @MinLength(1) @MaxLength(500) message!: string;
+}
+class PersonalScheduleDto {
+  @ApiProperty({ type: 'object', additionalProperties: true }) @IsObject() value!: Record<
+    string,
+    unknown
+  >;
 }
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 
+@ApiTags('Workspaces')
+@ApiBearerAuth()
 @Controller()
 export class WorkspacesController {
   constructor(
@@ -63,9 +76,57 @@ export class WorkspacesController {
   @Get('me') async me(@CurrentUser() user: AuthenticatedUser) {
     return this.db.profile.findUnique({ where: { id: user.id } });
   }
-  @Get('notifications') async notifications(@CurrentUser() user: AuthenticatedUser) {
+  @Get('me/schedules') async personalSchedules(@CurrentUser() user: AuthenticatedUser) {
+    const rows = await this.db.personalSchedule.findMany({ where: { ownerId: user.id } });
+    return rows.map((row) => row.value);
+  }
+  @Put('me/schedules/:id') async savePersonalSchedule(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: PersonalScheduleDto,
+  ) {
+    const value = dto.value;
+    if (
+      !/^[\w-]{1,120}$/.test(id) ||
+      value.id !== id ||
+      typeof value.title !== 'string' ||
+      !value.title.trim() ||
+      value.title.length > 200 ||
+      typeof value.place !== 'string' ||
+      value.place.length > 1000 ||
+      typeof value.goal !== 'string' ||
+      value.goal.length > 5000 ||
+      !canWriteDocument('rehearsals', [], [value], user.id, true)
+    )
+      throw new BadRequestException('일정 이름, 날짜와 시간을 확인해주세요.');
+    // Never accept ownership or workspace fields from the request body.
+    const data = {
+      id,
+      title: value.title.trim(),
+      date: value.date,
+      start: value.start,
+      end: value.end,
+      place: value.place,
+      goal: value.goal,
+    } as Prisma.InputJsonValue;
+    return this.db.personalSchedule.upsert({
+      where: { ownerId_id: { ownerId: user.id, id } },
+      create: { ownerId: user.id, id, value: data },
+      update: { value: data },
+    });
+  }
+  @Delete('me/schedules/:id') async deletePersonalSchedule(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.db.personalSchedule.deleteMany({ where: { ownerId: user.id, id } });
+  }
+  @Get('notifications') async notifications(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('workspaceId') workspaceId?: string,
+  ) {
     const memberships = await this.db.workspaceMember.findMany({
-      where: { userId: user.id },
+      where: { userId: user.id, ...(workspaceId ? { workspaceId } : {}) },
       select: { workspaceId: true },
     });
     return this.db.notification.findMany({
@@ -247,12 +308,7 @@ export class WorkspacesController {
     @Body() dto: DocumentDto,
   ) {
     const member = await this.membership(workspaceId, user.id);
-    if (
-      !/^(recommendations|songs|rehearsals|song\/[\w-]+\/(discussion|checks|arrangement|links)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
-        key,
-      )
-    )
-      throw new ForbiddenException('지원하지 않는 문서입니다.');
+    if (!isWorkspaceDocumentKey(key)) throw new ForbiddenException('지원하지 않는 문서입니다.');
     return this.db.$transaction(async (tx) => {
       const existing = await tx.workspaceDocument.findUnique({
         where: { workspaceId_key: { workspaceId, key } },

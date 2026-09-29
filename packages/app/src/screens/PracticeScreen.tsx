@@ -23,7 +23,8 @@ export function PracticeScreen({
   entityId,
   fromBand = false,
 }: ScreenProps & { fromBand?: boolean }) {
-  const { allSongs, workspaceId, workspaces } = useMockAppState();
+  const { allSongs, workspaceId, workspaces, adoptedSongs } = useMockAppState();
+  const excludedSong = entityId ? adoptedSongs.find((item) => item.id === entityId) : undefined;
   const [filter, setFilter] = useState('all');
   const song = entityId
     ? allSongs.find((item) => item.workspaceId === workspaceId && item.id === entityId)
@@ -81,9 +82,28 @@ export function PracticeScreen({
         {!visible.length && (
           <Meta>이 밴드에 채택된 곡이 없어요. 밴드 공간에서 연습곡을 골라보세요.</Meta>
         )}
-        {entityId && !song && (
-          <Copy>선택한 곡을 찾을 수 없어요. 접근 가능한 곡을 다시 선택해주세요.</Copy>
-        )}
+        {entityId &&
+          !song &&
+          (excludedSong ? (
+            <>
+              <Copy>
+                {excludedSong.archived
+                  ? '보관 중인 곡이에요.'
+                  : '참여 파트가 배정되지 않은 곡이에요.'}{' '}
+                곡 상세에서 개인 연습을 이어갈 수 있어요.
+              </Copy>
+              <ActionButton
+                secondary
+                onPress={() =>
+                  navigate('song', { id: excludedSong.id, workspaceId, songTab: 'practice' })
+                }
+              >
+                이 곡 연습하기
+              </ActionButton>
+            </>
+          ) : (
+            <Copy>선택한 곡을 찾을 수 없어요. 접근 가능한 곡을 다시 선택해주세요.</Copy>
+          ))}
       </Surface>
       {song && (
         <PracticeStudio

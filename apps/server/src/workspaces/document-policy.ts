@@ -1,4 +1,8 @@
 type Row = Record<string, unknown>;
+export const isWorkspaceDocumentKey = (key: string) =>
+  /^(recommendations|songs|rehearsals|song\/[\w-]+\/(discussion|checks|arrangement|links|session\/[\w-]+\/memo)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
+    key,
+  );
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const object = (value: unknown): value is Row =>
   !!value && typeof value === 'object' && !Array.isArray(value);
@@ -27,6 +31,13 @@ function authored(before: unknown, after: unknown, user: string, owner: boolean)
   )
     return false;
   return after.every((next) => {
+    if (
+      next.videoUrl !== undefined &&
+      (typeof next.videoUrl !== 'string' ||
+        next.videoUrl.length > 4000 ||
+        !/^https?:\/\//.test(next.videoUrl))
+    )
+      return false;
     const old = previous.find((row) => row.id === next.id);
     if (!old)
       return (
@@ -195,18 +206,41 @@ export function canWriteDocument(
           typeof row.label === 'string' &&
           row.label.length <= 2000 &&
           typeof row.done === 'boolean' &&
-          (!key.endsWith('/tasks') || typeof row.assigneeId === 'string'),
+          (!key.endsWith('/tasks') || typeof row.assigneeId === 'string') &&
+          (row.assigneeId === undefined || typeof row.assigneeId === 'string') &&
+          (row.sourceOpinionId === undefined || typeof row.sourceOpinionId === 'string'),
       )
     );
-  if (key.endsWith('/links'))
-    return (
-      rows(after) &&
-      after.every(
-        (row) =>
-          typeof row.title === 'string' &&
-          typeof row.url === 'string' &&
-          /^https?:\/\//.test(row.url),
+  if (key.endsWith('/links')) {
+    if (!rows(after)) return false;
+    const previous = rows(before) ? before : [];
+    if (
+      previous.some(
+        (old) => !after.some((next) => next.id === old.id) && !owner && old.authorId !== user,
       )
-    );
+    )
+      return false;
+    return after.every((next) => {
+      if (
+        typeof next.title !== 'string' ||
+        !next.title.trim() ||
+        next.title.length > 300 ||
+        typeof next.url !== 'string' ||
+        next.url.length > 4000
+      )
+        return false;
+      try {
+        const url = new URL(next.url);
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+          return false;
+      } catch {
+        return false;
+      }
+      const old = previous.find((row) => row.id === next.id);
+      if (!old) return next.authorId === user;
+      if (next.authorId !== old.authorId) return false;
+      return owner || old.authorId === user || equal(old, next);
+    });
+  }
   return false;
 }

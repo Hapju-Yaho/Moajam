@@ -14,12 +14,12 @@ import {
   Toggle,
 } from '../components/ProductUI';
 import { ProfilePhoto } from '../components/ProfilePhoto';
-import { usePreferences, updatePreferences } from '../state/preferences';
+import { SessionPicker } from '../components/SessionPicker';
+import { usePreferences, persistPreferences } from '../state/preferences';
 import { useMockAppState } from '../state/MockAppState';
 import { downloadText } from '../lib/platformActions';
 import { Input } from '../styles/layout';
 import type { ScreenProps } from '../navigation';
-import { api, serverConfigured } from '../lib/remote';
 export function SettingsScreen({ navigate }: ScreenProps) {
   const preferences = usePreferences();
   const [draft, setDraft] = useState(preferences);
@@ -33,8 +33,7 @@ export function SettingsScreen({ navigate }: ScreenProps) {
     }
     setSaving(true);
     try {
-      if (serverConfigured) await api('/me', 'PUT', { displayName: draft.name.trim() });
-      updatePreferences({ ...draft, name: draft.name.trim() });
+      await persistPreferences({ ...draft, name: draft.name.trim() });
       setMessage('설정을 저장했습니다.');
     } catch (error) {
       setMessage(
@@ -51,9 +50,19 @@ export function SettingsScreen({ navigate }: ScreenProps) {
       <PageHeading>내 프로필과 설정</PageHeading>
       <Surface>
         <Heading>내 프로필</Heading>
-        <ProfilePhoto value={draft.photo} onChange={(photo) => setDraft({ ...draft, photo })} />
+        <ProfilePhoto
+          value={draft.photo}
+          onChange={(photo) => setDraft((previous) => ({ ...previous, photo }))}
+          disabled={saving}
+        />
         <Meta>이름</Meta>
         <Input value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} />
+        <Meta>담당 세션 · 여러 개 선택할 수 있어요</Meta>
+        <SessionPicker
+          value={draft.parts}
+          onChange={(parts) => setDraft({ ...draft, parts })}
+          disabled={saving}
+        />
         <Meta>소개</Meta>
         <Input multiline value={draft.bio} onChangeText={(bio) => setDraft({ ...draft, bio })} />
       </Surface>
@@ -139,8 +148,8 @@ export function SettingsScreen({ navigate }: ScreenProps) {
       <Surface>
         <Heading>내 데이터</Heading>
         <Meta>
-          브라우저에 저장된 밴드 기록을 JSON으로 내려받습니다. 오디오와 악보 파일은 각 보관함에서
-          별도로 내려받아주세요.
+          현재 불러온 밴드 기록을 JSON으로 내려받습니다. 오디오와 악보 파일은 각 보관함에서 별도로
+          내려받아주세요.
         </Meta>
         <ActionButton
           secondary

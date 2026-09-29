@@ -31,15 +31,24 @@ export function SongsScreen({ navigate }: ScreenProps) {
   const { adoptedSongs } = useMockAppState();
   const [tab, setTab] = useState('전체');
   const [query, setQuery] = useState('');
-  const visible = adoptedSongs.filter(
-    (song) =>
-      (tab === '보관함'
-        ? song.archived
-        : !song.archived &&
-          (tab === '전체' ||
-            (tab === '연습 중' ? song.status === 'PRACTICING' : song.status === 'READY'))) &&
-      `${song.title}${song.artist}`.toLowerCase().includes(query.toLowerCase()),
-  );
+  const [sort, setSort] = useState('기본순');
+  const visible = adoptedSongs
+    .filter(
+      (song) =>
+        (tab === '보관함'
+          ? song.archived
+          : !song.archived &&
+            (tab === '전체' ||
+              (tab === '연습 중' ? song.status === 'PRACTICING' : song.status === 'READY'))) &&
+        `${song.title} ${song.artist}`.toLowerCase().includes(query.trim().toLowerCase()),
+    )
+    .sort((a, b) =>
+      sort === '곡 이름순'
+        ? a.title.localeCompare(b.title, 'ko')
+        : sort === '준비 낮은순'
+          ? (a.total ? a.ready / a.total : 0) - (b.total ? b.ready / b.total : 0)
+          : 0,
+    );
   return (
     <AppShell activeRoute="songs" onNavigate={navigate}>
       <FlexBetween
@@ -54,7 +63,11 @@ export function SongsScreen({ navigate }: ScreenProps) {
         <ActionButton onPress={() => navigate('recommendations')}>+ 곡 추가</ActionButton>
       </FlexBetween>
       <FlexRow wrap>
-        <StatTile icon="songs" label="전체 채택곡" value={`${adoptedSongs.length}곡`} />
+        <StatTile
+          icon="songs"
+          label="활동 중인 곡"
+          value={`${adoptedSongs.filter((song) => !song.archived).length}곡`}
+        />
         <StatTile
           icon="rehearsal"
           label="연습 중"
@@ -67,13 +80,24 @@ export function SongsScreen({ navigate }: ScreenProps) {
           value={`${adoptedSongs.filter((song) => !song.archived && song.status === 'READY').length}곡`}
           color="#16a36a"
         />
+        <StatTile
+          icon="songs"
+          label="보관 중"
+          value={`${adoptedSongs.filter((song) => song.archived).length}곡`}
+        />
       </FlexRow>
       <FlexBetween
         style={width < 650 ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
       >
         <FlexRow wrap>
           {['전체', '연습 중', '준비 완료', '보관함'].map((item) => (
-            <Pill key={item} active={tab === item} onPress={() => setTab(item)}>
+            <Pill
+              key={item}
+              accessibilityRole="button"
+              accessibilityState={{ selected: tab === item }}
+              active={tab === item}
+              onPress={() => setTab(item)}
+            >
               <PillText active={tab === item}>{item}</PillText>
             </Pill>
           ))}
@@ -82,6 +106,20 @@ export function SongsScreen({ navigate }: ScreenProps) {
           <Input value={query} onChangeText={setQuery} placeholder="곡 또는 아티스트 검색" />
         </View>
       </FlexBetween>
+      <FlexRow wrap>
+        <Meta>{visible.length}곡</Meta>
+        {['기본순', '곡 이름순', '준비 낮은순'].map((value) => (
+          <Pill
+            key={value}
+            accessibilityRole="button"
+            accessibilityState={{ selected: sort === value }}
+            active={sort === value}
+            onPress={() => setSort(value)}
+          >
+            <PillText active={sort === value}>{value}</PillText>
+          </Pill>
+        ))}
+      </FlexRow>
       {visible.length === 0 ? (
         <Surface>
           <Heading>
@@ -92,6 +130,18 @@ export function SongsScreen({ navigate }: ScreenProps) {
               ? '검색어나 준비 상태 필터를 바꿔보세요.'
               : '곡 추천에서 함께 연습할 곡을 채택해보세요.'}
           </Meta>
+          <ActionButton
+            secondary
+            onPress={() => {
+              if (!adoptedSongs.length) navigate('recommendations');
+              else {
+                setQuery('');
+                setTab('전체');
+              }
+            }}
+          >
+            {adoptedSongs.length ? '검색과 필터 초기화' : '추천곡 보러가기'}
+          </ActionButton>
         </Surface>
       ) : null}
       <ResponsiveGrid stacked={width < 920}>
@@ -127,11 +177,24 @@ export function SongsScreen({ navigate }: ScreenProps) {
 }
 
 function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps['navigate'] }) {
-  const { members } = useMockAppState();
+  const { members, rehearsals } = useMockAppState();
+  const participants = members.filter((member) => song.participants?.[member.id]);
+  const nextSession = rehearsals
+    .filter(
+      (event) =>
+        event.songIds?.includes(song.id) &&
+        !event.cancelled &&
+        new Date(`${event.date}T${event.end}`) >= new Date(),
+    )
+    .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`))[0];
   const { width } = useWindowDimensions();
   return (
     <Surface>
-      <Pressable onPress={() => navigate('song', { id: song.id })}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${song.title} 상세 보기`}
+        onPress={() => navigate('song', { id: song.id })}
+      >
         <FlexRow gap={16}>
           <SongCover id={song.id} thumbnailUrl={song.thumbnailUrl} size={width < 650 ? 72 : 104} />
           <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
@@ -144,7 +207,13 @@ function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps
               </View>
               <Pill tone={song.status === 'READY' ? 'green' : 'amber'}>
                 <PillText tone={song.status === 'READY' ? 'green' : 'amber'}>
-                  {song.status === 'READY' ? '준비 완료' : '연습 중'}
+                  {song.archived
+                    ? '보관 중'
+                    : !song.total
+                      ? '파트 미배정'
+                      : song.status === 'READY'
+                        ? '준비 완료'
+                        : '연습 중'}
                 </PillText>
               </Pill>
             </FlexBetween>
@@ -162,21 +231,31 @@ function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps
             </Progress>
             <FlexBetween>
               <FlexRow>
-                {members.slice(0, 3).map((member) => (
+                {participants.slice(0, 3).map((member) => (
                   <Avatar key={member.id} size={28} color={member.color}>
                     <AvatarText>{member.initials}</AvatarText>
                   </Avatar>
                 ))}
+                {participants.length > 3 && <Meta>+{participants.length - 3}</Meta>}
+                {!participants.length && <Meta>참여자 미배정</Meta>}
               </FlexRow>
               <Meta>의견 {song.comments}</Meta>
             </FlexBetween>
           </View>
         </FlexRow>
       </Pressable>
+      <Meta>
+        {nextSession ? `다음 합주 · ${nextSession.date} ${nextSession.start}` : '예정된 합주 없음'}
+      </Meta>
       <FlexBetween>
         <Meta>내 파트 · {song.myPart || '미배정'}</Meta>
-        <ActionButton compact onPress={() => navigate('practice', { id: song.id })}>
-          연습 시작
+        <ActionButton
+          compact
+          onPress={() =>
+            navigate('song', { id: song.id, songTab: song.archived ? 'overview' : 'practice' })
+          }
+        >
+          {song.archived ? '보관곡 보기' : '연습 시작'}
         </ActionButton>
       </FlexBetween>
     </Surface>

@@ -1,0 +1,167 @@
+// Generated from schema.prisma by scripts/database.mjs.
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/sqlite"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum WorkspaceRole {
+  OWNER
+  MEMBER
+}
+
+model Profile {
+  id                String            @id
+  displayName       String            @map("display_name")
+  avatarUrl         String?           @map("avatar_url")
+  parts             Json              @default(dbgenerated("'[]'"))
+  onboardingCompletedAt DateTime?     @map("onboarding_completed_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  memberships       WorkspaceMember[]
+  createdWorkspaces Workspace[]       @relation("WorkspaceCreator")
+  authIdentities    AuthIdentity[]
+  authSessions      AuthSession[]
+
+  @@map("profiles")
+}
+
+model AuthIdentity {
+  provider       String
+  providerUserId String @map("provider_user_id")
+  userId         String @map("user_id")
+  user           Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now()) @map("created_at")
+  @@id([provider, providerUserId])
+  @@index([userId])
+  @@map("auth_identities")
+}
+
+model AuthSession {
+  id        String @id
+  userId    String @map("user_id")
+  user      Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+model Workspace {
+  id          String            @id @default(uuid())
+  name        String
+  createdById String            @map("created_by_id")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  createdBy   Profile           @relation("WorkspaceCreator", fields: [createdById], references: [id])
+  members     WorkspaceMember[]
+  documents   WorkspaceDocument[]
+  invitations WorkspaceInvitation[]
+
+  @@index([createdById])
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid())
+  workspaceId String        @map("workspace_id")
+  userId      String        @map("user_id")
+  role        WorkspaceRole @default(MEMBER)
+  part        String        @default("")
+  joinedAt    DateTime      @default(now()) @map("joined_at")
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+model WorkspaceDocument {
+  workspaceId String @map("workspace_id")
+  key String
+  value Json
+  revision Int @default(1)
+  updatedBy String @map("updated_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  workspace Workspace @relation(fields:[workspaceId], references:[id], onDelete:Cascade)
+  @@id([workspaceId,key])
+  @@map("workspace_documents")
+}
+
+model WorkspaceInvitation {
+  id String @id @default(uuid())
+  workspaceId String @map("workspace_id")
+  tokenHash String @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  revoked Boolean @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  workspace Workspace @relation(fields:[workspaceId],references:[id],onDelete:Cascade)
+  @@index([workspaceId])
+  @@map("workspace_invitations")
+}
+
+model MediaAsset {
+  id String @id @default(uuid())
+  ownerId String @map("owner_id")
+  workspaceId String? @map("workspace_id")
+  scope String
+  objectKey String @unique @map("object_key")
+  name String
+  mime String
+  size Int
+  visibility String @default("PRIVATE")
+  ready Boolean @default(false)
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([ownerId,scope])
+  @@index([workspaceId,scope])
+  @@map("media_assets")
+}
+
+model SeparationJob {
+  id String @id @default(uuid())
+  ownerId String @map("owner_id")
+  sourceId String @map("source_id")
+  instrument String
+  status String @default("QUEUED")
+  error String?
+  outputs Json @default(dbgenerated("'[]'"))
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@index([ownerId,status])
+  @@map("separation_jobs")
+}
+
+model Notification {
+  id String @id @default(uuid())
+  userId String @map("user_id")
+  workspaceId String @map("workspace_id")
+  message String
+  readAt DateTime? @map("read_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([userId,readAt])
+  @@map("notifications")
+}
+
+model PersonalSchedule {
+  ownerId String @map("owner_id")
+  id String
+  value Json
+  @@id([ownerId, id])
+  @@map("personal_schedules")
+}
+
+model PersonalDocument {
+  ownerId String @map("owner_id")
+  key String
+  value Json
+  revision Int @default(1)
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@id([ownerId, key])
+  @@map("personal_documents")
+}
