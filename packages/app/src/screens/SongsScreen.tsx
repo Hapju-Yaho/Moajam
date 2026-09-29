@@ -1,3 +1,4 @@
+import { RecommendationsScreen } from './RecommendationsScreen';
 import { theme } from '@moajam/ui';
 import { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
@@ -55,13 +56,13 @@ export function SongsScreen({ navigate }: ScreenProps) {
         style={width < 650 ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
       >
         <PageTop>
-          <PageHeading>채택곡</PageHeading>
+          <PageHeading>참여 곡</PageHeading>
           <PageDescription>
             우리 팀이 함께 완성해갈 곡과 준비 상태를 한눈에 확인하세요.
           </PageDescription>
         </PageTop>
-        <ActionButton onPress={() => navigate('recommendations')}>+ 곡 추가</ActionButton>
       </FlexBetween>
+      <Heading>채택된 곡</Heading>
       <FlexRow wrap>
         <StatTile
           icon="songs"
@@ -130,18 +131,20 @@ export function SongsScreen({ navigate }: ScreenProps) {
               ? '검색어나 준비 상태 필터를 바꿔보세요.'
               : '곡 추천에서 함께 연습할 곡을 채택해보세요.'}
           </Meta>
-          <ActionButton
-            secondary
-            onPress={() => {
-              if (!adoptedSongs.length) navigate('recommendations');
-              else {
-                setQuery('');
-                setTab('전체');
-              }
-            }}
-          >
-            {adoptedSongs.length ? '검색과 필터 초기화' : '추천곡 보러가기'}
-          </ActionButton>
+          {adoptedSongs.length > 0 && (
+            <ActionButton
+              secondary
+              onPress={() => {
+                if (!adoptedSongs.length) return;
+                else {
+                  setQuery('');
+                  setTab('전체');
+                }
+              }}
+            >
+              검색과 필터 초기화
+            </ActionButton>
+          )}
         </Surface>
       ) : null}
       <ResponsiveGrid stacked={width < 920}>
@@ -158,20 +161,9 @@ export function SongsScreen({ navigate }: ScreenProps) {
             .map((song) => (
               <SongTile key={song.id} song={song} navigate={navigate} />
             ))}
-          <Pressable onPress={() => navigate('recommendations')}>
-            <Surface
-              tint="#f7f9ff"
-              style={{ minHeight: 180, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Heading>다음 연습곡을 찾고 있나요?</Heading>
-              <Meta>멤버가 추천한 곡을 보고 함께 투표해보세요.</Meta>
-              <ActionButton secondary onPress={() => navigate('recommendations')}>
-                곡 추천 보러가기
-              </ActionButton>
-            </Surface>
-          </Pressable>
         </Stack>
       </ResponsiveGrid>
+      <RecommendationsScreen navigate={navigate} embedded />
     </AppShell>
   );
 }
@@ -252,10 +244,10 @@ function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps
         <ActionButton
           compact
           onPress={() =>
-            navigate('song', { id: song.id, songTab: song.archived ? 'overview' : 'practice' })
+            navigate(song.archived ? 'song' : 'practice', { id: song.id, songTab: 'overview' })
           }
         >
-          {song.archived ? '보관곡 보기' : '연습 시작'}
+          {song.archived ? '보관곡 보기' : '연습하기'}
         </ActionButton>
       </FlexBetween>
     </Surface>

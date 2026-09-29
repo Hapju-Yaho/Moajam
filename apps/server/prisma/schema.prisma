@@ -137,6 +137,8 @@ model SeparationJob {
 }
 
 model Notification {
+  kind String @default("NOTICE")
+  entityId String? @map("entity_id")
   id String @id @default(uuid()) @db.Uuid
   userId String @map("user_id") @db.Uuid
   workspaceId String @map("workspace_id") @db.Uuid

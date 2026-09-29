@@ -58,6 +58,7 @@ export function ScheduleDashboard({
           </ScrollView>
         </Surface>
         <Notifications
+          navigate={navigate}
           key={workspaceId ?? 'personal'}
           title="최근 알림"
           height={cardHeight}

@@ -2,7 +2,7 @@ import styled from '@emotion/native';
 import { Stack, theme } from '@moajam/ui';
 import { useState, type PropsWithChildren } from 'react';
 import { useIdentity } from '../state/Identity';
-import { Modal, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import moajamLogo from '../../assets/logo.png';
 import type { AppRoute, ScreenProps } from '../navigation';
 import { BandJoinModal } from './BandJoinModal';
@@ -163,8 +163,8 @@ const BottomLabel = styled.Text<{ active?: boolean }>`
 
 const bandItems: Array<{ icon: AppIconName; label: string; route: AppRoute }> = [
   { icon: 'home', label: '홈', route: 'home' },
-  { icon: 'sparkles', label: '곡 추천', route: 'recommendations' },
-  { icon: 'songs', label: '채택곡', route: 'songs' },
+  { icon: 'songs', label: '참여 곡', route: 'songs' },
+  { icon: 'rehearsal', label: '연습실', route: 'practice' },
   { icon: 'calendar', label: '합주', route: 'rehearsals' },
   { icon: 'users', label: '멤버', route: 'members' },
 ];
@@ -182,7 +182,7 @@ const pageTitles: Record<AppRoute, string> = {
   home: '홈',
   recommendations: '곡 추천',
   recommendation: '곡 추천 상세',
-  songs: '채택곡',
+  songs: '참여 곡',
   song: '곡 상세',
   practice: '연습실',
   rehearsals: '합주',
@@ -195,9 +195,10 @@ const pageTitles: Record<AppRoute, string> = {
 
 const activeGroup = (current: AppRoute, target: AppRoute) => {
   if (target === 'recommendations') return current === target || current === 'recommendation';
-  if (target === 'songs') return current === target || current === 'song';
+  if (target === 'songs')
+    return ['songs', 'song', 'recommendations', 'recommendation'].includes(current);
   if (target === 'personal-practice')
-    return ['personal-practice', 'practice', 'instrument', 'score-editor'].includes(current);
+    return ['personal-practice', 'instrument', 'score-editor'].includes(current);
   return current === target;
 };
 interface AppShellProps {
@@ -231,8 +232,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
   const [createError, setCreateError] = useState('');
   const [confirmReload, setConfirmReload] = useState(false);
   const personal =
-    activeRoute.startsWith('personal-') ||
-    ['practice', 'instrument', 'score-editor'].includes(activeRoute);
+    activeRoute.startsWith('personal-') || ['instrument', 'score-editor'].includes(activeRoute);
   const accountPage = activeRoute === 'settings' || activeRoute === 'help';
   const spaceLabel = accountPage
     ? 'Moajam'
@@ -390,7 +390,16 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
               style={{ gap: 10 }}
             >
               <Avatar color="#ffd8c8">
-                <AvatarText>{profile.name.slice(-2)}</AvatarText>
+                <>
+                  {profile.photo ? (
+                    <Image
+                      source={{ uri: profile.photo }}
+                      style={{ width: 36, height: 36, borderRadius: 18 }}
+                    />
+                  ) : (
+                    <AvatarText>{profile.name.slice(-2)}</AvatarText>
+                  )}
+                </>
               </Avatar>
               <View style={{ flex: 1 }}>
                 <SidebarText>{profile.name}</SidebarText>
@@ -471,7 +480,16 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
               onPress={() => onNavigate('settings')}
             >
               <Avatar color="#eef2f8" size={30}>
-                <AvatarText>{profile.name.slice(-2)}</AvatarText>
+                <>
+                  {profile.photo ? (
+                    <Image
+                      source={{ uri: profile.photo }}
+                      style={{ width: 36, height: 36, borderRadius: 18 }}
+                    />
+                  ) : (
+                    <AvatarText>{profile.name.slice(-2)}</AvatarText>
+                  )}
+                </>
               </Avatar>
             </TopbarAction>
           </View>
@@ -527,7 +545,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
               </ActionButton>
             </Surface>
           ) : null}
-          {notificationsOpen ? <Notifications /> : null}
+          {notificationsOpen ? <Notifications navigate={onNavigate} /> : null}
           {children}
         </PageScroll>
         {!desktop && (

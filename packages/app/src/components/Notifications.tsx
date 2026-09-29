@@ -1,16 +1,27 @@
-import { ScrollView } from 'react-native';
+import type { ScreenProps } from '../navigation';
+import { Pressable, View, ScrollView } from 'react-native';
 import { useEffect, useState } from 'react';
 import { api, serverConfigured } from '../lib/remote';
-import { ActionButton, Copy, Heading, Meta, Surface } from './ProductUI';
-type Notification = { id: string; message: string; readAt: string | null; createdAt: string };
+import { Copy, Heading, Meta, Surface } from './ProductUI';
+type Notification = {
+  id: string;
+  message: string;
+  readAt: string | null;
+  createdAt: string;
+  workspaceId: string;
+  kind?: string;
+  entityId?: string;
+};
 export function Notifications({
   title = '내 알림',
   height,
   workspaceId,
+  navigate,
 }: {
   title?: string;
   height?: number;
   workspaceId?: string;
+  navigate: ScreenProps['navigate'];
 }) {
   const [items, setItems] = useState<Notification[]>([]);
   const [error, setError] = useState('');
@@ -62,31 +73,51 @@ export function Notifications({
         ) : null}
         {error ? <Meta>{error}</Meta> : null}
         {items.map((item) => (
-          <Surface key={item.id} tint={item.readAt ? 'white' : '#eef4ff'}>
-            <Copy>{item.message}</Copy>
-            <Meta>{new Date(item.createdAt).toLocaleString('ko-KR')}</Meta>
-            {!item.readAt ? (
-              <ActionButton
-                secondary
-                compact
-                onPress={() =>
-                  void api(`/notifications/${item.id}/read`, 'POST')
-                    .then(() =>
-                      setItems((all) =>
-                        all.map((value) =>
-                          value.id === item.id
-                            ? { ...value, readAt: new Date().toISOString() }
-                            : value,
-                        ),
-                      ),
-                    )
-                    .catch((error: Error) => setError(error.message))
-                }
-              >
-                읽음으로 표시
-              </ActionButton>
-            ) : null}
-          </Surface>
+          <Pressable
+            key={item.id}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.readAt ? '읽음' : '읽지 않음'} · ${item.message}`}
+            onPress={() => {
+              const open = () =>
+                navigate(
+                  item.kind === 'RECOMMENDATION'
+                    ? 'recommendation'
+                    : item.kind === 'REHEARSAL'
+                      ? 'rehearsals'
+                      : 'home',
+                  { workspaceId: item.workspaceId, id: item.entityId },
+                );
+              if (item.readAt) {
+                open();
+                return;
+              }
+              void api(`/notifications/${item.id}/read`, 'POST')
+                .then(() => {
+                  setItems((all) =>
+                    all.map((value) =>
+                      value.id === item.id ? { ...value, readAt: new Date().toISOString() } : value,
+                    ),
+                  );
+                  open();
+                })
+                .catch((error: Error) => setError(error.message));
+            }}
+          >
+            <Surface tint={item.readAt ? 'white' : '#eef4ff'}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {!item.readAt && (
+                  <View
+                    style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#e53935' }}
+                  />
+                )}
+                <Copy style={{ flex: 1 }}>{item.message}</Copy>
+              </View>
+              <Meta>
+                {new Date(item.createdAt).toLocaleString('ko-KR')} ·{' '}
+                {item.readAt ? '읽음' : '읽지 않음'}
+              </Meta>
+            </Surface>
+          </Pressable>
         ))}
       </ScrollView>
     </Surface>

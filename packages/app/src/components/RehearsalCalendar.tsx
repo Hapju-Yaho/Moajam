@@ -1,3 +1,4 @@
+import { ScheduleDialog } from './ScheduleDialog';
 import { ScheduleModal } from './ScheduleModal';
 import { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
@@ -14,18 +15,24 @@ export function RehearsalCalendar({
   navigate,
   compact = false,
   workspaceId,
+  onSelectEvent,
+  initialDate,
 }: {
   events: CalendarEvent[];
   navigate: ScreenProps['navigate'];
   compact?: boolean;
   workspaceId?: string;
+  onSelectEvent?: (event: CalendarEvent) => void;
+  initialDate?: string;
 }) {
   const [registering, setRegistering] = useState(false);
   const today = dateKey(new Date());
-  const [month, setMonth] = useState(
-    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+  const [month, setMonth] = useState(() =>
+    initialDate
+      ? new Date(`${initialDate.slice(0, 7)}-01T00:00:00`)
+      : new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   );
-  const [selected, setSelected] = useState(today);
+  const [selected, setSelected] = useState(initialDate ?? today);
   const { width } = useWindowDimensions();
   const narrow = width < 650;
   const offset = month.getDay();
@@ -130,7 +137,8 @@ export function RehearsalCalendar({
                     numberOfLines={1}
                     style={{ fontSize: narrow ? 9 : 10, color: event.bandColor }}
                   >
-                    {narrow ? event.start : event.bandName}
+                    {event.cancelled ? '[취소] ' : ''}
+                    {narrow ? event.start : event.title}
                   </Meta>
                 </View>
               ))}
@@ -149,7 +157,12 @@ export function RehearsalCalendar({
       </FlexBetween>
       {selectedEvents.length ? (
         selectedEvents.map((event) => (
-          <EventRow key={`${event.workspaceId}/${event.id}`} event={event} navigate={navigate} />
+          <EventRow
+            key={`${event.workspaceId}/${event.id}`}
+            event={event}
+            navigate={navigate}
+            onSelect={onSelectEvent}
+          />
         ))
       ) : (
         <Meta>이날은 등록된 일정이 없어요.</Meta>
@@ -166,8 +179,10 @@ export function RehearsalCalendar({
 export function EventRow({
   event,
   navigate,
+  onSelect,
 }: {
   event: CalendarEvent;
+  onSelect?: (event: CalendarEvent) => void;
   navigate: ScreenProps['navigate'];
 }) {
   const [editing, setEditing] = useState(false);
@@ -176,11 +191,7 @@ export function EventRow({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${event.bandName} ${event.title} 보기`}
-        onPress={() =>
-          event.personal
-            ? setEditing(true)
-            : navigate('rehearsals', { workspaceId: event.workspaceId, id: event.id })
-        }
+        onPress={() => (onSelect ? onSelect(event) : setEditing(true))}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }}
       >
         <View
@@ -205,6 +216,40 @@ export function EventRow({
         </View>
         <Meta>→</Meta>
       </Pressable>
+      {!event.personal && (
+        <ScheduleDialog visible={editing} onClose={() => setEditing(false)}>
+          <View
+            style={{
+              flex: 1,
+              padding: 20,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(16,29,53,0.48)',
+            }}
+          >
+            <Surface style={{ width: '100%', maxWidth: 520 }}>
+              <Heading>{event.title}</Heading>
+              <Meta>{event.bandName}</Meta>
+              <Copy>
+                {event.date} · {event.start}–{event.end}
+              </Copy>
+              <Copy>{event.place || '장소 미정'}</Copy>
+              <Copy>{event.goal || '등록된 메모가 없어요.'}</Copy>
+              {event.cancelled && <Meta>취소된 합주입니다.</Meta>}
+              <ActionButton
+                secondary
+                onPress={() => {
+                  setEditing(false);
+                  navigate('rehearsals', { workspaceId: event.workspaceId, id: event.id });
+                }}
+              >
+                합주 상세 보기
+              </ActionButton>
+              <ActionButton onPress={() => setEditing(false)}>닫기</ActionButton>
+            </Surface>
+          </View>
+        </ScheduleDialog>
+      )}
       {event.personal && (
         <ScheduleModal
           visible={editing}

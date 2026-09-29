@@ -10,7 +10,7 @@ import { InstrumentExtractorScreen } from './screens/InstrumentExtractorScreen';
 import { MembersScreen } from './screens/MembersScreen';
 import { PracticeScreen } from './screens/PracticeScreen';
 import { RecommendationDetailScreen } from './screens/RecommendationDetailScreen';
-import { RecommendationsScreen } from './screens/RecommendationsScreen';
+import { BandPracticeScreen } from './screens/BandPracticeScreen';
 import { RehearsalsScreen } from './screens/RehearsalsScreen';
 import { ScoreEditorScreen } from './screens/ScoreEditorScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
@@ -74,15 +74,19 @@ function ScopedScreen({ route, navigate, entityId, workspaceId, songTab }: AppSc
     case 'personal-practice':
       return <PracticeScreen navigate={navigate} entityId={entityId} />;
     case 'recommendations':
-      return <RecommendationsScreen navigate={navigate} />;
+      return <SongsScreen navigate={navigate} />;
     case 'recommendation':
       return <RecommendationDetailScreen navigate={navigate} entityId={entityId} />;
     case 'songs':
       return <SongsScreen navigate={navigate} />;
     case 'song':
-      return <SongWorkspaceScreen navigate={navigate} entityId={entityId} songTab={songTab} />;
+      return songTab === 'practice' ? (
+        <BandPracticeScreen navigate={navigate} entityId={entityId} />
+      ) : (
+        <SongWorkspaceScreen navigate={navigate} entityId={entityId} songTab={songTab} />
+      );
     case 'practice':
-      return <SongWorkspaceScreen navigate={navigate} entityId={entityId} songTab="practice" />;
+      return <BandPracticeScreen navigate={navigate} entityId={entityId} />;
     case 'rehearsals':
       return <RehearsalsScreen navigate={navigate} entityId={entityId} />;
     case 'members':

@@ -174,6 +174,97 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     const notifications = await call('/notifications', 'GET', undefined, b.token);
     assert.equal(notifications.length, 1);
     await call(`/notifications/${notifications[0].id}/read`, 'POST', undefined, b.token, 201);
+    const recommendation = {
+      id: 'notification-song',
+      title: 'New song',
+      artist: 'Artist',
+      authorId: b.user.id,
+      likes: 0,
+      votes: 0,
+    };
+    await call(
+      `/workspaces/${band.id}/sync`,
+      'PUT',
+      sync([{ key: 'recommendations', revision: 0, value: { data: [recommendation] } }]),
+      b.token,
+    );
+    const newSongAlerts = await call('/notifications', 'GET', undefined, a.token);
+    const songAlert = newSongAlerts.find((item) => item.kind === 'RECOMMENDATION');
+    assert.equal(songAlert.entityId, recommendation.id);
+    assert.equal(songAlert.readAt, null);
+    await call(`/notifications/${songAlert.id}/read`, 'POST', undefined, b.token, 201);
+    assert.equal(
+      (await call('/notifications', 'GET', undefined, a.token)).find(
+        (item) => item.id === songAlert.id,
+      ).readAt,
+      null,
+    );
+    await call(`/notifications/${songAlert.id}/read`, 'POST', undefined, a.token, 201);
+    assert.ok(
+      (await call('/notifications', 'GET', undefined, a.token)).find(
+        (item) => item.id === songAlert.id,
+      ).readAt,
+    );
+    await call(
+      `/workspaces/${band.id}/sync`,
+      'PUT',
+      sync([
+        {
+          key: 'recommendations',
+          revision: 1,
+          value: { data: [{ ...recommendation, title: 'Edited title' }] },
+        },
+      ]),
+      b.token,
+    );
+    assert.equal(
+      (await call('/notifications', 'GET', undefined, a.token)).filter(
+        (item) => item.kind === 'RECOMMENDATION',
+      ).length,
+      1,
+    );
+    const session = {
+      id: 'notification-session',
+      title: 'New rehearsal',
+      date: '2026-10-01',
+      start: '18:00',
+      end: '20:00',
+      place: 'Studio',
+      goal: '',
+    };
+    const docs = await call(`/workspaces/${band.id}/documents`, 'GET', undefined, a.token);
+    const revision = docs.find((item) => item.key === 'rehearsals')?.revision ?? 0;
+    await call(
+      `/workspaces/${band.id}/sync`,
+      'PUT',
+      sync([{ key: 'rehearsals', revision, value: { data: [session] } }]),
+      a.token,
+    );
+    assert.equal(
+      (await call('/notifications', 'GET', undefined, b.token)).find(
+        (item) => item.kind === 'REHEARSAL',
+      ).entityId,
+      session.id,
+    );
+    await call(
+      `/workspaces/${band.id}/sync`,
+      'PUT',
+      sync([
+        {
+          key: 'rehearsals',
+          revision,
+          value: { data: [session, { ...session, id: 'conflict-session' }] },
+        },
+      ]),
+      a.token,
+      409,
+    );
+    assert.equal(
+      (await call('/notifications', 'GET', undefined, b.token)).filter(
+        (item) => item.kind === 'REHEARSAL',
+      ).length,
+      1,
+    );
     const blob = new Blob(['test audio payload'], { type: 'audio/wav' });
     const asset = await call(
       '/assets/uploads',

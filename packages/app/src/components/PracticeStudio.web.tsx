@@ -690,7 +690,10 @@ export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: numb
         </details>
       )}
       <Surface>
-        <Heading>구간 메모</Heading>
+        <FlexRow>
+          <Heading>구간 메모</Heading>
+          <Meta>현재 구간 {timeLabel(position)}</Meta>
+        </FlexRow>
         <Meta>메모의 시간을 누르면 해당 구간으로 이동해요. 이 메모는 나만 볼 수 있어요.</Meta>
         <FlexRow>
           <input

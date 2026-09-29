@@ -967,9 +967,6 @@ export function TrackTimeline({
                   {tracks.length ? '이 세션의 트랙이 없어요' : '첫 트랙을 준비해보세요'}
                 </strong>
                 <span>세션을 고르고 트랙을 추가하거나 음원 파일을 올려주세요.</span>
-                <button disabled={!loaded || locked} onClick={() => openFile()}>
-                  파일 추가
-                </button>
               </div>
             )}
             {drag?.guide && (

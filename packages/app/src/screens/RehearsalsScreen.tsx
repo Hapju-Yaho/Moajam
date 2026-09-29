@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { RehearsalCalendar } from '../components/RehearsalCalendar';
 import { AppShell } from '../components/AppShell';
 import { PracticeStudio } from '../components/PracticeStudio';
 import { ScheduleDateTime } from '../components/ScheduleDateTime';
@@ -157,6 +158,7 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
   const { width } = useWindowDimensions();
   const {
     members,
+    workspace,
     workspaceId,
     rehearsals,
     saveRehearsal,
@@ -264,20 +266,18 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
         </ActionButton>
       </FlexBetween>
 
-      <FlexRow wrap>
-        {rehearsals.map((event) => (
-          <Pill
-            key={event.id}
-            active={selectedId === event.id}
-            onPress={() => navigate('rehearsals', { id: event.id, workspaceId })}
-          >
-            <PillText active={selectedId === event.id}>
-              {event.cancelled ? '[취소] ' : ''}
-              {event.date} · {event.title}
-            </PillText>
-          </Pill>
-        ))}
-      </FlexRow>
+      <RehearsalCalendar
+        events={rehearsals.map((event) => ({
+          ...event,
+          workspaceId,
+          bandName: workspace?.name ?? '',
+          bandColor: workspace?.color ?? '#416bd1',
+        }))}
+        navigate={navigate}
+        workspaceId={workspaceId}
+        initialDate={schedule?.date}
+        onSelectEvent={(event) => navigate('rehearsals', { id: event.id, workspaceId })}
+      />
       {schedule ? (
         <>
           <Surface>

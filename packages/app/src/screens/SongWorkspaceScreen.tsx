@@ -59,11 +59,12 @@ export function SongWorkspaceScreen({ navigate, entityId, songTab = 'main' }: Sc
       <AppShell activeRoute="song" onNavigate={navigate}>
         <Surface>
           <Heading>곡을 찾을 수 없어요</Heading>
-          <ActionButton onPress={() => navigate('songs')}>채택곡 목록으로</ActionButton>
+          <ActionButton onPress={() => navigate('songs')}>참여 곡 목록으로</ActionButton>
         </Surface>
       </AppShell>
     );
-  const selectTab = (tab: SongTab) => navigate('song', { id: song.id, workspaceId, songTab: tab });
+  const selectTab = (tab: SongTab) =>
+    navigate(tab === 'practice' ? 'practice' : 'song', { id: song.id, workspaceId, songTab: tab });
   const sessions = rehearsals.filter((event) => event.songIds?.includes(song.id));
   const nextSession = sessions
     .filter((event) => !event.cancelled && new Date(`${event.date}T${event.end}`) >= new Date())
@@ -105,7 +106,7 @@ export function SongWorkspaceScreen({ navigate, entityId, songTab = 'main' }: Sc
       <Surface>
         <FlexBetween>
           <ActionButton secondary compact onPress={() => navigate('songs', { workspaceId })}>
-            ← 채택곡 목록
+            ← 참여 곡 목록
           </ActionButton>
           <Meta accessibilityLiveRegion="polite">{syncStatus}</Meta>
         </FlexBetween>
@@ -147,24 +148,26 @@ export function SongWorkspaceScreen({ navigate, entityId, songTab = 'main' }: Sc
         </FlexRow>
         {!!message && <Meta accessibilityLiveRegion="polite">{message}</Meta>}
         <FlexRow wrap>
-          {songTabs.map((tab) => (
-            <Pill
-              key={tab}
-              accessibilityRole="button"
-              accessibilityState={{ selected: songTab === tab }}
-              active={songTab === tab}
-              onPress={() => selectTab(tab)}
-            >
-              <PillText active={songTab === tab}>
-                {labels[tab]}
-                {tab === 'discussion'
-                  ? ` ${opinions.length}`
-                  : tab === 'history'
-                    ? ` ${sessions.length}`
-                    : ''}
-              </PillText>
-            </Pill>
-          ))}
+          {songTabs
+            .filter((tab) => tab !== 'practice')
+            .map((tab) => (
+              <Pill
+                key={tab}
+                accessibilityRole="button"
+                accessibilityState={{ selected: songTab === tab }}
+                active={songTab === tab}
+                onPress={() => selectTab(tab)}
+              >
+                <PillText active={songTab === tab}>
+                  {labels[tab]}
+                  {tab === 'discussion'
+                    ? ` ${opinions.length}`
+                    : tab === 'history'
+                      ? ` ${sessions.length}`
+                      : ''}
+                </PillText>
+              </Pill>
+            ))}
         </FlexRow>
       </Surface>
       {songTab === 'main' && (

@@ -70,7 +70,7 @@ export function buildAppPath(
       : '/me/practice';
   const paths: Partial<Record<AppRoute, string>> = {
     home: base,
-    recommendations: `${base}/recommendations`,
+    recommendations: `${base}/songs`,
     songs: `${base}/songs`,
     rehearsals: `${base}/rehearsals${options?.id ? `?sessionId=${encodeURIComponent(options.id)}` : ''}`,
     members: `${base}/members`,
@@ -80,7 +80,7 @@ export function buildAppPath(
     song: id
       ? `${base}/songs/${encodeURIComponent(id)}${options?.songTab && options.songTab !== 'main' ? `?tab=${options.songTab}` : ''}`
       : `${base}/songs`,
-    practice: id ? `${base}/songs/${encodeURIComponent(id)}/practice` : '/me/practice',
+    practice: id ? `${base}/songs/${encodeURIComponent(id)}/practice` : `${base}/practice`,
   };
   return paths[next] ?? '/me';
 }
