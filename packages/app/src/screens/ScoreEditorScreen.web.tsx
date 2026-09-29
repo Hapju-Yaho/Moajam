@@ -16,8 +16,21 @@ import { readMedia, writeMedia } from '../lib/mediaStore';
 import { downloadText } from '../lib/platformActions';
 import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
 import type { ScreenProps } from '../navigation';
-import { scoreToMusicXml, pitchName, type Score, type ScoreNote as Note } from '../lib/score';
+import {
+  scoreToMusicXml,
+  pitchName,
+  renameScorePart,
+  removeScorePart,
+  removeScoreNotes,
+  insertScoreNote,
+  moveScoreNote,
+  type Score,
+  type ScoreNote as Note,
+} from '../lib/score';
+import { ScoreStaff } from '../components/ScoreStaff.web';
+import { useIdentity } from '../state/Identity';
 export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
+  const userId = useIdentity();
   const { workspaceId, adoptedSongs } = useMockAppState();
   const song = adoptedSongs.find((item) => item.id === entityId);
   const defaultTitle = useRef('나의 악보');
@@ -55,6 +68,10 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   const [audioUrl, setAudioUrl] = useState('');
   const [referenceAudio, setReferenceAudio] = useState<Blob | null>(null);
   const [audioPosition, setAudioPosition] = useState(0);
+  const [partName, setPartName] = useState('');
+  const [partMessage, setPartMessage] = useState('');
+  const [confirmPartDelete, setConfirmPartDelete] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   useEffect(() => {
     alive.current = true;
     let active = true;
@@ -64,7 +81,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
     setFuture([]);
     setSelected(null);
     setPlaying(false);
-    void readMedia<Score & { referenceAudio?: Blob }>(key)
+    void readMedia<Score & { referenceAudio?: Blob }>(key, userId)
       .then((value) => {
         if (active) {
           setReferenceAudio(value?.referenceAudio ?? null);
@@ -86,25 +103,42 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
           setStatus('저장됨');
         }
       })
-      .catch(() => setStatus('악보를 불러오지 못했습니다. 새로고침해주세요.'));
+      .catch(() => {
+        if (active) setStatus('악보를 불러오지 못했습니다. 새로고침해주세요.');
+      });
     return () => {
       active = false;
       alive.current = false;
       timers.current.forEach(clearTimeout);
       void context.current?.close();
     };
-  }, [key]);
+  }, [key, userId]);
   useEffect(() => {
     if (!loaded || loadedKey.current !== key) return;
+    let active = true;
+    setSaveFailed(false);
     setStatus('저장 중…');
-    void writeMedia(key, { ...score, referenceAudio })
+    void writeMedia(key, { ...score, referenceAudio }, userId)
       .then(() => {
-        if (alive.current) setStatus('자동 저장됨');
+        if (active) setStatus('자동 저장됨');
       })
-      .catch(() => {
-        if (alive.current) setStatus('저장 실패 · 내보내기로 보관해주세요.');
+      .catch((error: unknown) => {
+        if (active) {
+          setSaveFailed(true);
+          setStatus(
+            error instanceof Error ? error.message : '저장 실패 · 내보내기로 보관해주세요.',
+          );
+        }
       });
-  }, [key, score, loaded, referenceAudio]);
+    return () => {
+      active = false;
+    };
+  }, [key, score, loaded, referenceAudio, userId]);
+  useEffect(() => {
+    if (!score.parts.includes(part)) setPart(score.parts[0] ?? 'Guitar');
+    if (selected && !score.notes.some((note) => note.id === selected && note.part === part))
+      setSelected(null);
+  }, [score, part, selected]);
   useEffect(
     () => () => {
       if (audioUrl) URL.revokeObjectURL(audioUrl);
@@ -112,6 +146,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
     [audioUrl],
   );
   const edit = (next: Score) => {
+    if (!loaded || playing) return;
     setHistory((all) => [...all.slice(-49), score]);
     setFuture([]);
     setScore(next);
@@ -182,12 +217,18 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
           ← {song.title} 자료로 돌아가기
         </ActionButton>
       )}
-      <Meta>개인 악보 · {status}</Meta>
+      <Meta accessibilityLiveRegion="polite" style={saveFailed ? { color: '#be3b4b' } : undefined}>
+        개인 악보 · {status}
+      </Meta>
+      <Meta>
+        4/4박자 · 파트별 단선율 악보. 음표를 선택해 수정하거나 복제하고, MusicXML로 내보낼 수
+        있어요.
+      </Meta>
       <Surface>
         <Input
           accessibilityLabel="악보 제목"
           value={score.title}
-          editable={loaded}
+          editable={loaded && !playing}
           onChangeText={(title) => edit({ ...score, title })}
         />
         <FlexRow wrap>
@@ -198,6 +239,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
             min="30"
             max="300"
             value={score.bpm}
+            disabled={!loaded || playing}
             onChange={(event) =>
               edit({ ...score, bpm: Math.min(300, Math.max(30, Number(event.target.value) || 30)) })
             }
@@ -236,7 +278,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
           >
             다시 실행
           </ActionButton>
-          <ActionButton secondary onPress={exportXml}>
+          <ActionButton secondary disabled={!loaded} onPress={exportXml}>
             MusicXML 내보내기
           </ActionButton>
           <ActionButton secondary onPress={() => window.print()}>
@@ -249,6 +291,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
             type="file"
             accept=".musicxml,.xml"
             aria-label="MusicXML 가져오기"
+            disabled={!loaded || playing}
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (!file) return;
@@ -256,82 +299,123 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
                 setStatus('5MB 이하 MusicXML 파일을 선택해주세요.');
                 return;
               }
-              void file.text().then((text) => {
-                try {
-                  const doc = new DOMParser().parseFromString(text, 'application/xml');
-                  if (doc.querySelector('parsererror') || !doc.querySelector('score-partwise'))
-                    throw new Error();
-                  const names = Array.from(doc.querySelectorAll('score-part')).map(
-                    (element) => element.querySelector('part-name')?.textContent || 'Part',
-                  );
-                  const notes: Note[] = [];
-                  if (doc.querySelector('backup,forward,chord,grace,time-modification'))
-                    throw new Error();
-                  if (new Set(names).size !== names.length) throw new Error();
-                  Array.from(doc.querySelectorAll('part')).forEach((element, index) => {
-                    let division = 1;
-                    element.querySelectorAll('measure').forEach((measure) => {
-                      division =
-                        Number(measure.querySelector('divisions')?.textContent) || division;
-                      measure.querySelectorAll('note').forEach((node) => {
-                        const step = node.querySelector('step')?.textContent || 'C';
-                        const octave = Number(node.querySelector('octave')?.textContent || 4);
-                        const alter = Number(node.querySelector('alter')?.textContent || 0);
-                        const pitch =
-                          (octave + 1) * 12 +
-                          ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[step as 'C'] ?? 0) +
-                          alter;
-                        notes.push({
-                          id: crypto.randomUUID(),
-                          part: names[index] || 'Part',
-                          pitch,
-                          beats:
-                            (Number(node.querySelector('duration')?.textContent) || division) /
-                            division,
-                          rest: !!node.querySelector('rest'),
-                          lyric: node.querySelector('lyric text')?.textContent || '',
-                          chord:
-                            node.previousElementSibling?.querySelector('direction-type words')
-                              ?.textContent || '',
-                          accent: !!node.querySelector('accent'),
+              void file
+                .text()
+                .then((text) => {
+                  if (!alive.current || loadedKey.current !== key) return;
+                  try {
+                    const doc = new DOMParser().parseFromString(text, 'application/xml');
+                    if (doc.querySelector('parsererror') || !doc.querySelector('score-partwise'))
+                      throw new Error();
+                    const names = Array.from(doc.querySelectorAll('score-part')).map(
+                      (element) => element.querySelector('part-name')?.textContent || 'Part',
+                    );
+                    const partNames = new Map(
+                      Array.from(doc.querySelectorAll('score-part')).map((element, index) => [
+                        element.getAttribute('id'),
+                        names[index],
+                      ]),
+                    );
+                    const notes: Note[] = [];
+                    if (doc.querySelector('backup,forward,chord,grace,time-modification'))
+                      throw new Error();
+                    if (
+                      Array.from(doc.querySelectorAll('time')).some(
+                        (time) =>
+                          time.querySelector('beats')?.textContent !== '4' ||
+                          time.querySelector('beat-type')?.textContent !== '4',
+                      )
+                    )
+                      throw new Error();
+                    if (
+                      Array.from(doc.querySelectorAll('key fifths')).some(
+                        (key) => Number(key.textContent) !== 0,
+                      )
+                    )
+                      throw new Error();
+                    if (new Set(names).size !== names.length) throw new Error();
+                    Array.from(doc.querySelectorAll('part')).forEach((element) => {
+                      const partName = partNames.get(element.getAttribute('id'));
+                      if (!partName) throw new Error();
+                      let tied: Note | undefined;
+                      let division = 1;
+                      element.querySelectorAll('measure').forEach((measure) => {
+                        division =
+                          Number(measure.querySelector('divisions')?.textContent) || division;
+                        measure.querySelectorAll('note').forEach((node) => {
+                          const step = node.querySelector('step')?.textContent || 'C';
+                          const octave = Number(node.querySelector('octave')?.textContent || 4);
+                          const alter = Number(node.querySelector('alter')?.textContent || 0);
+                          const pitch =
+                            (octave + 1) * 12 +
+                            ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[step as 'C'] ?? 0) +
+                            alter;
+                          const item: Note = {
+                            id: crypto.randomUUID(),
+                            part: partName,
+                            pitch,
+                            beats:
+                              (Number(node.querySelector('duration')?.textContent) || division) /
+                              division,
+                            rest: !!node.querySelector('rest'),
+                            lyric: node.querySelector('lyric text')?.textContent || '',
+                            chord:
+                              node.previousElementSibling?.querySelector('direction-type words')
+                                ?.textContent || '',
+                            accent: !!node.querySelector('accent'),
+                          };
+                          if (node.querySelector('tie[type="stop"]')) {
+                            if (!tied || tied.pitch !== item.pitch || item.rest) throw new Error();
+                            tied.beats += item.beats;
+                          } else {
+                            if (tied) throw new Error();
+                            notes.push(item);
+                          }
+                          tied = node.querySelector('tie[type="start"]')
+                            ? (tied ?? item)
+                            : undefined;
                         });
                       });
+                      if (tied) throw new Error();
                     });
-                  });
-                  if (!names.length || notes.length > 2000) throw new Error();
-                  if (
-                    notes.some(
-                      (item) =>
-                        !Number.isFinite(item.beats) ||
-                        item.beats <= 0 ||
-                        item.beats > 64 ||
-                        !Number.isInteger(item.pitch) ||
-                        item.pitch < 0 ||
-                        item.pitch > 127,
+                    if (!names.length || names.length > 16 || notes.length > 2000)
+                      throw new Error();
+                    if (
+                      notes.some(
+                        (item) =>
+                          !Number.isFinite(item.beats) ||
+                          item.beats <= 0 ||
+                          item.beats > 64 ||
+                          !Number.isInteger(item.beats * 4) ||
+                          !Number.isInteger(item.pitch) ||
+                          item.pitch < 0 ||
+                          item.pitch > 127,
+                      )
                     )
-                  )
-                    throw new Error();
-                  edit({
-                    title: doc.querySelector('work-title')?.textContent || file.name,
-                    bpm: Math.max(
-                      30,
-                      Math.min(
-                        300,
-                        Number(doc.querySelector('sound[tempo]')?.getAttribute('tempo')) || 120,
+                      throw new Error();
+                    edit({
+                      title: doc.querySelector('work-title')?.textContent || file.name,
+                      bpm: Math.max(
+                        30,
+                        Math.min(
+                          300,
+                          Number(doc.querySelector('sound[tempo]')?.getAttribute('tempo')) || 120,
+                        ),
                       ),
-                    ),
-                    parts: names,
-                    notes,
-                    sync: {},
-                  });
-                  setPart(names[0]);
-                  setSelected(null);
-                } catch {
-                  setStatus(
-                    '파트별 단선율 MusicXML을 선택해주세요. 최대 2,000개 음표를 지원하며 다성부·꾸밈음·잇단음표는 지원하지 않습니다.',
-                  );
-                }
-              });
+                      parts: names,
+                      notes,
+                      sync: {},
+                    });
+                    setPart(names[0]);
+                    setSelected(null);
+                  } catch {
+                    setStatus(
+                      '4/4박자·조표 없는 단선율 MusicXML을 선택해주세요. 최대 16파트·2,000개 음표를 지원하며 다성부·꾸밈음·잇단음표는 지원하지 않습니다.',
+                    );
+                  }
+                })
+                .catch(() => setStatus('파일을 읽지 못했어요. 다시 선택해주세요.'));
+              event.target.value = '';
             }}
           />
         </label>
@@ -341,17 +425,95 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
           {score.parts.map((name) => (
             <Pill
               key={name}
+              accessibilityRole="button"
+              accessibilityState={{ selected: part === name }}
               active={part === name}
               onPress={() => {
                 stop();
                 setPart(name);
                 setSelected(null);
+                setConfirmPartDelete(false);
+                setPartName('');
               }}
             >
-              <PillText>{name}</PillText>
+              <PillText active={part === name}>{name}</PillText>
             </Pill>
           ))}
         </FlexRow>
+        <FlexRow wrap>
+          <Input
+            accessibilityLabel="파트 이름"
+            placeholder="예: 리드 기타"
+            value={partName}
+            maxLength={40}
+            editable={loaded && !playing}
+            onChangeText={setPartName}
+            style={{ minWidth: 160, flex: 1 }}
+          />
+          <ActionButton
+            secondary
+            disabled={!loaded || playing || !partName.trim()}
+            onPress={() => {
+              try {
+                const next = renameScorePart(score, null, partName);
+                edit(next);
+                setPart(partName.trim());
+                setPartName('');
+                setPartMessage('');
+                setConfirmPartDelete(false);
+              } catch (error) {
+                setPartMessage((error as Error).message);
+              }
+            }}
+          >
+            파트 추가
+          </ActionButton>
+          <ActionButton
+            secondary
+            disabled={!loaded || playing || !partName.trim()}
+            onPress={() => {
+              try {
+                edit(renameScorePart(score, part, partName));
+                setPart(partName.trim());
+                setPartName('');
+                setPartMessage('');
+              } catch (error) {
+                setPartMessage((error as Error).message);
+              }
+            }}
+          >
+            이름 변경
+          </ActionButton>
+          <ActionButton
+            secondary
+            danger
+            disabled={!loaded || playing || score.parts.length <= 1}
+            onPress={() => setConfirmPartDelete(!confirmPartDelete)}
+          >
+            파트 삭제
+          </ActionButton>
+        </FlexRow>
+        {!!partMessage && <Meta accessibilityRole="alert">{partMessage}</Meta>}
+        {confirmPartDelete && (
+          <FlexRow wrap>
+            <Meta>
+              {part}의 음표 {visible.length}개도 삭제됩니다. 되돌리기로 복원할 수 있어요.
+            </Meta>
+            <ActionButton
+              danger
+              disabled={!loaded || playing}
+              onPress={() => {
+                edit(removeScorePart(score, part));
+                setConfirmPartDelete(false);
+              }}
+            >
+              삭제 적용
+            </ActionButton>
+            <ActionButton secondary onPress={() => setConfirmPartDelete(false)}>
+              취소
+            </ActionButton>
+          </FlexRow>
+        )}
         <Heading>{part}</Heading>
         <FlexRow wrap>
           <label>
@@ -398,11 +560,36 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
                 lyric: '',
                 accent: false,
               };
-              edit({ ...score, notes: [...score.notes, item] });
+              try {
+                edit(insertScoreNote(score, item, selected));
+                setSelected(item.id);
+              } catch (error) {
+                setPartMessage((error as Error).message);
+              }
+            }}
+          >
+            {selected ? '선택 뒤에 추가' : '음표 추가'}
+          </ActionButton>
+          <ActionButton
+            secondary
+            disabled={!loaded || playing || score.notes.length >= 2000}
+            onPress={() => {
+              const used = visible.reduce((sum, item) => sum + item.beats, 0) % 4;
+              const item: Note = {
+                id: crypto.randomUUID(),
+                part,
+                pitch: 60,
+                beats: used ? 4 - used : 4,
+                rest: true,
+                chord: '',
+                lyric: '',
+                accent: false,
+              };
+              edit(insertScoreNote(score, item));
               setSelected(item.id);
             }}
           >
-            추가
+            쉼표로 마디 채우기
           </ActionButton>
           <ActionButton secondary disabled={!visible.length} onPress={play}>
             {playing ? '재생 정지' : '파트 재생'}
@@ -415,81 +602,16 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
             +
           </ActionButton>
         </FlexRow>
-        <div style={{ overflowX: 'auto', background: '#fffdfa', borderRadius: 12, padding: 12 }}>
-          <svg
-            role="img"
-            aria-label={`${part} 악보`}
-            width={(Math.max(600, visible.length * 64 + 80) * zoom) / 100}
-            height={(230 * zoom) / 100}
-            viewBox={`0 0 ${Math.max(600, visible.length * 64 + 80)} 230`}
-          >
-            {[60, 75, 90, 105, 120].map((y) => (
-              <line
-                key={y}
-                x1="20"
-                x2={Math.max(580, visible.length * 64 + 60)}
-                y1={y}
-                y2={y}
-                stroke="#9da5b3"
-              />
-            ))}
-            <text x="22" y="111" fontSize="50">
-              𝄞
-            </text>
-            {visible.map((item, index) => {
-              const x = 80 + index * 64;
-              const y = Math.max(35, Math.min(155, 120 - (item.pitch - 60) * 3.7));
-              return (
-                <g key={item.id} onClick={() => setSelected(item.id)} style={{ cursor: 'pointer' }}>
-                  <rect
-                    x={x - 16}
-                    y="15"
-                    width="56"
-                    height="190"
-                    fill={
-                      cursor === item.id
-                        ? '#d4e6ff'
-                        : selected === item.id
-                          ? '#edf3ff'
-                          : 'transparent'
-                    }
-                  />
-                  {item.rest ? (
-                    <text x={x} y="95" fontSize="25">
-                      𝄽
-                    </text>
-                  ) : (
-                    <>
-                      <ellipse
-                        cx={x + 8}
-                        cy={y}
-                        rx="8"
-                        ry="5"
-                        fill={item.beats >= 2 ? 'white' : '#34415a'}
-                        stroke="#34415a"
-                      />
-                      {item.beats < 4 ? (
-                        <line x1={x + 16} x2={x + 16} y1={y} y2={y - 32} stroke="#34415a" />
-                      ) : null}
-                    </>
-                  )}
-                  <text x={x - 8} y="30" fontSize="12">
-                    {item.chord}
-                  </text>
-                  <text x={x - 8} y="175" fontSize="11">
-                    {item.rest ? '쉼표' : pitchName(item.pitch)}
-                  </text>
-                  <text x={x - 8} y="192" fontSize="10">
-                    {item.beats}박
-                  </text>
-                  <text x={x - 8} y="220" fontSize="11">
-                    {item.lyric.slice(0, 5)}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
-        </div>
+        <ScoreStaff
+          score={score}
+          part={part}
+          selected={selected}
+          cursor={cursor}
+          zoom={zoom}
+          onSelect={setSelected}
+        />
+        {/* Accessible note list complements the staff. */}
+
         <FlexRow wrap>
           {visible.map((item, index) => (
             <ActionButton key={item.id} secondary compact onPress={() => setSelected(item.id)}>
@@ -506,10 +628,18 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
             {pitchName(note.pitch)} · {note.beats}박
           </Copy>
           <FlexRow wrap>
-            <ActionButton secondary onPress={() => update({ pitch: Math.min(96, note.pitch + 1) })}>
+            <ActionButton
+              secondary
+              disabled={playing}
+              onPress={() => update({ pitch: Math.min(127, note.pitch + 1) })}
+            >
               반음 올림
             </ActionButton>
-            <ActionButton secondary onPress={() => update({ pitch: Math.max(24, note.pitch - 1) })}>
+            <ActionButton
+              secondary
+              disabled={playing}
+              onPress={() => update({ pitch: Math.max(0, note.pitch - 1) })}
+            >
               반음 내림
             </ActionButton>
             <ActionButton secondary onPress={() => update({ beats, rest })}>
@@ -517,9 +647,41 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
             </ActionButton>
             <ActionButton
               secondary
+              disabled={!loaded || playing || score.notes.length >= 2000}
+              onPress={() => {
+                const copy = { ...note, id: crypto.randomUUID() };
+                edit(insertScoreNote(score, copy, note.id));
+                setSelected(copy.id);
+              }}
+            >
+              음표 복제
+            </ActionButton>
+            <ActionButton
+              secondary
+              disabled={playing || visible[0]?.id === note.id}
+              onPress={() => edit(moveScoreNote(score, note.id, -1))}
+            >
+              앞으로 이동
+            </ActionButton>
+            <ActionButton
+              secondary
+              disabled={playing || visible.at(-1)?.id === note.id}
+              onPress={() => edit(moveScoreNote(score, note.id, 1))}
+            >
+              뒤로 이동
+            </ActionButton>
+            <ActionButton
+              secondary
+              disabled={playing}
+              onPress={() => update({ accent: !note.accent })}
+            >
+              {note.accent ? '악센트 해제' : '악센트'}
+            </ActionButton>
+            <ActionButton
+              secondary
               danger
               onPress={() => {
-                edit({ ...score, notes: score.notes.filter((item) => item.id !== selected) });
+                edit(removeScoreNotes(score, [note.id]));
                 setSelected(null);
               }}
             >
@@ -527,11 +689,15 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
             </ActionButton>
           </FlexRow>
           <Input
+            accessibilityLabel="선택 음표 코드"
+            editable={!playing}
             value={note.chord}
             onChangeText={(chord) => update({ chord })}
             placeholder="코드"
           />
           <Input
+            accessibilityLabel="선택 음표 가사"
+            editable={!playing}
             value={note.lyric}
             onChangeText={(lyric) => update({ lyric })}
             placeholder="가사"

@@ -18,6 +18,112 @@ export type Score = {
 export const pitchName = (pitch: number) =>
   ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][pitch % 12] +
   (Math.floor(pitch / 12) - 1);
+
+export function renameScorePart(score: Score, previous: string | null, input: string): Score {
+  const name = input.trim();
+  if (!name || name.length > 40) throw new Error('파트 이름은 1~40자로 입력해주세요.');
+  if (score.parts.some((part) => part === name && part !== previous))
+    throw new Error('이미 같은 이름의 파트가 있어요.');
+  if (previous !== null && !score.parts.includes(previous))
+    throw new Error('파트를 찾을 수 없어요.');
+  if (previous === null && score.parts.length >= 16)
+    throw new Error('파트는 최대 16개까지 추가할 수 있어요.');
+  return {
+    ...score,
+    parts:
+      previous === null
+        ? [...score.parts, name]
+        : score.parts.map((part) => (part === previous ? name : part)),
+    notes: score.notes.map((note) => (note.part === previous ? { ...note, part: name } : note)),
+  };
+}
+
+export function removeScoreNotes(score: Score, ids: string[]): Score {
+  const removed = new Set(ids);
+  return {
+    ...score,
+    notes: score.notes.filter((note) => !removed.has(note.id)),
+    sync: Object.fromEntries(Object.entries(score.sync).filter(([id]) => !removed.has(id))),
+  };
+}
+
+export function removeScorePart(score: Score, part: string): Score {
+  if (score.parts.length <= 1) throw new Error('최소 한 개의 파트가 필요해요.');
+  return {
+    ...removeScoreNotes(
+      score,
+      score.notes.filter((note) => note.part === part).map((note) => note.id),
+    ),
+    parts: score.parts.filter((name) => name !== part),
+  };
+}
+
+export function insertScoreNote(score: Score, note: ScoreNote, after?: string | null): Score {
+  if (score.notes.length >= 2000) throw new Error('음표는 최대 2,000개까지 입력할 수 있어요.');
+  const index = after
+    ? score.notes.findIndex((item) => item.id === after && item.part === note.part)
+    : -1;
+  const notes = [...score.notes];
+  notes.splice(index < 0 ? notes.length : index + 1, 0, note);
+  return { ...score, notes };
+}
+
+export function moveScoreNote(score: Score, id: string, direction: -1 | 1): Score {
+  const current = score.notes.find((note) => note.id === id);
+  if (!current) return score;
+  const part = score.notes.filter((note) => note.part === current.part);
+  const other = part[part.indexOf(current) + direction];
+  if (!other) return score;
+  const notes = [...score.notes];
+  const from = notes.indexOf(current);
+  const to = notes.indexOf(other);
+  [notes[from], notes[to]] = [notes[to], notes[from]];
+  return { ...score, notes };
+}
+
+export type ScoreFragment = {
+  note: ScoreNote;
+  beats: number;
+  offset: number;
+  continued: boolean;
+  continues: boolean;
+};
+export function scoreMeasures(score: Score, part: string): ScoreFragment[][] {
+  const measures: ScoreFragment[][] = [];
+  let measure: ScoreFragment[] = [];
+  let used = 0;
+  for (const note of score.notes.filter((item) => item.part === part)) {
+    if (
+      !Number.isFinite(note.beats) ||
+      note.beats <= 0 ||
+      note.beats > 64 ||
+      !Number.isInteger(note.beats * 4)
+    )
+      throw new Error('음표 길이는 16분음표 단위로 입력해주세요.');
+    let remaining = note.beats;
+    let continued = false;
+    while (remaining > 0) {
+      const beats = Math.min(4 - used, remaining);
+      remaining -= beats;
+      measure.push({ note, beats, offset: used, continued, continues: remaining > 0 });
+      used += beats;
+      continued = true;
+      if (used === 4) {
+        measures.push(measure);
+        measure = [];
+        used = 0;
+      }
+    }
+  }
+  if (measure.length || !measures.length) measures.push(measure);
+  return measures;
+}
+
+// Diatonic steps from E4 (bottom line of the treble staff), with sharps on the same staff step.
+export function staffPosition(pitch: number): number {
+  const steps = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6];
+  return (Math.floor(pitch / 12) - 5) * 7 + steps[pitch % 12] - 2;
+}
 const escape = (value: string) =>
   value
     .replaceAll('&', '&amp;')
@@ -47,6 +153,7 @@ export function scoreToMusicXml(score: Score): string {
           !Number.isFinite(note.beats) ||
           note.beats <= 0 ||
           note.beats > 64 ||
+          !Number.isInteger(note.beats * 4) ||
           !Number.isInteger(note.pitch) ||
           note.pitch < 0 ||
           note.pitch > 127

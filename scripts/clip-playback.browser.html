@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+  <meta charset="utf-8" /><title>클립 경계 오디오 검증</title>
+  <style>
+    body {
+      font: 16px system-ui;
+      margin: 40px;
+      background: #f5faf7;
+      color: #173c28;
+    }
+    pre {
+      white-space: pre-wrap;
+      line-height: 1.8;
+    }
+  </style>
+  <h1>클립 경계 오디오 검증</h1>
+  <pre id="result">실제 Web Audio 렌더링을 검사하고 있습니다…</pre>
+  <script type="module">
+    import { ClipPlayback } from '../packages/app/src/lib/clipPlayback.web.ts';
+    const rate = 48000,
+      size = rate;
+    // A continuous test tone makes even a single silent sample at a cut measurable.
+    const bytes = new ArrayBuffer(44 + size * 2),
+      wav = new DataView(bytes);
+    const text = (at, value) => [...value].forEach((c, i) => wav.setUint8(at + i, c.charCodeAt(0)));
+    text(0, 'RIFF');
+    wav.setUint32(4, 36 + size * 2, true);
+    text(8, 'WAVE');
+    text(12, 'fmt ');
+    wav.setUint32(16, 16, true);
+    wav.setUint16(20, 1, true);
+    wav.setUint16(22, 1, true);
+    wav.setUint32(24, rate, true);
+    wav.setUint32(28, rate * 2, true);
+    wav.setUint16(32, 2, true);
+    wav.setUint16(34, 16, true);
+    text(36, 'data');
+    wav.setUint32(40, size * 2, true);
+    for (let i = 0; i < size; i++)
+      wav.setInt16(
+        44 + i * 2,
+        Math.round((0.25 + 0.2 * Math.sin((2 * Math.PI * 337 * i) / rate)) * 32767),
+        true,
+      );
+    const blob = new Blob([bytes], { type: 'audio/wav' });
+    const clip = (id, offset, sourceStart, duration) => ({
+      id,
+      name: id,
+      blob,
+      url: '',
+      trackId: 'a',
+      offset,
+      sourceStart,
+      duration,
+    });
+    async function render(clips, position = 0, loop) {
+      const context = new OfflineAudioContext(1, rate, rate);
+      const player = new ClipPlayback(context);
+      await player.prepare(clips);
+      player.start(position, { loop });
+      const output = await context.startRendering();
+      player.dispose();
+      return output.getChannelData(0);
+    }
+    try {
+      const whole = await render([clip('whole', 0, 0, 1)]);
+      const split = await render([clip('left', 0, 0, 0.437), clip('right', 0.437, 0.437, 0.563)]);
+      let error = 0,
+        silence = 0;
+      const boundary = Math.round((0.04 + 0.437) * rate);
+      for (let i = 0; i < rate; i++) error = Math.max(error, Math.abs(whole[i] - split[i]));
+      for (let i = boundary - 24; i < boundary + 24; i++) if (Math.abs(split[i]) < 0.001) silence++;
+      const seek = await render([clip('moved', 3, 0.437, 0.563)], 3);
+      const reference = await render([clip('reference', 0, 0.437, 0.563)]);
+      let seekError = 0;
+      for (let i = 0; i < rate; i++)
+        seekError = Math.max(seekError, Math.abs(seek[i] - reference[i]));
+      const looping = await render([clip('a', 0, 0, 1)], 0.25, { start: 0.25, end: 0.75 });
+      const loopBoundary = Math.round((0.04 + 0.5) * rate);
+      let loopSilence = 0;
+      for (let i = loopBoundary - 24; i < loopBoundary + 24; i++)
+        if (Math.abs(looping[i]) < 0.001) loopSilence++;
+      const passed = error < 0.0001 && silence === 0 && seekError < 0.0001 && loopSilence === 0;
+      document.getElementById('result').textContent =
+        `${passed ? 'PASS' : 'FAIL'}\n원본과 분할 재생의 최대 샘플 차이: ${error}\n접합부 전후 48샘플의 무음 샘플: ${silence}\n이동한 클립의 시작 구간 오차: ${seekError}\n반복 경계의 무음 샘플: ${loopSilence}\n실제 OfflineAudioContext · 48,000Hz`;
+    } catch (error) {
+      document.getElementById('result').textContent = `FAIL: ${error.stack}`;
+    }
+  </script>
+</html>

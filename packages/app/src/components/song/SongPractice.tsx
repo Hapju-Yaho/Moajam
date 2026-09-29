@@ -1,10 +1,7 @@
-import { useState } from 'react';
-import { Platform } from 'react-native';
 import { useMockAppState, useWorkspaceValue } from '../../state/MockAppState';
 import type { WorkspaceSong } from '../../mocks/workspaces';
 import { PracticeStudio } from '../PracticeStudio';
 import { ActionButton, Copy, FlexRow, Heading, Meta, Pill, PillText, Surface } from '../ProductUI';
-import { Input } from '../../styles/layout';
 import type { Arrangement } from './SongOverview';
 export function PreparationControl({ song }: { song: WorkspaceSong }) {
   const { currentUserId, workspaceId, updatePreparation } = useMockAppState();
@@ -44,8 +41,6 @@ export function SongPractice({ song }: { song: WorkspaceSong }) {
     bpm: '',
     structure: '',
   });
-  const [bpm, setBpm] = useState(arrangement.bpm || '120');
-  const valid = /^\d+$/.test(bpm) && Number(bpm) >= 30 && Number(bpm) <= 300;
   return (
     <>
       <Surface>
@@ -64,36 +59,11 @@ export function SongPractice({ song }: { song: WorkspaceSong }) {
         <Meta>
           밴드 기준 · Key {arrangement.key || '미정'} · BPM {arrangement.bpm || '미정'}
         </Meta>
-        {Platform.OS === 'web' && (
-          <>
-            <FlexRow wrap>
-              <Copy>이번 연습 BPM</Copy>
-              <Input
-                accessibilityLabel="이번 연습 BPM"
-                keyboardType="numeric"
-                maxLength={3}
-                value={bpm}
-                onChangeText={setBpm}
-                style={{ width: 88 }}
-              />
-              {arrangement.bpm && (
-                <ActionButton secondary compact onPress={() => setBpm(arrangement.bpm)}>
-                  밴드 기준 가져오기
-                </ActionButton>
-              )}
-            </FlexRow>
-            <Meta>
-              {valid
-                ? '연습 BPM은 내 메트로놈에만 적용돼요. 밴드 기준은 개요에서 관리해요.'
-                : 'BPM은 30~300으로 입력해주세요. 입력 중에는 120 BPM을 사용해요.'}
-            </Meta>
-          </>
-        )}
       </Surface>
       <PracticeStudio
         key={`${workspaceId}/${song.id}`}
         scopeKey={`${workspaceId}/${song.id}`}
-        bpm={valid ? Number(bpm) : 120}
+        bpm={Number(arrangement.bpm) || 120}
       />
     </>
   );
