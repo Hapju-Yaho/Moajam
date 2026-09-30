@@ -32,14 +32,18 @@ function RoutedScreen({ route }: { route: AppRoute }) {
     search.get('songId') ??
     search.get('sessionId') ??
     undefined;
-  const go = (next: AppRoute, options?: NavigationOptions) =>
-    navigate(
-      buildAppPath(next, options, {
-        route,
-        workspaceId: workspaceId ?? selectedWorkspaceId,
-        entityId,
-      }),
-    );
+  const go = (next: AppRoute, options?: NavigationOptions) => {
+    const proceed = () =>
+      navigate(
+        buildAppPath(next, options, {
+          route,
+          workspaceId: workspaceId ?? selectedWorkspaceId,
+          entityId,
+        }),
+      );
+    const event = new CustomEvent('moajam:before-navigate', { cancelable: true, detail: proceed });
+    if (window.dispatchEvent(event)) proceed();
+  };
   return (
     <AppScreen
       route={route}

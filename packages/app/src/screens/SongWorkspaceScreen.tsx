@@ -1,3 +1,4 @@
+import { Pressable } from 'react-native';
 import { useState } from 'react';
 import { AppShell } from '../components/AppShell';
 import {
@@ -18,7 +19,6 @@ import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
 import { songTabs, buildAppPath, type ScreenProps, type SongTab } from '../navigation';
 import { shareLink } from '../lib/platformActions';
 import { SongOverview, type Arrangement } from '../components/song/SongOverview';
-import { SongResources } from '../components/song/SongResources';
 import { SongHistory } from '../components/song/SongHistory';
 import { SongPractice } from '../components/song/SongPractice';
 import type { SongCheck } from '../components/song/SongChecks';
@@ -31,7 +31,12 @@ const labels: Record<SongTab, string> = {
   practice: '연습',
   history: '합주 기록',
 };
-export function SongWorkspaceScreen({ navigate, entityId, songTab = 'main' }: ScreenProps) {
+export function SongWorkspaceScreen({
+  navigate,
+  entityId,
+  songTab: requestedTab = 'main',
+}: ScreenProps) {
+  const songTab = requestedTab === 'resources' ? 'main' : requestedTab;
   const { adoptedSongs, workspaceId, currentUserId, rehearsals, syncStatus } = useMockAppState();
   const song = adoptedSongs.find((item) => item.id === entityId);
   const [opinions] = useWorkspaceValue<
@@ -133,6 +138,7 @@ export function SongWorkspaceScreen({ navigate, entityId, songTab = 'main' }: Sc
         {!!message && <Meta accessibilityLiveRegion="polite">{message}</Meta>}
         <FlexRow wrap>
           {songTabs
+            .filter((tab) => tab !== 'resources')
             .filter((tab) => tab !== 'practice')
             .map((tab) => (
               <Pill
@@ -165,13 +171,16 @@ export function SongWorkspaceScreen({ navigate, entityId, songTab = 'main' }: Sc
             />
             <Copy>{song.goal || song.reason || '함께 연주할 방향을 이야기해보세요.'}</Copy>
           </Surface>
-          <Heading>곡 전체 의견</Heading>
+          <FlexBetween>
+            <Heading>곡 전체 의견</Heading>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => navigate('practice', { id: song.id, workspaceId, feedback: true })}
+            >
+              <Meta style={{ color: '#416bd1' }}>곡 세부 피드백 하러가기</Meta>
+            </Pressable>
+          </FlexBetween>
           <Discussion documentKey={`song/${song.id}/discussion`} />
-          <ActionButton
-            onPress={() => navigate('practice', { id: song.id, workspaceId, feedback: true })}
-          >
-            곡 세부 피드백 하러가기
-          </ActionButton>
           {upcomingCard}
         </>
       )}
@@ -201,7 +210,6 @@ export function SongWorkspaceScreen({ navigate, entityId, songTab = 'main' }: Sc
           }}
         />
       )}
-      {songTab === 'resources' && <SongResources songId={song.id} navigate={navigate} />}
       {songTab === 'practice' && <SongPractice song={song} />}
       {songTab === 'history' && <SongHistory songId={song.id} navigate={navigate} />}
     </AppShell>

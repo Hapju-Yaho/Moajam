@@ -49,6 +49,9 @@ class KakaoLoginDto extends KakaoAuthorizeDto {
   @MaxLength(2048)
   code!: string;
 }
+class RefreshSessionDto {
+  @ApiProperty() @IsString() @MinLength(1) @MaxLength(4096) refreshToken!: string;
+}
 class SessionUserDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ enum: ['temporary', 'kakao'] }) provider!: string;
@@ -62,6 +65,7 @@ class TemporarySessionDto {
   @ApiProperty({ type: SessionUserDto }) user!: SessionUserDto;
 }
 class KakaoSessionDto {
+  @ApiProperty() refreshToken!: string;
   @ApiProperty({ description: '서비스 API에 사용하는 Moajam JWT' }) accessToken!: string;
   @ApiProperty({ example: 'Bearer' }) tokenType!: string;
   @ApiProperty({ example: 3600 }) expiresIn!: number;
@@ -114,6 +118,21 @@ export class AuthController {
     if (!dto)
       throw new UnprocessableEntityException('요청 본문에 빈 객체 또는 복구 키를 전달해주세요.');
     return this.temporary.login(dto.resumeKey);
+  }
+
+  @Public()
+  @Post('refresh')
+  @HttpCode(200)
+  @ApiOkResponse({ type: KakaoSessionDto })
+  refresh(@Body() dto: RefreshSessionDto) {
+    return this.auth.refresh(dto.refreshToken);
+  }
+  @Post('renew')
+  @HttpCode(200)
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: KakaoSessionDto })
+  renew(@CurrentUser() user: AuthenticatedUser) {
+    return this.auth.renew(user);
   }
 
   @Get('session')

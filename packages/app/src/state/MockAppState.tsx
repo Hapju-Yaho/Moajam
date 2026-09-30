@@ -411,9 +411,7 @@ export function useMockAppState() {
       if (!canManage) return;
       update((band) => ({
         ...band,
-        rehearsals: band.rehearsals.map((event) =>
-          event.id === id ? { ...event, cancelled: !event.cancelled } : event,
-        ),
+        rehearsals: band.rehearsals.filter((event) => event.id !== id),
       }));
     },
     updateMember: (id: string, changes: Pick<MockMember, 'part' | 'role'>) => {

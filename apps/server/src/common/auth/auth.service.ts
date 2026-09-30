@@ -75,32 +75,72 @@ export class AuthService {
         if (!identity) throw error;
       }
     }
-    const now = Math.floor(Date.now() / 1000);
-    const expiresIn = this.config.getOrThrow<number>('AUTH_ACCESS_TOKEN_TTL_SECONDS');
     const sessionId = randomUUID();
-    const accessToken = await new SignJWT({ provider: 'kakao', sid: sessionId })
-      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-      .setIssuer(issuer)
-      .setAudience(audience)
-      .setSubject(identity.userId)
-      .setJti(sessionId)
-      .setIssuedAt(now)
-      .setExpirationTime(now + expiresIn)
-      .sign(this.secret());
     await this.prisma.authSession.create({
       data: {
         id: sessionId,
         userId: identity.userId,
-        expiresAt: new Date((now + expiresIn) * 1000),
+        expiresAt: new Date(Date.now() + 30 * 86400000),
       },
     });
+    return this.tokens(identity.userId, sessionId);
+  }
+  private async tokens(userId: string, sessionId: string) {
+    const now = Math.floor(Date.now() / 1000);
+    const expiresIn = this.config.getOrThrow<number>('AUTH_ACCESS_TOKEN_TTL_SECONDS');
+    const sign = (target: string, seconds: number) =>
+      new SignJWT({ provider: 'kakao', sid: sessionId })
+        .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+        .setIssuer(issuer)
+        .setAudience(target)
+        .setSubject(userId)
+        .setJti(sessionId)
+        .setIssuedAt(now)
+        .setExpirationTime(now + seconds)
+        .sign(this.secret());
     return {
-      accessToken,
+      accessToken: await sign(audience, expiresIn),
+      refreshToken: await sign('moajam-refresh', 30 * 86400),
       tokenType: 'Bearer' as const,
       expiresIn,
       expiresAt: (now + expiresIn) * 1000,
-      user: { id: identity.userId, provider: 'kakao' as const },
+      user: { id: userId, provider: 'kakao' as const },
     };
+  }
+  async refresh(refreshToken: string) {
+    this.ready();
+    let payload;
+    try {
+      ({ payload } = await jwtVerify(refreshToken, this.secret(), {
+        algorithms: ['HS256'],
+        issuer,
+        audience: 'moajam-refresh',
+        requiredClaims: ['sub', 'sid', 'exp', 'iat', 'jti'],
+      }));
+    } catch {
+      throw new UnauthorizedException('로그인 갱신 정보가 만료되었습니다. 다시 로그인해주세요.');
+    }
+    if (
+      payload.provider !== 'kakao' ||
+      typeof payload.sid !== 'string' ||
+      typeof payload.sub !== 'string' ||
+      payload.jti !== payload.sid
+    )
+      throw new UnauthorizedException('유효하지 않은 갱신 정보입니다.');
+    return this.renewSession(payload.sub, payload.sid);
+  }
+  async renew(user: AuthenticatedUser) {
+    if (user.provider !== 'kakao' || !user.sessionId)
+      throw new UnauthorizedException('카카오 세션이 필요합니다.');
+    return this.renewSession(user.id, user.sessionId);
+  }
+  private async renewSession(userId: string, sessionId: string) {
+    const changed = await this.prisma.authSession.updateMany({
+      where: { id: sessionId, userId, expiresAt: { gt: new Date() } },
+      data: { expiresAt: new Date(Date.now() + 30 * 86400000) },
+    });
+    if (!changed.count) throw new UnauthorizedException('로그아웃되었거나 만료된 세션입니다.');
+    return this.tokens(userId, sessionId);
   }
   async verifyAccessToken(token: string): Promise<AuthenticatedUser> {
     if (this.config.get('AUTH_MODE') === 'temporary') return this.temporary.verify(token);

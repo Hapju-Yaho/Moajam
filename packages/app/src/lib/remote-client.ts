@@ -25,6 +25,7 @@ let callbackPending: Promise<void> | undefined;
 let loginPending: Promise<void> | undefined;
 const listeners = new Set<() => void>();
 type LocalSession = {
+  refreshToken?: string;
   token: string;
   expiresAt: number;
   user: { id: string; provider: 'temporary' | 'kakao' };
@@ -174,12 +175,83 @@ async function completeKakaoCallback(value: string) {
     throw new Error('카카오 로그인을 완료하지 못했습니다. 다시 시도해주세요.');
   const result = await authRequest<{
     accessToken: string;
+    refreshToken?: string;
     expiresAt: number;
     user: LocalSession['user'];
   }>('kakao', { code, redirectUri: attempt.redirectUri });
   options.loginPreview = false;
-  await setSession({ token: result.accessToken, expiresAt: result.expiresAt, user: result.user });
+  await setSession({
+    token: result.accessToken,
+    refreshToken: result.refreshToken,
+    expiresAt: result.expiresAt,
+    user: result.user,
+  });
   options.onSignedIn?.();
+}
+let renewal: Promise<LocalSession | null> | undefined;
+async function renewSession(current: LocalSession): Promise<LocalSession | null> {
+  renewal ??= (async () => {
+    let next: LocalSession;
+    try {
+      if (current.user.provider === 'temporary') {
+        const resumeKey = await read(resumeKeyName());
+        if (!resumeKey) throw new ApiError('다시 로그인해주세요.', 401);
+        const result = await authRequest<LocalSession & { resumeKey: string }>('temporary', {
+          resumeKey,
+        });
+        if (result.user.id !== current.user.id) throw new ApiError('계정이 변경되었습니다.', 401);
+        next = result;
+      } else {
+        let result: {
+          accessToken: string;
+          refreshToken: string;
+          expiresAt: number;
+          user: LocalSession['user'];
+        };
+        if (current.refreshToken)
+          result = await authRequest('refresh', { refreshToken: current.refreshToken });
+        else {
+          const response = await request('/auth/renew', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + current.token },
+          });
+          if (!response.ok) throw new ApiError('다시 로그인해주세요.', response.status);
+          result = await response.json();
+        }
+        if (result.user.id !== current.user.id) throw new ApiError('계정이 변경되었습니다.', 401);
+        next = {
+          token: result.accessToken,
+          refreshToken: result.refreshToken,
+          expiresAt: result.expiresAt,
+          user: result.user,
+        };
+      }
+      if (localSession?.token !== current.token) return localSession ?? null;
+      await setSession(next);
+      return next;
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.status === 401 &&
+        localSession?.token === current.token
+      ) {
+        allowAutoLogin = false;
+        await setSession(null);
+      }
+      throw error;
+    }
+  })().finally(() => {
+    renewal = undefined;
+  });
+  return renewal;
+}
+async function activeSession() {
+  const current = await session();
+  if (!current) return null;
+  return current.expiresAt - Date.now() < 60000 ||
+    (current.user.provider === 'kakao' && !current.refreshToken)
+    ? renewSession(current)
+    : current;
 }
 export async function currentIdentity() {
   if (!serverConfigured) return 'm1';
@@ -192,7 +264,7 @@ export async function currentIdentity() {
   }
   if (options.loginPreview) return null;
   const temporary = await isTemporary();
-  let current = await session();
+  let current = await activeSession();
   if (
     current &&
     (current.expiresAt <= Date.now() ||
@@ -282,7 +354,7 @@ export async function api<T>(
   expectedUser?: string,
 ): Promise<T> {
   if (!serverConfigured) throw new Error('목데이터 모드에서는 서버 API를 사용하지 않습니다.');
-  const current = await session();
+  const current = await activeSession();
   if (!current || (expectedUser && current.user.id !== expectedUser))
     throw new ApiError('다시 로그인해주세요.', 401);
   if (current.expiresAt <= Date.now()) {

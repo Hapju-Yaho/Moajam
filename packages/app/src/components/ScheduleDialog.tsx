@@ -5,7 +5,7 @@ export function ScheduleDialog({
   visible,
   onClose,
   children,
-}: PropsWithChildren<{ visible: boolean; onClose: () => void }>) {
+}: PropsWithChildren<{ visible: boolean; onClose: () => void; label?: string }>) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       {children}

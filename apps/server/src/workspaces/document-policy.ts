@@ -1,6 +1,6 @@
 type Row = Record<string, unknown>;
 export const isWorkspaceDocumentKey = (key: string) =>
-  /^(recommendations|songs|rehearsals|song\/[\w-]+\/(discussion|checks|arrangement|links|session\/[\w-]+\/memo)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
+  /^(recommendations|songs|rehearsals|song\/[\w-]+\/(discussion|feedback|checks|arrangement|links|session\/[\w-]+\/memo)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
     key,
   );
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -179,6 +179,14 @@ export function canWriteDocument(
           /^([01]\d|2[0-3]):[0-5]\d$/.test(row.end) &&
           row.start < row.end,
       )
+    );
+  if (key.endsWith('/feedback'))
+    return (
+      rows(after) &&
+      after.every(
+        (note) => typeof note.time === 'number' && Number.isFinite(note.time) && note.time >= 0,
+      ) &&
+      authored(before, after, user, owner)
     );
   if (key.endsWith('/comments') || key.endsWith('/discussion'))
     return authored(before, after, user, owner);

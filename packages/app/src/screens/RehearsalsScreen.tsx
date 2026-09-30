@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { RehearsalCalendar } from '../components/RehearsalCalendar';
 import { AppShell } from '../components/AppShell';
-import { PracticeStudio } from '../components/PracticeStudio';
 import { ScheduleDateTime } from '../components/ScheduleDateTime';
 import {
   ActionButton,
@@ -316,8 +315,16 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
             </FlexBetween>
             <FlexRow wrap>
               {canManage ? (
-                <ActionButton secondary danger compact onPress={() => cancelRehearsal(schedule.id)}>
-                  {schedule.cancelled ? '일정 복원' : '일정 취소'}
+                <ActionButton
+                  secondary
+                  danger
+                  compact
+                  onPress={() => {
+                    cancelRehearsal(schedule.id);
+                    navigate('rehearsals', { workspaceId });
+                  }}
+                >
+                  일정 삭제
                 </ActionButton>
               ) : null}
               <Meta>{schedule.cancelled ? '취소된 합주입니다.' : '합주할 곡을 선택하세요.'}</Meta>
@@ -401,10 +408,6 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
                   + 항목 추가
                 </ActionButton>
               </Surface>
-              <PracticeStudio
-                key={`session/${workspaceId}/${selectedId}`}
-                scopeKey={`session/${workspaceId}/${selectedId}`}
-              />
             </Stack>
             <Stack gap={16} style={width < 940 ? undefined : { flex: 1 }}>
               <Surface>

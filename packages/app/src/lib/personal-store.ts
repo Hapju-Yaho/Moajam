@@ -21,6 +21,13 @@ export async function readPersonal<T>(key: string, owner?: string): Promise<T | 
   failures.delete(ref);
   return document?.value;
 }
+export async function assertPersonalUnchanged(key: string, owner?: string): Promise<void> {
+  const { user, ref, path } = await ownerScope(key, owner);
+  await queues.get(ref)?.catch(() => {});
+  const document = await api<Document<unknown> | null>(path, 'GET', undefined, user);
+  if ((document?.revision ?? 0) !== (revisions.get(ref) ?? 0))
+    throw new Error('서버에 변경사항이 존재합니다. 새로고침 후 공유하기를 눌러주세요.');
+}
 export async function writePersonal<T>(key: string, value: T, owner?: string): Promise<void> {
   const { user, ref, path } = await ownerScope(key, owner);
   const next = (queues.get(ref) ?? Promise.resolve())

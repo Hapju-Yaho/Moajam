@@ -1,10 +1,8 @@
 import { RecommendationsScreen } from './RecommendationsScreen';
-import { theme } from '@moajam/ui';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { AppShell } from '../components/AppShell';
 import {
   ActionButton,
-  Copy,
   FlexBetween,
   FlexRow,
   Heading,
@@ -12,8 +10,6 @@ import {
   PageHeading,
   Pill,
   PillText,
-  Progress,
-  ProgressValue,
   SongCover,
   Stack,
   Surface,
@@ -84,18 +80,6 @@ function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps
                 </PillText>
               </Pill>
             </FlexBetween>
-            <FlexBetween>
-              <Meta>파트 준비도</Meta>
-              <Copy style={{ fontWeight: '600' }}>
-                {song.ready} / {song.total}
-              </Copy>
-            </FlexBetween>
-            <Progress>
-              <ProgressValue
-                value={song.total ? (song.ready / song.total) * 100 : 0}
-                color={song.status === 'READY' ? '#16a36a' : theme.colors.primary}
-              />
-            </Progress>
             <FlexBetween>
               <FlexRow>
                 {participants.slice(0, 3).map((member) => (

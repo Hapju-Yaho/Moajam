@@ -193,6 +193,8 @@ export function TrackTimeline({
   onMoveClip,
   onMoveToNewTrack,
   onSave,
+  onRefresh,
+  refreshing,
   saving,
   dirty,
   onSplitClip,
@@ -216,6 +218,8 @@ export function TrackTimeline({
   onPatchClip: (id: string, changes: Partial<TimelineClip>) => void;
   onMoveToNewTrack: (id: string, offset: number) => void;
   onSave: () => void;
+  onRefresh: () => void;
+  refreshing: boolean;
   saving: boolean;
   dirty: boolean;
   onMoveClip: (id: string, targetId: string, offset: number) => void;
@@ -231,6 +235,12 @@ export function TrackTimeline({
   transport: Transport;
 }) {
   const [zoom, setZoom] = useState(48);
+  const [zoomDraft, setZoomDraft] = useState('100');
+  useEffect(() => setZoomDraft(String(Math.round((zoom / 48) * 100))), [zoom]);
+  const rulerDrag = useRef<{ x: number; y: number; zoom: number; moved: boolean } | null>(null);
+  const [nameSize, setNameSize] = useState({ width: 160, height: 28 });
+  const [clipName, setClipName] = useState('');
+  const [naming, setNaming] = useState(false);
   const [bpmDraft, setBpmDraft] = useState(String(t.bpm));
   useEffect(() => setBpmDraft(String(t.bpm)), [t.bpm]);
   const [snap, setSnap] = useState(true);
@@ -269,7 +279,7 @@ export function TrackTimeline({
     return () => observer.disconnect();
   }, [expanded]);
   const lanes = useRef(new Map<string, HTMLDivElement>());
-  const locked = t.playing || t.recording || t.requesting;
+  const locked = !loaded || refreshing || t.playing || t.recording || t.requesting;
   const step = beatSeconds(t.bpm, t.signature);
   const perBar = Number(t.signature.split('/')[0]);
   const barSeconds = step * perBar;
@@ -382,13 +392,23 @@ export function TrackTimeline({
             uploadTarget.current = undefined;
           }}
         />
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={!loaded || saving || !dirty || t.recording || t.requesting}
-        >
-          {saving ? '저장 중…' : '변경사항 공유하기'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+          <button
+            type="button"
+            disabled={!loaded || saving || refreshing || locked}
+            onClick={onRefresh}
+          >
+            {refreshing ? '새로고침 중…' : '새로고침'}
+          </button>
+          <button
+            type="button"
+            className="studio-share"
+            onClick={onSave}
+            disabled={!loaded || saving || refreshing || !dirty || t.recording || t.requesting}
+          >
+            {saving ? '저장 중…' : '변경사항 공유하기'}
+          </button>
+        </div>
       </header>
       <div className="studio-console">
         <div className="studio-transport">
@@ -596,7 +616,26 @@ export function TrackTimeline({
             >
               −
             </button>
-            <span>{Math.round((zoom / 48) * 100)}%</span>
+            <label>
+              <input
+                aria-label="타임라인 배율"
+                type="number"
+                min="25"
+                max="500"
+                value={zoomDraft}
+                onChange={(event) => setZoomDraft(event.target.value)}
+                onBlur={() => {
+                  const value = Number(zoomDraft);
+                  if (value > 0) setZoom(Math.max(12, Math.min(240, (value * 48) / 100)));
+                  else setZoomDraft(String(Math.round((zoom / 48) * 100)));
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') event.currentTarget.blur();
+                }}
+                style={{ width: 56 }}
+              />
+              %
+            </label>
             <button
               aria-label="타임라인 확대"
               disabled={zoom >= 240}
@@ -614,7 +653,41 @@ export function TrackTimeline({
           </div>
         </div>
         <div className="studio-clip-tools">
-          <span>{selected ? selected.name : '편집할 클립을 선택하세요'}</span>
+          {selected ? (
+            naming ? (
+              <input
+                aria-label="클립 이름"
+                className="studio-clip-name-input"
+                style={{ ...nameSize, flexShrink: 0, boxSizing: 'border-box' }}
+                autoFocus
+                value={clipName}
+                onChange={(event) => setClipName(event.target.value)}
+                onBlur={() => {
+                  if (clipName.trim()) onPatchClip(selected.id, { name: clipName.trim() });
+                  setNaming(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') event.currentTarget.blur();
+                  if (event.key === 'Escape') setNaming(false);
+                }}
+              />
+            ) : (
+              <button
+                disabled={locked}
+                title="클립 이름 수정"
+                onClick={(event) => {
+                  const { width, height } = event.currentTarget.getBoundingClientRect();
+                  setNameSize({ width, height });
+                  setClipName(selected.name);
+                  setNaming(true);
+                }}
+              >
+                {selected.name}
+              </button>
+            )
+          ) : (
+            <span>편집할 클립을 선택하세요</span>
+          )}
           <button
             disabled={locked || !canSplit}
             onClick={() => selected && onSplitClip(selected.id, t.position)}
@@ -650,11 +723,6 @@ export function TrackTimeline({
               초
             </label>
           )}
-          {selected && (
-            <a href={selected.url} download={selected.name} title="자르기 전 원본 음원">
-              원본 내려받기
-            </a>
-          )}
           {selected && onPublish && (
             <button disabled={!!publishing} onClick={() => onPublish(selected)}>
               {publishing === selected.id ? '공개 중…' : '원본 밴드에 공개'}
@@ -674,7 +742,30 @@ export function TrackTimeline({
           >
             <div className="studio-ruler-row">
               <div className="studio-track-head">세션 / 트랙</div>
-              <div className="studio-ruler" onClick={seekAt} style={{ width: timelineWidth }}>
+              <div
+                className="studio-ruler"
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  rulerDrag.current = { x: event.clientX, y: event.clientY, zoom, moved: false };
+                }}
+                onPointerMove={(event) => {
+                  const drag = rulerDrag.current;
+                  if (!drag) return;
+                  const delta = event.clientY - drag.y;
+                  if (Math.abs(delta) > 3) drag.moved = true;
+                  if (drag.moved)
+                    setZoom(Math.max(12, Math.min(240, drag.zoom * Math.exp(delta / 150))));
+                }}
+                onPointerUp={(event) => {
+                  if (rulerDrag.current && !rulerDrag.current.moved) seekAt(event);
+                  rulerDrag.current = null;
+                }}
+                onPointerCancel={() => {
+                  rulerDrag.current = null;
+                }}
+                style={{ width: timelineWidth }}
+              >
                 {markers.map((bar) => (
                   <div key={bar} style={{ left: bar * barSeconds * zoom }}>
                     <b>{bar + 1}</b>
