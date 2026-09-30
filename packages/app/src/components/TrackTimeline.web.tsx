@@ -186,13 +186,15 @@ export function TrackTimeline({
   loaded,
   saveLabel,
   error,
-  uploadPart,
-  onUploadPart,
   onUpload,
   onAdd,
   onPatch,
   onPatchClip,
   onMoveClip,
+  onMoveToNewTrack,
+  onSave,
+  saving,
+  dirty,
   onSplitClip,
   onRemoveClip,
   onRemove,
@@ -208,12 +210,14 @@ export function TrackTimeline({
   loaded: boolean;
   saveLabel: string;
   error: string;
-  uploadPart: TrackPart;
-  onUploadPart: (part: TrackPart) => void;
-  onUpload: (files: File[], targetId?: string) => void;
+  onUpload: (files: File[], targetId: string) => void;
   onAdd: () => void;
   onPatch: (id: string, changes: Partial<TimelineTrack>) => void;
   onPatchClip: (id: string, changes: Partial<TimelineClip>) => void;
+  onMoveToNewTrack: (id: string, offset: number) => void;
+  onSave: () => void;
+  saving: boolean;
+  dirty: boolean;
   onMoveClip: (id: string, targetId: string, offset: number) => void;
   onSplitClip: (id: string, position: number) => void;
   onRemoveClip: (id: string) => void;
@@ -250,9 +254,20 @@ export function TrackTimeline({
     offset: number;
     guide?: ClipSnap;
   } | null>(null);
+  const addRow = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | undefined>(undefined);
   const viewport = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState(660);
+  useEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const resize = () => setViewportWidth(element.clientWidth);
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [expanded]);
   const lanes = useRef(new Map<string, HTMLDivElement>());
   const locked = t.playing || t.recording || t.requesting;
   const step = beatSeconds(t.bpm, t.signature);
@@ -277,11 +292,21 @@ export function TrackTimeline({
   const visible = tracks.filter(
     (track) => filter === 'ALL' || (track.part ?? 'UNASSIGNED') === filter,
   );
-  const openFile = (id?: string) => {
+  const openFile = (id: string) => {
+    if (!loaded || locked || !tracks.some((track) => track.id === id)) return;
     uploadTarget.current = id;
     fileInput.current?.click();
   };
   const dragTarget = (x: number, y: number) => {
+    const addBounds = addRow.current?.getBoundingClientRect();
+    if (
+      addBounds &&
+      x >= addBounds.left &&
+      x <= addBounds.right &&
+      y >= addBounds.top &&
+      y <= addBounds.bottom
+    )
+      return '__new-track__';
     for (const [id, lane] of lanes.current) {
       const rect = lane.getBoundingClientRect();
       if (
@@ -298,7 +323,8 @@ export function TrackTimeline({
     if (!drag) return { offset: 0, guide: undefined };
     const delta = clientX - drag.x + (viewport.current?.scrollLeft ?? 0) - drag.scrollLeft;
     if (Math.abs(delta) < 3) return { offset: drag.original, guide: undefined };
-    const raw = drag.original + delta / zoom;
+    const raw = Math.max(0, drag.original + delta / zoom);
+    if (raw === 0) return { offset: 0, guide: undefined };
     const moving = tracks.flatMap(trackClips).find((clip) => clip.id === drag.id);
     // Prefer the destination lane only when two candidate edges are equally close.
     const targets = [...visible]
@@ -325,10 +351,12 @@ export function TrackTimeline({
     if (x > element.scrollLeft + available - 45 || x < element.scrollLeft)
       element.scrollLeft = Math.max(0, x - available * 0.25);
   }, [t.position, t.playing, follow, zoom]);
+  const seekPosition = (value: number, free = false) =>
+    t.onSeek(snapOffset(value, t.bpm, t.signature, snap && !free));
   const seekAt = (event: React.MouseEvent<HTMLElement>) => {
     if (t.recording || t.requesting) return;
     const x = event.clientX - event.currentTarget.getBoundingClientRect().left;
-    t.onSeek(Math.max(0, x / zoom));
+    seekPosition(x / zoom, event.altKey);
   };
   const editor = (
     <section className={`track-studio ${expanded ? 'is-expanded' : ''}`} aria-label="트랙 편집기">
@@ -339,44 +367,28 @@ export function TrackTimeline({
           </h2>
           <p aria-live="polite">{saveLabel}</p>
         </div>
-        <div className="studio-add-actions">
-          <select
-            aria-label="추가할 트랙 세션"
-            value={uploadPart}
-            disabled={locked}
-            onChange={(event) => onUploadPart(event.target.value as TrackPart)}
-          >
-            {trackParts.map((part) => (
-              <option key={part.value} value={part.value}>
-                {part.label}
-              </option>
-            ))}
-          </select>
-          <button disabled={!loaded || locked} onClick={onAdd}>
-            <Icon name="plus" />
-            트랙 추가
-          </button>
-          <button
-            className="studio-add-file"
-            disabled={!loaded || locked}
-            onClick={() => openFile()}
-          >
-            <Icon name="upload" />새 파일 추가
-          </button>
-          <input
-            ref={fileInput}
-            aria-label="트랙 음원 파일"
-            type="file"
-            accept="audio/*"
-            multiple
-            hidden
-            onChange={(event) => {
+        <input
+          ref={fileInput}
+          aria-label="트랙 음원 파일"
+          type="file"
+          accept="audio/*"
+          multiple
+          hidden
+          onChange={(event) => {
+            setFilter('ALL');
+            if (uploadTarget.current)
               onUpload(Array.from(event.target.files ?? []), uploadTarget.current);
-              event.target.value = '';
-              uploadTarget.current = undefined;
-            }}
-          />
-        </div>
+            event.target.value = '';
+            uploadTarget.current = undefined;
+          }}
+        />
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!loaded || saving || !dirty || t.recording || t.requesting}
+        >
+          {saving ? '저장 중…' : '변경사항 공유하기'}
+        </button>
       </header>
       <div className="studio-console">
         <div className="studio-transport">
@@ -536,13 +548,6 @@ export function TrackTimeline({
           </label>
         </div>
         <div className="studio-tools">
-          <button
-            className="studio-add-file"
-            disabled={!loaded || locked}
-            onClick={() => openFile()}
-          >
-            <Icon name="upload" /> 새 파일 추가
-          </button>
           <span className="studio-track-count">≋ {tracks.length} TRACKS</span>
           <select
             aria-label="표시할 세션"
@@ -557,19 +562,20 @@ export function TrackTimeline({
             ))}
           </select>
           <div className="studio-tools-end">
-            <label>
-              <input
-                type="checkbox"
-                checked={follow}
-                onChange={(event) => setFollow(event.target.checked)}
-              />
+            <button
+              className={follow ? 'active' : ''}
+              aria-label="커서 따라가기"
+              aria-pressed={follow}
+              title="재생 시 커서가 화면 밖으로 나가면 타임라인이 자동으로 커서를 따라갑니다."
+              onClick={() => setFollow(!follow)}
+            >
               커서 따라가기
-            </label>
+            </button>
             <button
               className={magnetic ? 'active' : ''}
               aria-label="클립 붙이기"
               aria-pressed={magnetic}
-              title="가까운 클립의 시작·끝에 붙이기 · Alt를 누르면 자유 이동"
+              title="드래그하는 클립의 시작 끝을 가까운 다른 클립의 시작 끝에 맞춥니다."
               onClick={() => setMagnetic(!magnetic)}
             >
               클립 붙이기
@@ -578,7 +584,7 @@ export function TrackTimeline({
               className={snap ? 'active' : ''}
               aria-label="박자에 맞추기"
               aria-pressed={snap}
-              title="이동 시 박자에 맞추기"
+              title="클립 및 커서 이동 위치를 박자 단위 위치로 맞춥니다."
               onClick={() => setSnap(!snap)}
             >
               박자 맞춤
@@ -628,7 +634,7 @@ export function TrackTimeline({
               <input
                 aria-label="선택한 클립 시작 위치"
                 type="number"
-                min="-60"
+                min="0"
                 max="600"
                 step="0.01"
                 value={Math.round(selected.offset * 100) / 100}
@@ -801,11 +807,12 @@ export function TrackTimeline({
                     }}
                     onClick={seekAt}
                     onDragOver={(event) => {
-                      if (!locked) event.preventDefault();
+                      if (loaded && !locked) event.preventDefault();
                     }}
                     onDrop={(event) => {
                       event.preventDefault();
-                      if (!locked) onUpload(Array.from(event.dataTransfer.files), track.id);
+                      if (loaded && !locked)
+                        onUpload(Array.from(event.dataTransfer.files), track.id);
                     }}
                   >
                     {clips.map((clip) => (
@@ -859,16 +866,22 @@ export function TrackTimeline({
                         }}
                         onPointerUp={(event) => {
                           if (drag?.id !== clip.id) return;
-                          const targetId = dragTarget(event.clientX, event.clientY);
+                          const targetId =
+                            dragTarget(event.clientX, event.clientY) ?? drag.targetId;
                           if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) >= 3) {
-                            if (targetId)
+                            if (targetId === '__new-track__')
+                              onMoveToNewTrack(
+                                clip.id,
+                                dragPlacement(event.clientX, targetId, event.altKey).offset,
+                              );
+                            else if (targetId)
                               onMoveClip(
                                 clip.id,
                                 targetId,
                                 dragPlacement(event.clientX, targetId, event.altKey).offset,
                               );
                           } else if (!locked)
-                            t.onSeek(
+                            seekPosition(
                               Math.max(
                                 0,
                                 clip.offset +
@@ -960,15 +973,33 @@ export function TrackTimeline({
                 </div>
               );
             })}
-            {!visible.length && (
-              <div className="studio-empty">
-                <Icon name="upload" />
-                <strong>
-                  {tracks.length ? '이 세션의 트랙이 없어요' : '첫 트랙을 준비해보세요'}
-                </strong>
-                <span>세션을 고르고 트랙을 추가하거나 음원 파일을 올려주세요.</span>
+            <div
+              ref={addRow}
+              className={`studio-add-track-row ${drag?.targetId === '__new-track__' ? 'drop-target' : ''}`}
+              style={{ width: viewportWidth }}
+            >
+              <div className="studio-add-track-control">
+                <button
+                  type="button"
+                  aria-label="트랙 추가"
+                  title="트랙 추가"
+                  disabled={!loaded || locked}
+                  onClick={() => {
+                    setFilter('ALL');
+                    onAdd();
+                  }}
+                >
+                  <Icon name="plus" />
+                </button>
               </div>
-            )}
+              <div className="studio-add-track-message">
+                {!visible.length
+                  ? tracks.length
+                    ? '이 세션의 트랙이 없어요'
+                    : '트랙을 추가해 주세요'
+                  : ''}
+              </div>
+            </div>
             {drag?.guide && (
               <div className="studio-snap-guide" style={{ left: 214 + drag.guide.time * zoom }}>
                 <span role="status">
@@ -1015,7 +1046,7 @@ export function TrackTimeline({
           step="0.01"
           value={Math.min(t.position, t.duration)}
           disabled={!t.duration || t.recording || t.requesting}
-          onChange={(event) => t.onSeek(Number(event.target.value))}
+          onChange={(event) => seekPosition(Number(event.target.value))}
         />
       </div>
       {!!error && (

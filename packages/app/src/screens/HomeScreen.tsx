@@ -35,6 +35,13 @@ export function HomeScreen({ navigate }: ScreenProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState('');
+  const closeLeave = () => {
+    if (!leaving) {
+      setConfirmLeave(false);
+      setConfirmDelete(false);
+      setLeaveError('');
+    }
+  };
   const lastOwner =
     members.length > 1 &&
     members.find((member) => member.id === currentUserId)?.role === 'OWNER' &&
@@ -81,6 +88,7 @@ export function HomeScreen({ navigate }: ScreenProps) {
             danger
             onPress={() => {
               setLeaveError('');
+              setConfirmDelete(false);
               setConfirmLeave(true);
             }}
           >
@@ -235,14 +243,7 @@ export function HomeScreen({ navigate }: ScreenProps) {
           </Surface>
         </Stack>
       </ResponsiveGrid>
-      <Modal
-        visible={confirmLeave}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (!leaving) setConfirmLeave(false);
-        }}
-      >
+      <Modal visible={confirmLeave} transparent animationType="fade" onRequestClose={closeLeave}>
         <View
           style={{
             flex: 1,
@@ -273,7 +274,7 @@ export function HomeScreen({ navigate }: ScreenProps) {
               </Copy>
             )}
             <FlexRow style={{ justifyContent: 'flex-end' }}>
-              <ActionButton secondary disabled={leaving} onPress={() => setConfirmLeave(false)}>
+              <ActionButton secondary disabled={leaving} onPress={closeLeave}>
                 취소
               </ActionButton>
               <ActionButton

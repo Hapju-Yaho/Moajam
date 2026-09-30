@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { ScheduleDialog } from './ScheduleDialog';
 import {
   ActionButton,
@@ -23,17 +23,25 @@ export function ScheduleModal({
   onClose,
   workspaceId,
   event,
+  onOpenRehearsal,
 }: {
   visible: boolean;
   date: string;
   onClose: () => void;
   workspaceId?: string;
   event?: Rehearsal;
+  onOpenRehearsal?: () => void;
 }) {
   return (
     <ScheduleDialog visible={visible} onClose={onClose}>
       {visible && (
-        <ScheduleForm date={date} onClose={onClose} workspaceId={workspaceId} event={event} />
+        <ScheduleForm
+          date={date}
+          onClose={onClose}
+          workspaceId={workspaceId}
+          event={event}
+          onOpenRehearsal={onOpenRehearsal}
+        />
       )}
     </ScheduleDialog>
   );
@@ -44,11 +52,13 @@ function ScheduleForm({
   onClose,
   workspaceId,
   event,
+  onOpenRehearsal,
 }: {
   date: string;
   onClose: () => void;
   workspaceId?: string;
   event?: Rehearsal;
+  onOpenRehearsal?: () => void;
 }) {
   const { workspaces, currentUserId, saveRehearsal } = useMockAppState();
   const personal = usePersonalSchedules();
@@ -69,8 +79,9 @@ function ScheduleForm({
     },
   );
   const [error, setError] = useState('');
+  const readOnly = !!event && scope === 'team' && !bands.some((band) => band.id === bandId);
   const save = async () => {
-    if (saving) return;
+    if (saving || readOnly) return;
     const parsed = new Date(`${draft.date}T00:00:00`);
     const time = /^([01]\d|2[0-3]):[0-5]\d$/;
     if (
@@ -114,9 +125,18 @@ function ScheduleForm({
         backgroundColor: 'rgba(16,29,53,0.48)',
       }}
     >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="일정 팝업 닫기"
+        disabled={saving}
+        onPress={onClose}
+        style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+      />
       <Surface style={{ width: '100%', maxWidth: 520, maxHeight: '90%' }}>
         <FlexBetween>
-          <Heading>{event ? '개인 일정 수정' : '일정 등록'}</Heading>
+          <Heading>
+            {event ? (scope === 'team' ? '팀 일정' : '개인 일정 수정') : '일정 등록'}
+          </Heading>
           <ActionButton secondary compact disabled={saving} onPress={onClose}>
             닫기
           </ActionButton>
@@ -147,7 +167,7 @@ function ScheduleForm({
               ? '내 캘린더에만 표시돼요.'
               : '선택한 밴드의 모든 멤버에게 공유돼요.'}
           </Meta>
-          {scope === 'team' && (
+          {scope === 'team' && !event && (
             <>
               <Label>밴드 선택</Label>
               <FlexRow wrap>
@@ -166,63 +186,77 @@ function ScheduleForm({
               {!bands.length && <Meta>일정 등록은 밴드 관리자만 할 수 있어요.</Meta>}
             </>
           )}
-          <View style={{ gap: 6 }}>
-            <Label>일정 이름</Label>
-            <Input
-              accessibilityLabel="일정 이름"
-              placeholder="어떤 일정인가요?"
-              value={draft.title}
-              onChangeText={(title) => setDraft((previous) => ({ ...previous, title }))}
-            />
-          </View>
-          <ScheduleDateTime
-            date={draft.date}
-            start={draft.start}
-            end={draft.end}
-            onChange={(change) => setDraft((previous) => ({ ...previous, ...change }))}
-          />
-          {(
-            [
-              ['place', '장소 (선택)'],
-              ['goal', '메모 / 목표 (선택)'],
-            ] as const
-          ).map(([key, label]) => (
-            <View key={key} style={{ gap: 6 }}>
-              <Label>{label}</Label>
+          {!!event && scope === 'team' && (
+            <Meta>{workspaces.find((band) => band.id === bandId)?.name}</Meta>
+          )}
+          <View pointerEvents={readOnly ? 'none' : 'auto'} style={{ gap: 14 }}>
+            <View style={{ gap: 6 }}>
+              <Label>일정 이름</Label>
               <Input
-                accessibilityLabel={label}
-                multiline={key === 'goal'}
-                style={
-                  key === 'goal'
-                    ? { minHeight: 120, textAlignVertical: 'top', lineHeight: 22 }
-                    : undefined
-                }
-                placeholder={
-                  key === 'goal'
-                    ? '준비할 내용이나 함께 기억할 내용을 적어주세요.'
-                    : '장소를 입력해주세요.'
-                }
-                value={draft[key]}
-                onChangeText={(value) => setDraft((previous) => ({ ...previous, [key]: value }))}
+                editable={!readOnly}
+                accessibilityLabel="일정 이름"
+                placeholder="어떤 일정인가요?"
+                value={draft.title}
+                onChangeText={(title) => setDraft((previous) => ({ ...previous, title }))}
               />
             </View>
-          ))}
+            <ScheduleDateTime
+              date={draft.date}
+              start={draft.start}
+              end={draft.end}
+              onChange={(change) => setDraft((previous) => ({ ...previous, ...change }))}
+            />
+            {(
+              [
+                ['place', '장소 (선택)'],
+                ['goal', '메모 / 목표 (선택)'],
+              ] as const
+            ).map(([key, label]) => (
+              <View key={key} style={{ gap: 6 }}>
+                <Label>{label}</Label>
+                <Input
+                  editable={!readOnly}
+                  accessibilityLabel={label}
+                  multiline={key === 'goal'}
+                  style={
+                    key === 'goal'
+                      ? { minHeight: 120, textAlignVertical: 'top', lineHeight: 22 }
+                      : undefined
+                  }
+                  placeholder={
+                    key === 'goal'
+                      ? '준비할 내용이나 함께 기억할 내용을 적어주세요.'
+                      : '장소를 입력해주세요.'
+                  }
+                  value={draft[key]}
+                  onChangeText={(value) => setDraft((previous) => ({ ...previous, [key]: value }))}
+                />
+              </View>
+            ))}
+          </View>
+          {onOpenRehearsal && (
+            <ActionButton secondary onPress={onOpenRehearsal}>
+              팀 합주 일정으로 이동
+            </ActionButton>
+          )}
           {!!error && (
             <Meta accessibilityRole="alert" style={{ color: '#be3b4b' }}>
               {error}
             </Meta>
           )}
-          <ActionButton
-            disabled={
-              saving ||
-              (scope === 'personal' && personal.loading) ||
-              (scope === 'team' && !bands.some((band) => band.id === bandId))
-            }
-            onPress={() => void save()}
-          >
-            {saving ? '저장 중…' : event ? '수정 저장' : '일정 등록'}
-          </ActionButton>
-          {event && (
+          {!readOnly && (
+            <ActionButton
+              disabled={
+                saving ||
+                (scope === 'personal' && personal.loading) ||
+                (scope === 'team' && !bands.some((band) => band.id === bandId))
+              }
+              onPress={() => void save()}
+            >
+              {saving ? '저장 중…' : event ? '수정 저장' : '일정 등록'}
+            </ActionButton>
+          )}
+          {event && scope === 'personal' && (
             <ActionButton
               secondary
               danger

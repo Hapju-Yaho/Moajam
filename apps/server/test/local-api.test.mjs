@@ -265,6 +265,22 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
       ).length,
       1,
     );
+    const beforeBulk = await call('/notifications', 'GET', undefined, b.token);
+    assert.ok(beforeBulk.some((item) => !item.readAt));
+    await call(`/notifications/read-all?workspaceId=${band.id}`, 'POST', undefined, a.token, 201);
+    assert.ok(
+      (await call('/notifications', 'GET', undefined, a.token)).every((item) => item.readAt),
+    );
+    assert.deepEqual(await call('/notifications', 'GET', undefined, b.token), beforeBulk);
+    await call(`/notifications?workspaceId=${band.id}`, 'DELETE', undefined, a.token);
+    assert.equal((await call('/notifications', 'GET', undefined, a.token)).length, 0);
+    assert.deepEqual(await call('/notifications', 'GET', undefined, b.token), beforeBulk);
+    await call('/notifications/read-all', 'POST', undefined, b.token, 201);
+    assert.ok(
+      (await call('/notifications', 'GET', undefined, b.token)).every((item) => item.readAt),
+    );
+    await call('/notifications', 'DELETE', undefined, b.token);
+    assert.equal((await call('/notifications', 'GET', undefined, b.token)).length, 0);
     const blob = new Blob(['test audio payload'], { type: 'audio/wav' });
     const asset = await call(
       '/assets/uploads',

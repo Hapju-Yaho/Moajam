@@ -1,3 +1,4 @@
+import { clientId } from './clientId';
 import { currentIdentity, serverConfigured } from './remote';
 import { readRemoteMedia, writeRemoteMedia } from './remote-media.web';
 
@@ -41,7 +42,7 @@ async function encode(value: unknown, scope: string): Promise<unknown> {
   if (value instanceof Blob) {
     const cached = blobs.get(value)?.get(scope);
     if (cached) return { __moajamMockBlob: cached };
-    const key = 'blob/' + scope + '/' + crypto.randomUUID();
+    const key = 'blob/' + scope + '/' + clientId();
     await saveBlob(key, value);
     const refs = blobs.get(value) ?? new Map<string, string>();
     refs.set(scope, key);

@@ -13,7 +13,7 @@ import { SongPractice } from '../components/song/SongPractice';
 import { useMockAppState } from '../state/MockAppState';
 import type { ScreenProps } from '../navigation';
 
-export function BandPracticeScreen({ navigate, entityId }: ScreenProps) {
+export function BandPracticeScreen({ navigate, entityId, feedback }: ScreenProps) {
   const { adoptedSongs, workspaceId } = useMockAppState();
   const songs = adoptedSongs.filter((song) => !song.archived || song.id === entityId);
   const song = entityId ? songs.find((item) => item.id === entityId) : songs[0];
@@ -55,7 +55,7 @@ export function BandPracticeScreen({ navigate, entityId }: ScreenProps) {
           {song ? '곡 상세 보기' : '참여 곡 보기'}
         </ActionButton>
       </Surface>
-      {song && <SongPractice key={song.id} song={song} />}
+      {song && <SongPractice key={song.id} song={song} feedback={feedback} />}
     </AppShell>
   );
 }

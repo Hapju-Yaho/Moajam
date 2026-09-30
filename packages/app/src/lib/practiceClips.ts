@@ -58,7 +58,7 @@ export function moveClip(tracks: TimelineTrack[], id: string, targetId: string, 
   return tracks.map((track) => {
     if (track.id !== source.id && track.id !== targetId) return track;
     const clips = trackClips(track).filter((item) => item.id !== id);
-    if (track.id === targetId) clips.push({ ...clip, offset });
+    if (track.id === targetId) clips.push({ ...clip, offset: Math.max(0, offset) });
     return withClips(
       track,
       clips.sort((a, b) => a.offset - b.offset),
@@ -97,4 +97,25 @@ export function splitClip(tracks: TimelineTrack[], id: string, position: number,
 
 export function clipSourceTime(clip: TimelineClip, position: number) {
   return clip.sourceStart + Math.max(0, Math.min(clip.duration, position - clip.offset));
+}
+
+export function nextTrackName(tracks: Pick<TimelineTrack, 'name'>[], prefix = '트랙') {
+  const names = new Set(tracks.map((track) => track.name));
+  let number = 1;
+  while (names.has(`${prefix}${number}`)) number++;
+  return `${prefix}${number}`;
+}
+export function moveClipToNewTrack(
+  tracks: TimelineTrack[],
+  clipId: string,
+  newId: string,
+  offset: number,
+) {
+  const source = tracks.find((track) => trackClips(track).some((clip) => clip.id === clipId));
+  if (!source || !Number.isFinite(offset)) return tracks;
+  const target = withClips(
+    { ...source, id: newId, name: nextTrackName(tracks, `${source.name}_`) },
+    [],
+  );
+  return moveClip([...tracks, target], clipId, newId, offset);
 }

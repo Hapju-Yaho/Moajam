@@ -34,7 +34,7 @@ export function PreparationControl({ song }: { song: WorkspaceSong }) {
     </>
   );
 }
-export function SongPractice({ song }: { song: WorkspaceSong }) {
+export function SongPractice({ song, feedback }: { song: WorkspaceSong; feedback?: boolean }) {
   const { workspaceId, canManage, updateSong } = useMockAppState();
   const [arrangement] = useWorkspaceValue<Arrangement>(`song/${song.id}/arrangement`, {
     key: '',
@@ -61,6 +61,7 @@ export function SongPractice({ song }: { song: WorkspaceSong }) {
         </Meta>
       </Surface>
       <PracticeStudio
+        feedback={feedback}
         key={`${workspaceId}/${song.id}`}
         scopeKey={`${workspaceId}/${song.id}`}
         bpm={Number(arrangement.bpm) || 120}

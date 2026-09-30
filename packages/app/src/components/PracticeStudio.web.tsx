@@ -1,3 +1,4 @@
+import { clientId } from '../lib/clientId';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useIdentity } from '../state/Identity';
 import { useMockAppState } from '../state/MockAppState';
@@ -6,7 +7,7 @@ import { usePreferences } from '../state/preferences';
 import { readMedia, writeMedia } from '../lib/mediaStore';
 import { ActionButton, Copy, FlexRow, Heading, Meta, Surface } from './ProductUI';
 import { PracticeSources } from './PracticeSources.web';
-import { trackPartLabel, validateAudioFile, type TrackPart } from '../lib/trackParts';
+import { validateAudioFile, type TrackPart } from '../lib/trackParts';
 import { TrackTimeline, type TimelineTrack as Track } from './TrackTimeline.web';
 import { beatSeconds, signatures, type TimeSignature } from '../lib/practiceTimeline';
 import { countIn, startMetronome } from '../lib/metronome.web';
@@ -14,6 +15,8 @@ import {
   trackClips,
   withClips,
   moveClip,
+  moveClipToNewTrack,
+  nextTrackName,
   splitClip,
   type TimelineClip,
 } from '../lib/practiceClips';
@@ -37,7 +40,16 @@ type Session = {
 };
 const timeLabel = (value: number) =>
   `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
-export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: number }) {
+export function PracticeStudio({
+  scopeKey,
+  bpm,
+  feedback,
+}: {
+  scopeKey: string;
+  bpm?: number;
+  feedback?: boolean;
+}) {
+  const feedbackRef = useRef<HTMLDivElement>(null);
   const userId = useIdentity();
   const urls = useRef(new Set<string>());
   const preferences = usePreferences();
@@ -60,14 +72,21 @@ export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: numb
   const [countdown, setCountdown] = useState(0);
   const [metronome, setMetronome] = useState(preferences.metronome);
   const [tracks, setTracks] = useState<Track[]>([]);
-  const [uploadPart, setUploadPart] = useState<TrackPart>('UNASSIGNED');
+  const uploadPart: TrackPart = 'UNASSIGNED';
   const [notes, setNotes] = useState<Note[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  useEffect(() => {
+    if (feedback && loaded)
+      feedbackRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [feedback, loaded]);
   const loadedScope = useRef('');
   const sessionExtras = useRef<{ memo?: string }>({});
-  const [saved, setSaved] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState<Session | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [saveFailed, setSaveFailed] = useState(false);
-  const saveVersion = useRef(0);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [solo, setSolo] = useState<string | null>(null);
@@ -97,6 +116,8 @@ export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: numb
     let active = true;
     loadedScope.current = '';
     setLoaded(false);
+    setSavedSnapshot(null);
+    setLoadFailed(false);
     setError('');
     setPlaying(false);
     setPosition(0);
@@ -138,73 +159,94 @@ export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: numb
         loadedScope.current = scopeKey;
         setLoaded(true);
       })
-      .catch(() => {
-        if (active)
-          setError('연습 데이터를 불러오지 못했습니다. 저장 권한을 확인하고 새로고침해주세요.');
+      .catch((failure: unknown) => {
+        if (active) {
+          setLoadFailed(true);
+          setError(
+            failure instanceof Error
+              ? `연습 데이터를 불러오지 못했어요: ${failure.message}`
+              : '연습 데이터를 불러오지 못했어요. 다시 시도해주세요.',
+          );
+        }
       });
     return () => {
       active = false;
     };
-  }, [scopeKey, userId]);
-  useEffect(() => {
-    if (!loaded || loadedScope.current !== scopeKey) return;
-    setSaved(false);
-    setSaveFailed(false);
-    const version = ++saveVersion.current;
-    void writeMedia(
-      `practice/${scopeKey}`,
-      {
-        tracks: tracks.map((track) =>
-          withClips(
-            track,
-            trackClips(track).map((clip) => ({ ...clip, url: '' })),
-          ),
+  }, [scopeKey, userId, loadAttempt]);
+  const snapshot = useMemo<Session>(
+    () => ({
+      tracks: tracks.map((track) =>
+        withClips(
+          track,
+          trackClips(track).map((clip) => ({ ...clip, url: '' })),
         ),
-        notes,
-        ...sessionExtras.current,
-        loop,
-        loopStart,
-        loopEnd,
-        solo,
-        metronome,
-        bpm: beatBpm,
-        signature,
-        clickVolume,
-        countInBars,
-        masterVolume,
-      },
-      userId,
-    )
-      .then(() => {
-        if (alive.current && version === saveVersion.current) setSaved(true);
-      })
-      .catch((failure: unknown) => {
-        if (alive.current && version === saveVersion.current) {
-          setSaveFailed(true);
-          setError(
-            failure instanceof Error
-              ? failure.message
-              : '트랙 저장에 실패했어요. 파일을 내려받아 보관해주세요.',
-          );
-        }
-      });
-  }, [
-    scopeKey,
-    tracks,
-    notes,
-    loaded,
-    loop,
-    loopStart,
-    loopEnd,
-    solo,
-    metronome,
-    userId,
-    beatBpm,
-    signature,
-    clickVolume,
-    countInBars,
-    masterVolume,
-  ]);
+      ),
+      notes,
+      ...sessionExtras.current,
+      loop,
+      loopStart,
+      loopEnd,
+      solo,
+      metronome,
+      bpm: beatBpm,
+      signature,
+      clickVolume,
+      countInBars,
+      masterVolume,
+    }),
+    [
+      tracks,
+      notes,
+      loop,
+      loopStart,
+      loopEnd,
+      solo,
+      metronome,
+      beatBpm,
+      signature,
+      clickVolume,
+      countInBars,
+      masterVolume,
+    ],
+  );
+  useEffect(() => {
+    if (loaded && savedSnapshot === null) setSavedSnapshot(snapshot);
+  }, [loaded, savedSnapshot, snapshot]);
+  const saved = savedSnapshot === snapshot;
+  const dirty = loaded && savedSnapshot !== null && !saved;
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+  const saveChanges = async () => {
+    if (!loaded || savingRef.current || recording || requesting || preparing) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveFailed(false);
+    setError('');
+    const pending = snapshot;
+    try {
+      await writeMedia(`practice/${scopeKey}`, pending, userId);
+      if (alive.current) setSavedSnapshot(pending);
+    } catch (failure) {
+      if (alive.current) {
+        setSaveFailed(true);
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : '변경사항 저장에 실패했어요. 다시 시도해주세요.',
+        );
+      }
+    } finally {
+      savingRef.current = false;
+      if (alive.current) setSaving(false);
+    }
+  };
   useEffect(() => {
     alive.current = true;
     const ownedUrls = urls.current;
@@ -327,13 +369,13 @@ export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: numb
       blob,
       offset,
       sourceStart: 0,
-      id: crypto.randomUUID(),
+      id: clientId(),
       name,
       url: URL.createObjectURL(blob),
       duration: recordedDuration,
     };
     const track: Track = {
-      id: crypto.randomUUID(),
+      id: clientId(),
       name,
       url: '',
       offset: 0,
@@ -354,21 +396,6 @@ export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: numb
       setTracks((all) => append(all, clip));
     } else {
       URL.revokeObjectURL(clip.url);
-      void readMedia<Session>(`practice/${scopeKey}`, userId)
-        .then((session) =>
-          writeMedia(
-            `practice/${scopeKey}`,
-            {
-              ...session,
-              tracks: append(session?.tracks ?? [], { ...clip, url: '' }),
-              notes: session?.notes ?? [],
-            },
-            userId,
-          ),
-        )
-        .catch(() => {
-          /* The active page reports storage errors; the recorder has already stopped. */
-        });
     }
   };
   const record = async () => {
@@ -502,24 +529,35 @@ export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: numb
     );
   return (
     <>
+      {loadFailed && (
+        <ActionButton secondary onPress={() => setLoadAttempt((value) => value + 1)}>
+          연습 데이터 다시 불러오기
+        </ActionButton>
+      )}
       <TrackTimeline
         tracks={tracks}
         loaded={loaded}
         saveLabel={
           !loaded
-            ? '불러오는 중…'
+            ? loadFailed
+              ? '불러오기 실패'
+              : '불러오는 중…'
             : saveFailed
               ? '저장 실패 · 파일을 내려받아 보관해주세요'
-              : !saved
+              : saving
                 ? '저장 중…'
-                : serverConfigured
-                  ? '서버에 저장됨 · 비공개'
-                  : '이 브라우저에 저장됨 · 비공개'
+                : !saved
+                  ? '저장하지 않은 변경사항 · 이동 전에 변경사항 공유하기를 눌러주세요'
+                  : serverConfigured
+                    ? '서버에 저장됨 · 비공개'
+                    : '이 브라우저에 저장됨 · 비공개'
         }
         error={error}
-        uploadPart={uploadPart}
-        onUploadPart={setUploadPart}
         onUpload={(files, targetId) => {
+          if (!tracks.some((track) => track.id === targetId)) {
+            setError('파일을 추가할 트랙을 먼저 만들어주세요.');
+            return;
+          }
           const failures: string[] = [];
           files.forEach((file) => {
             try {
@@ -534,18 +572,19 @@ export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: numb
           setError(failures.join('\n'));
         }}
         onAdd={() => {
-          const id = crypto.randomUUID();
+          const id = clientId();
           setTracks((all) => [
             ...all,
             {
               id,
-              name: `${trackPartLabel(uploadPart)} ${all.length + 1}`,
+              name: nextTrackName(all),
               part: uploadPart,
               offset: 0,
               duration: 0,
               volume: preferences.volume,
               muted: false,
               url: '',
+              clips: [],
             },
           ]);
           setArmed(id);
@@ -555,9 +594,17 @@ export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: numb
         onMoveClip={(id, targetId, offset) =>
           setTracks((all) => moveClip(all, id, targetId, offset))
         }
-        onSplitClip={(id, position) =>
-          setTracks((all) => splitClip(all, id, position, crypto.randomUUID()))
-        }
+        onMoveToNewTrack={(id, offset) => {
+          const newId = clientId();
+          const source = tracks.find((track) => trackClips(track).some((clip) => clip.id === id));
+          setTracks((all) => moveClipToNewTrack(all, id, newId, offset));
+          if (source && solo === source.id) setSolo(newId);
+          if (source && armed === source.id) setArmed(newId);
+        }}
+        onSave={() => void saveChanges()}
+        saving={saving}
+        dirty={dirty}
+        onSplitClip={(id, position) => setTracks((all) => splitClip(all, id, position, clientId()))}
         onRemoveClip={(id) =>
           setTracks((all) =>
             all.map((track) =>
@@ -684,61 +731,65 @@ export function PracticeStudio({ scopeKey, bpm }: { scopeKey: string; bpm?: numb
           <PracticeSources
             scopeKey={scopeKey}
             workspaceId={workspaceId}
-            disabled={!loaded || playing || recording || requesting || preparing}
-            onAdd={addBlob}
+            disabled={!loaded || !armed || playing || recording || requesting || preparing}
+            onAdd={(blob, name) => {
+              if (armed && tracks.some((track) => track.id === armed))
+                addBlob(blob, name, 0, armed);
+              else throw new Error('트랙을 선택해주세요.');
+            }}
           />
         </details>
       )}
-      <Surface>
-        <FlexRow>
-          <Heading>구간 메모</Heading>
-          <Meta>현재 구간 {timeLabel(position)}</Meta>
-        </FlexRow>
-        <Meta>메모의 시간을 누르면 해당 구간으로 이동해요. 이 메모는 나만 볼 수 있어요.</Meta>
-        <FlexRow>
-          <input
-            aria-label="연습 메모"
-            value={draft}
-            placeholder="이 구간에서 기억할 것"
-            onChange={(event) => setDraft(event.target.value)}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              padding: 12,
-              border: '1px solid #dce4ef',
-              borderRadius: 8,
-            }}
-          />
-          <ActionButton
-            secondary
-            onPress={() => {
-              if (!draft.trim()) return;
-              setNotes((all) => [
-                ...all,
-                { id: crypto.randomUUID(), time: position, text: draft.trim() },
-              ]);
-              setDraft('');
-            }}
-          >
-            메모 추가
-          </ActionButton>
-        </FlexRow>
-        {notes.map((note) => (
-          <FlexRow key={note.id}>
-            <ActionButton secondary compact onPress={() => seek(note.time)}>
-              {timeLabel(note.time)}
-            </ActionButton>
-            <Copy style={{ flex: 1 }}>{note.text}</Copy>
+      <div ref={feedbackRef} tabIndex={-1} aria-label="세부 피드백">
+        <Surface>
+          <FlexRow>
+            <Heading>세부 피드백</Heading>
+            <Meta>현재 구간 {timeLabel(position)}</Meta>
+          </FlexRow>
+          <Meta>메모의 시간을 누르면 해당 구간으로 이동해요. 이 메모는 나만 볼 수 있어요.</Meta>
+          <FlexRow>
+            <input
+              aria-label="연습 메모"
+              value={draft}
+              placeholder="이 구간에서 기억할 것"
+              onChange={(event) => setDraft(event.target.value)}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: 12,
+                border: '1px solid #dce4ef',
+                borderRadius: 8,
+              }}
+            />
             <ActionButton
               secondary
-              compact
-              onPress={() => setNotes((all) => all.filter((item) => item.id !== note.id))}
+              disabled={!loaded || !draft.trim()}
+              onPress={() => {
+                if (!draft.trim()) return;
+                setNotes((all) => [...all, { id: clientId(), time: position, text: draft.trim() }]);
+                setDraft('');
+              }}
             >
-              삭제
+              메모 추가
             </ActionButton>
           </FlexRow>
-        ))}
-      </Surface>
+          {notes.map((note) => (
+            <FlexRow key={note.id}>
+              <ActionButton secondary compact onPress={() => seek(note.time)}>
+                {timeLabel(note.time)}
+              </ActionButton>
+              <Copy style={{ flex: 1 }}>{note.text}</Copy>
+              <ActionButton
+                secondary
+                compact
+                onPress={() => setNotes((all) => all.filter((item) => item.id !== note.id))}
+              >
+                삭제
+              </ActionButton>
+            </FlexRow>
+          ))}
+        </Surface>
+      </div>
     </>
   );
 }

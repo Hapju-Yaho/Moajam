@@ -32,12 +32,14 @@ export interface NavigationOptions {
   id?: string;
   workspaceId?: string;
   songTab?: SongTab;
+  feedback?: boolean;
 }
 
 export interface ScreenProps {
   navigate: (route: AppRoute, options?: NavigationOptions) => void;
   entityId?: string;
   songTab?: SongTab;
+  feedback?: boolean;
 }
 
 export function buildAppPath(
@@ -80,7 +82,9 @@ export function buildAppPath(
     song: id
       ? `${base}/songs/${encodeURIComponent(id)}${options?.songTab && options.songTab !== 'main' ? `?tab=${options.songTab}` : ''}`
       : `${base}/songs`,
-    practice: id ? `${base}/songs/${encodeURIComponent(id)}/practice` : `${base}/practice`,
+    practice: id
+      ? `${base}/songs/${encodeURIComponent(id)}/practice${options?.feedback ? '?feedback=true' : ''}`
+      : `${base}/practice`,
   };
   return paths[next] ?? '/me';
 }

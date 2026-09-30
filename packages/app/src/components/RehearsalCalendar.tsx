@@ -1,5 +1,5 @@
-import { ScheduleDialog } from './ScheduleDialog';
 import { ScheduleModal } from './ScheduleModal';
+import { usePersonalSchedules } from '../state/personalSchedules';
 import { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { ActionButton, Copy, FlexBetween, FlexRow, Heading, Meta, Surface } from './ProductUI';
@@ -17,6 +17,7 @@ export function RehearsalCalendar({
   workspaceId,
   onSelectEvent,
   initialDate,
+  allowPersonal = false,
 }: {
   events: CalendarEvent[];
   navigate: ScreenProps['navigate'];
@@ -24,7 +25,23 @@ export function RehearsalCalendar({
   workspaceId?: string;
   onSelectEvent?: (event: CalendarEvent) => void;
   initialDate?: string;
+  allowPersonal?: boolean;
 }) {
+  const personal = usePersonalSchedules();
+  const [showPersonal, setShowPersonal] = useState(false);
+  const calendarEvents =
+    allowPersonal && showPersonal
+      ? [
+          ...events,
+          ...personal.events.map((event) => ({
+            ...event,
+            personal: true,
+            workspaceId: 'personal',
+            bandName: '개인 일정',
+            bandColor: '#8b5cf6',
+          })),
+        ]
+      : events;
   const [registering, setRegistering] = useState(false);
   const today = dateKey(new Date());
   const [month, setMonth] = useState(() =>
@@ -46,14 +63,28 @@ export function RehearsalCalendar({
     setMonth(next);
     setSelected(dateKey(next));
   };
-  const selectedEvents = events.filter((event) => event.date === selected);
+  const selectedEvents = calendarEvents.filter((event) => event.date === selected);
   return (
     <Surface>
       <FlexBetween style={{ flexWrap: 'wrap' }}>
         <Heading>
           {month.getFullYear()}년 {month.getMonth() + 1}월
         </Heading>
-        <FlexRow>
+        <FlexRow wrap>
+          {allowPersonal && (
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: showPersonal }}
+              onPress={() => setShowPersonal(!showPersonal)}
+              style={{
+                padding: 8,
+                borderRadius: 8,
+                backgroundColor: showPersonal ? '#ede9fe' : '#f1f5f9',
+              }}
+            >
+              <Meta>개인 일정도 확인하기 {showPersonal ? '켜짐' : '꺼짐'}</Meta>
+            </Pressable>
+          )}
           <ActionButton secondary compact onPress={() => shift(-1)}>
             이전 달
           </ActionButton>
@@ -72,6 +103,9 @@ export function RehearsalCalendar({
           </ActionButton>
         </FlexRow>
       </FlexBetween>
+      {allowPersonal && showPersonal && personal.error && (
+        <Meta>개인 일정을 불러오지 못했어요.</Meta>
+      )}
       <View style={{ flexDirection: 'row' }}>
         {['일', '월', '화', '수', '목', '금', '토'].map((day) => (
           <Meta
@@ -90,7 +124,7 @@ export function RehearsalCalendar({
         {cells.map((day, index) => {
           const valid = day > 0 && day <= days;
           const key = valid ? dateKey(new Date(month.getFullYear(), month.getMonth(), day)) : '';
-          const daily = events.filter((event) => event.date === key);
+          const daily = calendarEvents.filter((event) => event.date === key);
           return (
             <Pressable
               key={index}
@@ -216,48 +250,21 @@ export function EventRow({
         </View>
         <Meta>→</Meta>
       </Pressable>
-      {!event.personal && (
-        <ScheduleDialog visible={editing} onClose={() => setEditing(false)}>
-          <View
-            style={{
-              flex: 1,
-              padding: 20,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: 'rgba(16,29,53,0.48)',
-            }}
-          >
-            <Surface style={{ width: '100%', maxWidth: 520 }}>
-              <Heading>{event.title}</Heading>
-              <Meta>{event.bandName}</Meta>
-              <Copy>
-                {event.date} · {event.start}–{event.end}
-              </Copy>
-              <Copy>{event.place || '장소 미정'}</Copy>
-              <Copy>{event.goal || '등록된 메모가 없어요.'}</Copy>
-              {event.cancelled && <Meta>취소된 합주입니다.</Meta>}
-              <ActionButton
-                secondary
-                onPress={() => {
-                  setEditing(false);
-                  navigate('rehearsals', { workspaceId: event.workspaceId, id: event.id });
-                }}
-              >
-                합주 상세 보기
-              </ActionButton>
-              <ActionButton onPress={() => setEditing(false)}>닫기</ActionButton>
-            </Surface>
-          </View>
-        </ScheduleDialog>
-      )}
-      {event.personal && (
-        <ScheduleModal
-          visible={editing}
-          date={event.date}
-          event={event}
-          onClose={() => setEditing(false)}
-        />
-      )}
+      <ScheduleModal
+        visible={editing}
+        date={event.date}
+        event={event}
+        workspaceId={event.personal ? undefined : event.workspaceId}
+        onClose={() => setEditing(false)}
+        onOpenRehearsal={
+          event.personal
+            ? undefined
+            : () => {
+                setEditing(false);
+                navigate('rehearsals', { workspaceId: event.workspaceId, id: event.id });
+              }
+        }
+      />
     </>
   );
 }

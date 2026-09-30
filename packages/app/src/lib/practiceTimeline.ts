@@ -13,7 +13,7 @@ export function musicalPosition(seconds: number, bpm: number, signature: TimeSig
 
 export function snapOffset(seconds: number, bpm: number, signature: TimeSignature, snap: boolean) {
   const step = snap ? beatSeconds(bpm, signature) : 0.01;
-  return Math.max(-60, Math.min(600, Math.round(seconds / step) * step));
+  return Math.max(0, Math.min(600, Math.round(seconds / step) * step));
 }
 
 type ClipEdge = { id: string; offset: number; duration: number };
@@ -36,7 +36,7 @@ export function snapClipEdges(
       for (const movingEdge of [0, moving.duration]) {
         const offset = time - movingEdge;
         const delta = Math.abs(offset - moving.offset) * pixelsPerSecond;
-        if (offset >= -60 && offset <= 600 && delta <= threshold && delta < distance) {
+        if (offset >= 0 && offset <= 600 && delta <= threshold && delta < distance) {
           distance = delta;
           nearest = { offset, time, targetId: target.id, edge };
         }

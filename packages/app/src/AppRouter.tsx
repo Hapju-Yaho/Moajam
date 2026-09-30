@@ -23,6 +23,7 @@ interface AppScreenProps {
   entityId?: string;
   workspaceId?: string;
   songTab?: SongTab;
+  feedback?: boolean;
 }
 
 export function AppScreen(props: AppScreenProps) {
@@ -40,7 +41,14 @@ export function AppScreen(props: AppScreenProps) {
     </WorkspaceScopeProvider>
   );
 }
-function ScopedScreen({ route, navigate, entityId, workspaceId, songTab }: AppScreenProps) {
+function ScopedScreen({
+  route,
+  navigate,
+  entityId,
+  workspaceId,
+  songTab,
+  feedback,
+}: AppScreenProps) {
   const { workspaces, workspace } = useMockAppState();
   if (workspaceId && !workspace)
     return (
@@ -81,12 +89,12 @@ function ScopedScreen({ route, navigate, entityId, workspaceId, songTab }: AppSc
       return <SongsScreen navigate={navigate} />;
     case 'song':
       return songTab === 'practice' ? (
-        <BandPracticeScreen navigate={navigate} entityId={entityId} />
+        <BandPracticeScreen navigate={navigate} entityId={entityId} feedback={feedback} />
       ) : (
         <SongWorkspaceScreen navigate={navigate} entityId={entityId} songTab={songTab} />
       );
     case 'practice':
-      return <BandPracticeScreen navigate={navigate} entityId={entityId} />;
+      return <BandPracticeScreen navigate={navigate} entityId={entityId} feedback={feedback} />;
     case 'rehearsals':
       return <RehearsalsScreen navigate={navigate} entityId={entityId} />;
     case 'members':
@@ -110,6 +118,7 @@ export function MoajamApp() {
     id?: string;
     workspaceId?: string;
     songTab?: SongTab;
+    feedback?: boolean;
   }>({
     route: 'personal-home',
   });
@@ -120,11 +129,13 @@ export function MoajamApp() {
       entityId={location.id}
       workspaceId={location.workspaceId}
       songTab={location.songTab}
+      feedback={location.feedback}
       navigate={(route, options) =>
         setLocation({
           route,
           id: options?.id,
           songTab: options?.songTab,
+          feedback: options?.feedback,
           workspaceId:
             options?.workspaceId ??
             (route.startsWith('personal-') ? undefined : selectedWorkspaceId),

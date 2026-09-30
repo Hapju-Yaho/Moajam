@@ -35,6 +35,7 @@ export function ScheduleDashboard({
         onLayout={(event) => setCalendarHeight(event.nativeEvent.layout.height)}
       >
         <RehearsalCalendar
+          allowPersonal={!!workspaceId}
           events={events}
           navigate={navigate}
           compact={compact}

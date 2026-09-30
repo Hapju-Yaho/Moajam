@@ -46,6 +46,7 @@ function RoutedScreen({ route }: { route: AppRoute }) {
       workspaceId={workspaceId}
       entityId={entityId}
       songTab={parseSongTab(search.get('tab'))}
+      feedback={search.get('feedback') === 'true'}
       navigate={go}
     />
   );

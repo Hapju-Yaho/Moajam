@@ -1,6 +1,5 @@
 import { RecommendationsScreen } from './RecommendationsScreen';
 import { theme } from '@moajam/ui';
-import { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { AppShell } from '../components/AppShell';
 import {
@@ -10,159 +9,35 @@ import {
   FlexRow,
   Heading,
   Meta,
-  PageDescription,
   PageHeading,
-  PageTop,
   Pill,
   PillText,
   Progress,
   ProgressValue,
-  ResponsiveGrid,
   SongCover,
   Stack,
-  StatTile,
   Surface,
 } from '../components/ProductUI';
 import type { ScreenProps } from '../navigation';
 import { useMockAppState, type AdoptedSong } from '../state/MockAppState';
-import { Avatar, AvatarText, Input } from '../styles/layout';
+import { Avatar, AvatarText } from '../styles/layout';
 
 export function SongsScreen({ navigate }: ScreenProps) {
-  const { width } = useWindowDimensions();
   const { adoptedSongs } = useMockAppState();
-  const [tab, setTab] = useState('전체');
-  const [query, setQuery] = useState('');
-  const [sort, setSort] = useState('기본순');
-  const visible = adoptedSongs
-    .filter(
-      (song) =>
-        (tab === '보관함'
-          ? song.archived
-          : !song.archived &&
-            (tab === '전체' ||
-              (tab === '연습 중' ? song.status === 'PRACTICING' : song.status === 'READY'))) &&
-        `${song.title} ${song.artist}`.toLowerCase().includes(query.trim().toLowerCase()),
-    )
-    .sort((a, b) =>
-      sort === '곡 이름순'
-        ? a.title.localeCompare(b.title, 'ko')
-        : sort === '준비 낮은순'
-          ? (a.total ? a.ready / a.total : 0) - (b.total ? b.ready / b.total : 0)
-          : 0,
-    );
   return (
     <AppShell activeRoute="songs" onNavigate={navigate}>
-      <FlexBetween
-        style={width < 650 ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
-      >
-        <PageTop>
-          <PageHeading>참여 곡</PageHeading>
-          <PageDescription>
-            우리 팀이 함께 완성해갈 곡과 준비 상태를 한눈에 확인하세요.
-          </PageDescription>
-        </PageTop>
-      </FlexBetween>
-      <Heading>채택된 곡</Heading>
-      <FlexRow wrap>
-        <StatTile
-          icon="songs"
-          label="활동 중인 곡"
-          value={`${adoptedSongs.filter((song) => !song.archived).length}곡`}
-        />
-        <StatTile
-          icon="rehearsal"
-          label="연습 중"
-          value={`${adoptedSongs.filter((song) => !song.archived && song.status === 'PRACTICING').length}곡`}
-          color="#e49a13"
-        />
-        <StatTile
-          icon="users"
-          label="준비 완료"
-          value={`${adoptedSongs.filter((song) => !song.archived && song.status === 'READY').length}곡`}
-          color="#16a36a"
-        />
-        <StatTile
-          icon="songs"
-          label="보관 중"
-          value={`${adoptedSongs.filter((song) => song.archived).length}곡`}
-        />
-      </FlexRow>
-      <FlexBetween
-        style={width < 650 ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
-      >
-        <FlexRow wrap>
-          {['전체', '연습 중', '준비 완료', '보관함'].map((item) => (
-            <Pill
-              key={item}
-              accessibilityRole="button"
-              accessibilityState={{ selected: tab === item }}
-              active={tab === item}
-              onPress={() => setTab(item)}
-            >
-              <PillText active={tab === item}>{item}</PillText>
-            </Pill>
-          ))}
-        </FlexRow>
-        <View style={{ width: width < 650 ? '100%' : Math.min(300, width * 0.4) }}>
-          <Input value={query} onChangeText={setQuery} placeholder="곡 또는 아티스트 검색" />
-        </View>
-      </FlexBetween>
-      <FlexRow wrap>
-        <Meta>{visible.length}곡</Meta>
-        {['기본순', '곡 이름순', '준비 낮은순'].map((value) => (
-          <Pill
-            key={value}
-            accessibilityRole="button"
-            accessibilityState={{ selected: sort === value }}
-            active={sort === value}
-            onPress={() => setSort(value)}
-          >
-            <PillText active={sort === value}>{value}</PillText>
-          </Pill>
+      <PageHeading>참여 곡</PageHeading>
+      <Stack gap={16}>
+        {adoptedSongs.map((song) => (
+          <SongTile key={song.id} song={song} navigate={navigate} />
         ))}
-      </FlexRow>
-      {visible.length === 0 ? (
-        <Surface>
-          <Heading>
-            {adoptedSongs.length ? '조건에 맞는 곡이 없어요' : '아직 채택한 곡이 없어요'}
-          </Heading>
-          <Meta>
-            {adoptedSongs.length
-              ? '검색어나 준비 상태 필터를 바꿔보세요.'
-              : '곡 추천에서 함께 연습할 곡을 채택해보세요.'}
-          </Meta>
-          {adoptedSongs.length > 0 && (
-            <ActionButton
-              secondary
-              onPress={() => {
-                if (!adoptedSongs.length) return;
-                else {
-                  setQuery('');
-                  setTab('전체');
-                }
-              }}
-            >
-              검색과 필터 초기화
-            </ActionButton>
-          )}
-        </Surface>
-      ) : null}
-      <ResponsiveGrid stacked={width < 920}>
-        <Stack gap={16} style={width < 920 ? undefined : { flex: 1 }}>
-          {visible
-            .filter((_, index) => width < 920 || index % 2 === 0)
-            .map((song) => (
-              <SongTile key={song.id} song={song} navigate={navigate} />
-            ))}
-        </Stack>
-        <Stack gap={16} style={width < 920 ? undefined : { flex: 1 }}>
-          {visible
-            .filter((_, index) => width >= 920 && index % 2 === 1)
-            .map((song) => (
-              <SongTile key={song.id} song={song} navigate={navigate} />
-            ))}
-        </Stack>
-      </ResponsiveGrid>
+        {!adoptedSongs.length && (
+          <Surface>
+            <Heading>아직 채택한 곡이 없어요</Heading>
+            <Meta>아래 곡 추천에서 함께 연습할 곡을 채택해주세요.</Meta>
+          </Surface>
+        )}
+      </Stack>
       <RecommendationsScreen navigate={navigate} embedded />
     </AppShell>
   );

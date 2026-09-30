@@ -307,7 +307,9 @@ export async function api<T>(
     throw new ApiError(error.detail ?? '요청에 실패했습니다.', response.status, error.code);
   }
   if (response.status === 204) return undefined as T;
-  const result = await response.json();
+  const text = await response.text();
+  // Nest/Fastify may serialize a missing document as an empty 200 response.
+  const result = text.trim() ? JSON.parse(text) : null;
   if (result && typeof result === 'object')
     for (const key of ['url', 'signedUrl'])
       if (typeof result[key] === 'string') result[key] = reachableUrl(result[key]);

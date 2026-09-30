@@ -49,6 +49,8 @@ async function fixture({
           expiresAt: Date.now() + 100000,
           user: { id: 'k', provider: 'kakao' },
         });
+      if (url.endsWith('/me/documents/empty')) return new Response('', { status: 200 });
+      if (url.endsWith('/me/documents/null')) return Response.json(null);
       if (url.endsWith('/auth/logout')) return Response.json({ ok: true });
       return denied
         ? Response.json({ detail: 'expired' }, { status: 401 })
@@ -204,4 +206,11 @@ test('denied Kakao consent and expired attempts never create a session', async (
     await assert.rejects(f.client.signInWithKakao());
     assert.ok(!f.calls.some((call) => call.url.endsWith('/auth/kakao')));
   }
+});
+
+test('missing practice documents accept empty 200 and JSON null responses', async () => {
+  const { client } = await fixture();
+  await client.currentIdentity();
+  assert.equal(await client.api('/me/documents/empty'), null);
+  assert.equal(await client.api('/me/documents/null'), null);
 });
