@@ -354,3 +354,26 @@ test('band practice feedback shares time and text while protecting each author',
   assert.equal(canWriteDocument(key, [], [{ ...note, time: -1 }], 'member-a', false), false);
   assert.equal(canWriteDocument(key, [], [{ ...note, time: Infinity }], 'member-a', false), false);
 });
+
+test('practice order is shared by members and rejects duplicate or malformed IDs', () => {
+  assert.equal(isWorkspaceDocumentKey('practice/order'), true);
+  assert.equal(canWriteDocument('practice/order', [], ['song-a', 'song-b'], 'member', false), true);
+  assert.equal(canWriteDocument('practice/order', [], ['a', 'a'], 'member', false), false);
+  assert.equal(canWriteDocument('practice/order', [], [null], 'member', true), false);
+});
+
+test('clip memo keeps a single entry per clip and protects existing authors', () => {
+  const key = 'song/song-1/clip-notes';
+  const memo = { id: 'asset-1', authorId: 'member-a', text: 'Verse' };
+  assert.equal(isWorkspaceDocumentKey(key), true);
+  assert.equal(canWriteDocument(key, [], [memo], 'member-a', false), true);
+  assert.equal(canWriteDocument(key, [], [memo, memo], 'member-a', false), false);
+  assert.equal(
+    canWriteDocument(key, [memo], [{ ...memo, text: 'Chorus' }], 'member-b', false),
+    false,
+  );
+  assert.equal(
+    canWriteDocument(key, [memo], [{ ...memo, text: 'Chorus' }], 'member-a', false),
+    true,
+  );
+});

@@ -1,3 +1,4 @@
+import { scheduleErrors } from '../lib/scheduleValidation';
 import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { ScheduleDialog } from './ScheduleDialog';
@@ -13,7 +14,7 @@ import {
 } from './ProductUI';
 import { Input, Label } from '../styles/layout';
 import { useMockAppState } from '../state/MockAppState';
-import { dateKey, type Rehearsal } from '../mocks/workspaces';
+import { type Rehearsal } from '../mocks/workspaces';
 import { usePersonalSchedules } from '../state/personalSchedules';
 import { ScheduleDateTime } from './ScheduleDateTime';
 
@@ -82,19 +83,12 @@ function ScheduleForm({
   const readOnly = !!event && scope === 'team' && !bands.some((band) => band.id === bandId);
   const save = async () => {
     if (saving || readOnly) return;
-    const parsed = new Date(`${draft.date}T00:00:00`);
-    const time = /^([01]\d|2[0-3]):[0-5]\d$/;
-    if (
-      (scope === 'team' && !bands.some((band) => band.id === bandId)) ||
-      !draft.title.trim() ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(draft.date) ||
-      Number.isNaN(parsed.getTime()) ||
-      dateKey(parsed) !== draft.date ||
-      !time.test(draft.start) ||
-      !time.test(draft.end) ||
-      draft.end <= draft.start
-    ) {
-      setError('일정 이름, 날짜와 팀 선택을 확인해주세요. 종료 시간은 시작 시간 이후여야 해요.');
+    const errors = scheduleErrors(
+      draft,
+      scope !== 'team' || bands.some((band) => band.id === bandId),
+    );
+    if (errors.length) {
+      setError(errors.join('\n'));
       return;
     }
     setSaving(true);
@@ -103,7 +97,8 @@ function ScheduleForm({
       const next = {
         ...draft,
         title: draft.title.trim(),
-        place: draft.place.trim(),
+        place: (draft.place ?? '').trim(),
+        goal: draft.goal ?? '',
         id: event?.id ?? `session-${Date.now()}`,
       };
       if (scope === 'personal') await personal.save(next);

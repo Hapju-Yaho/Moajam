@@ -1,6 +1,8 @@
+import { AppIcon } from '../components/icons';
+import { BandSettings } from '../components/BandSettings';
 import { useIdentity } from '../state/Identity';
 import { useState } from 'react';
-import { Modal, useWindowDimensions, View } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { AppShell } from '../components/AppShell';
 import {
   ActionButton,
@@ -14,8 +16,6 @@ import {
   PageTop,
   Pill,
   PillText,
-  Progress,
-  ProgressValue,
   ResponsiveGrid,
   SongCover,
   Stack,
@@ -31,6 +31,7 @@ export function HomeScreen({ navigate }: ScreenProps) {
   const { width } = useWindowDimensions();
   const { workspace, members, adoptedSongs, recommendations, rehearsals, leaveWorkspace } =
     useMockAppState();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -66,7 +67,6 @@ export function HomeScreen({ navigate }: ScreenProps) {
   const next = rehearsals
     .filter((event) => !event.cancelled && new Date(`${event.date}T${event.end}`) >= new Date())
     .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`))[0];
-  const ready = adoptedSongs.filter((song) => song.myStatus === 'READY').length;
   const candidates = recommendations.filter(
     (song) => !adoptedSongs.some((adopted) => adopted.id === song.id),
   );
@@ -76,10 +76,34 @@ export function HomeScreen({ navigate }: ScreenProps) {
         style={width < 650 ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
       >
         <PageTop>
-          <PageHeading>{workspace?.name}</PageHeading>
+          <FlexRow>
+            {workspace?.photo && (
+              <Image
+                source={{ uri: workspace.photo }}
+                style={{ width: 48, height: 48, borderRadius: 24 }}
+              />
+            )}
+            <PageHeading>{workspace?.name}</PageHeading>
+          </FlexRow>
           <PageDescription>{workspace?.description}</PageDescription>
         </PageTop>
         <FlexRow style={{ flexShrink: 0 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="밴드 설정"
+            onPress={() => setSettingsOpen(true)}
+            style={{
+              width: 40,
+              height: 40,
+              borderWidth: 1,
+              borderColor: '#dce3ed',
+              borderRadius: 8,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <AppIcon name="settings" size={20} color="#52647b" />
+          </Pressable>
           <ActionButton secondary onPress={() => navigate('members')}>
             멤버 보기
           </ActionButton>
@@ -139,12 +163,6 @@ export function HomeScreen({ navigate }: ScreenProps) {
               </Avatar>
             ))}
           </FlexRow>
-          <Meta>
-            내 준비 완료 {ready} / {adoptedSongs.length}곡
-          </Meta>
-          <Progress>
-            <ProgressValue value={adoptedSongs.length ? (ready / adoptedSongs.length) * 100 : 0} />
-          </Progress>
         </Surface>
       </ResponsiveGrid>
       <Heading>밴드 일정</Heading>
@@ -182,28 +200,23 @@ export function HomeScreen({ navigate }: ScreenProps) {
                 }}
               >
                 <FlexRow gap={12}>
-                  <SongCover id={song.id} size={50} />
+                  <SongCover
+                    id={song.id}
+                    thumbnailUrl={song.thumbnailUrl}
+                    referenceUrl={song.referenceUrl}
+                    size={50}
+                  />
                   <View style={{ flex: 1 }}>
                     <Copy style={{ fontWeight: '500' }}>{song.title}</Copy>
-                    <Meta>
-                      {song.artist} · {song.ready}/{song.total} 파트 준비
-                    </Meta>
+                    <Meta>{song.artist}</Meta>
                   </View>
                   <ActionButton compact onPress={() => navigate('practice', { id: song.id })}>
                     연습하기
                   </ActionButton>
                 </FlexRow>
-                <Progress>
-                  <ProgressValue value={song.total ? (song.ready / song.total) * 100 : 0} />
-                </Progress>
               </View>
             ))}
             {!adoptedSongs.length && <Meta>곡 추천에서 첫 연습곡을 골라보세요.</Meta>}
-          </Surface>
-          <Surface tint="#f4f7ff">
-            <Heading>새 합주 준비하기</Heading>
-            <Meta>다음 일정을 만들고 같은 목표로 연습해요.</Meta>
-            <ActionButton onPress={() => navigate('rehearsals')}>합주 일정 관리 →</ActionButton>
           </Surface>
         </Stack>
         <Stack style={{ flex: 1 }}>
@@ -243,6 +256,25 @@ export function HomeScreen({ navigate }: ScreenProps) {
           </Surface>
         </Stack>
       </ResponsiveGrid>
+      <Modal
+        visible={settingsOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSettingsOpen(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#0006', justifyContent: 'center', padding: 20 }}>
+          <Pressable
+            accessibilityLabel="밴드 설정 닫기"
+            onPress={() => setSettingsOpen(false)}
+            style={{ position: 'absolute', inset: 0 }}
+          />
+          <ScrollView
+            style={{ maxHeight: '90%', width: '100%', maxWidth: 580, alignSelf: 'center' }}
+          >
+            <BandSettings key={workspace?.id} onClose={() => setSettingsOpen(false)} />
+          </ScrollView>
+        </View>
+      </Modal>
       <Modal visible={confirmLeave} transparent animationType="fade" onRequestClose={closeLeave}>
         <View
           style={{

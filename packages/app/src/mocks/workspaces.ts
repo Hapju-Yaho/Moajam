@@ -27,8 +27,9 @@ export interface Workspace {
   id: string;
   name: string;
   description: string;
+  photo?: string;
   color: string;
-  members: typeof members;
+  members: ((typeof members)[number] & { photo?: string })[];
   recommendations: typeof recommendations;
   adoptedSongs: WorkspaceSong[];
   rehearsals: Rehearsal[];

@@ -1,3 +1,4 @@
+import { parseVideoUrl } from '../lib/video';
 import styled from '@emotion/native';
 import { theme } from '@moajam/ui';
 import type { PropsWithChildren, ReactNode } from 'react';
@@ -298,12 +299,14 @@ export function SongCover({
   id,
   size = 72,
   thumbnailUrl,
+  referenceUrl,
 }: {
   id: string;
   size?: number;
   thumbnailUrl?: string;
+  referenceUrl?: string;
 }) {
-  const source = thumbnailUrl ?? getSongThumbnail(id);
+  const source = thumbnailUrl || parseVideoUrl(referenceUrl)?.thumbnail || getSongThumbnail(id);
   if (!source)
     return (
       <View

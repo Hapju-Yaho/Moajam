@@ -101,17 +101,6 @@ export function SongWorkspaceScreen({
         </FlexBetween>
         <FlexRow wrap>
           <PageHeading>{song.title}</PageHeading>
-          <Pill>
-            <PillText>
-              {song.archived
-                ? '보관 중'
-                : !song.total
-                  ? '파트 배정 필요'
-                  : song.status === 'READY'
-                    ? '합주 준비 완료'
-                    : '함께 연습 중'}
-            </PillText>
-          </Pill>
         </FlexRow>
         <Copy>
           {song.artist} · Key {arrangement.key || '미정'} · BPM {arrangement.bpm || '미정'}

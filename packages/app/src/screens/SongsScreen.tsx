@@ -8,8 +8,6 @@ import {
   Heading,
   Meta,
   PageHeading,
-  Pill,
-  PillText,
   SongCover,
   Stack,
   Surface,
@@ -59,7 +57,12 @@ function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps
         onPress={() => navigate('song', { id: song.id })}
       >
         <FlexRow gap={16}>
-          <SongCover id={song.id} thumbnailUrl={song.thumbnailUrl} size={width < 650 ? 72 : 104} />
+          <SongCover
+            id={song.id}
+            thumbnailUrl={song.thumbnailUrl}
+            referenceUrl={song.referenceUrl}
+            size={width < 650 ? 72 : 104}
+          />
           <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
             <FlexBetween>
               <View style={{ flex: 1, minWidth: 0 }}>
@@ -68,17 +71,6 @@ function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps
                   {song.artist} · {song.year}
                 </Meta>
               </View>
-              <Pill tone={song.status === 'READY' ? 'green' : 'amber'}>
-                <PillText tone={song.status === 'READY' ? 'green' : 'amber'}>
-                  {song.archived
-                    ? '보관 중'
-                    : !song.total
-                      ? '파트 미배정'
-                      : song.status === 'READY'
-                        ? '준비 완료'
-                        : '연습 중'}
-                </PillText>
-              </Pill>
             </FlexBetween>
             <FlexBetween>
               <FlexRow>

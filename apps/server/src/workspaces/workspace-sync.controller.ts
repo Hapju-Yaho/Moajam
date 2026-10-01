@@ -130,9 +130,43 @@ export class WorkspaceSyncController {
               saved.push(await tx.workspaceDocument.findUniqueOrThrow({ where }));
             }
             if (doc.key === 'recommendations' || doc.key === 'rehearsals') {
-              const previous = (before?.value as { data?: { id: string }[] } | null)?.data ?? [];
-              const next = doc.value.data as { id: string; title: string }[];
+              type Event = {
+                id: string;
+                title: string;
+                cancelled?: boolean;
+                date?: string;
+                start?: string;
+              };
+              const previous = (before?.value as { data?: Event[] } | null)?.data ?? [];
+              const next = doc.value.data as Event[];
               const added = next.filter((item) => !previous.some((old) => old.id === item.id));
+              const cancelled =
+                doc.key === 'rehearsals'
+                  ? previous.filter(
+                      (old) =>
+                        !old.cancelled &&
+                        (!next.some((item) => item.id === old.id) ||
+                          next.some((item) => item.id === old.id && item.cancelled)),
+                    )
+                  : [];
+              if (cancelled.length) {
+                const members = await tx.workspaceMember.findMany({ where: { workspaceId } });
+                await tx.notification.createMany({
+                  data: cancelled.flatMap((item) =>
+                    members.map((member) => ({
+                      workspaceId,
+                      userId: member.userId,
+                      kind: 'REHEARSAL_CANCELLED',
+                      entityId: item.id,
+                      message:
+                        `합주 일정 취소 · ${item.title}${item.date ? ` · ${item.date} ${item.start ?? ''}` : ''}`.slice(
+                          0,
+                          500,
+                        ),
+                    })),
+                  ),
+                });
+              }
               if (added.length) {
                 const members = await tx.workspaceMember.findMany({ where: { workspaceId } });
                 await tx.notification.createMany({

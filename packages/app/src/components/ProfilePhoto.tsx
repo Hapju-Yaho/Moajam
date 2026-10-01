@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image } from 'react-native';
+import { Image, View } from 'react-native';
 import { getDocumentAsync } from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { ActionButton, Meta } from './ProductUI';
@@ -7,10 +7,12 @@ export function ProfilePhoto({
   value,
   onChange,
   disabled = false,
+  horizontal = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  horizontal?: boolean;
 }) {
   const [error, setError] = useState('');
   const [picking, setPicking] = useState(false);
@@ -38,23 +40,35 @@ export function ProfilePhoto({
     }
   };
   return (
-    <>
+    <View
+      style={{
+        flexDirection: horizontal ? 'row' : 'column',
+        alignItems: horizontal ? 'center' : undefined,
+        gap: 12,
+      }}
+    >
       {value ? (
         <Image
           source={{ uri: value }}
           accessibilityLabel="내 프로필"
-          style={{ width: 64, height: 64, borderRadius: 32 }}
+          style={{
+            width: horizontal ? 112 : 64,
+            height: horizontal ? 112 : 64,
+            borderRadius: horizontal ? 56 : 32,
+          }}
         />
       ) : null}
-      <ActionButton secondary disabled={disabled || picking} onPress={() => void pick()}>
-        {picking ? '사진 불러오는 중…' : '프로필 사진 선택'}
-      </ActionButton>
-      {value ? (
-        <ActionButton secondary disabled={disabled || picking} onPress={() => onChange('')}>
-          사진 삭제
+      <View style={{ gap: 8, marginLeft: horizontal ? 'auto' : undefined }}>
+        <ActionButton secondary disabled={disabled || picking} onPress={() => void pick()}>
+          {picking ? '사진 불러오는 중…' : '프로필 사진 선택'}
         </ActionButton>
-      ) : null}
+        {value ? (
+          <ActionButton secondary disabled={disabled || picking} onPress={() => onChange('')}>
+            사진 삭제
+          </ActionButton>
+        ) : null}
+      </View>
       {error ? <Meta accessibilityRole="alert">{error}</Meta> : null}
-    </>
+    </View>
   );
 }

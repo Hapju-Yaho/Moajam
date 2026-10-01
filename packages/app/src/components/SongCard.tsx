@@ -1,5 +1,5 @@
 import styled from '@emotion/native';
-import { Body, Muted, Row, theme } from '@moajam/ui';
+import { Muted, Row, theme } from '@moajam/ui';
 import type { AppRoute } from '../navigation';
 import { Artwork, ArtworkText } from '../styles/layout';
 import { View } from 'react-native';
@@ -31,7 +31,6 @@ interface SongCardProps {
   artist: string;
   tint: string;
   stats?: { likes: number; votes: number; comments: number };
-  ready?: string;
   navigate: (route: AppRoute) => void;
   destination?: AppRoute;
 }
@@ -41,7 +40,6 @@ export function SongCard({
   artist,
   tint,
   stats,
-  ready,
   navigate,
   destination = 'song',
 }: SongCardProps) {
@@ -61,7 +59,6 @@ export function SongCard({
           </Row>
         )}
       </View>
-      {ready && <Body>{ready}</Body>}
       <Stat>›</Stat>
     </Surface>
   );

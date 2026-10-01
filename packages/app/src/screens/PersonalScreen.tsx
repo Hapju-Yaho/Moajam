@@ -28,24 +28,20 @@ import { dateKey } from '../mocks/workspaces';
 import { usePersonalSchedules } from '../state/personalSchedules';
 
 export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRoute }) {
-  const { workspaces, allSongs, allRehearsals, updatePreparation } = useMockAppState();
+  const { workspaces, allSongs, allRehearsals } = useMockAppState();
   const currentUserId = useIdentity();
   const personal = usePersonalSchedules();
   const { width } = useWindowDimensions();
   const [bandWidth, setBandWidth] = useState(900);
   const [bandFilter, setBandFilter] = useState('all');
   const [query, setQuery] = useState('');
-  const [preparationFilter, setPreparationFilter] = useState('all');
   const home = route === 'personal-home';
   const calendar = route === 'personal-rehearsals';
-  const songs = allSongs
-    .filter(
-      (song) =>
-        (bandFilter === 'all' || bandFilter === 'personal' || song.workspaceId === bandFilter) &&
-        (preparationFilter === 'all' || song.myStatus === preparationFilter) &&
-        `${song.title} ${song.artist}`.toLowerCase().includes(query.toLowerCase()),
-    )
-    .sort((a, b) => Number(a.myStatus === 'READY') - Number(b.myStatus === 'READY'));
+  const songs = allSongs.filter(
+    (song) =>
+      (bandFilter === 'all' || bandFilter === 'personal' || song.workspaceId === bandFilter) &&
+      `${song.title} ${song.artist}`.toLowerCase().includes(query.toLowerCase()),
+  );
   const personalEvents = personal.events.map((event) => ({
     ...event,
     personal: true,
@@ -83,7 +79,12 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
       style={{ paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#edf1f6', gap: 10 }}
     >
       <FlexRow gap={12} style={{ alignItems: 'flex-start' }}>
-        <SongCover id={song.id} size={52} />
+        <SongCover
+          id={song.id}
+          thumbnailUrl={song.thumbnailUrl}
+          referenceUrl={song.referenceUrl}
+          size={52}
+        />
         <View style={{ flex: 1, gap: 3 }}>
           <Meta style={{ color: song.bandColor, fontWeight: '500' }}>{song.bandName}</Meta>
           <Pressable
@@ -109,18 +110,6 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
         )}
       </FlexRow>
       <FlexRow wrap>
-        <Meta>내 준비 상태</Meta>
-        {(['NOT_READY', 'PRACTICING', 'READY'] as const).map((status, index) => (
-          <Pill
-            key={status}
-            active={song.myStatus === status}
-            onPress={() => updatePreparation(song.workspaceId, song.id, status)}
-          >
-            <PillText active={song.myStatus === status}>
-              {['준비 전', '연습 중', '준비 완료'][index]}
-            </PillText>
-          </Pill>
-        ))}
         {width < 650 && (
           <ActionButton
             secondary
@@ -198,21 +187,6 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
         >
           캘린더 파일 내보내기
         </ActionButton>
-      ) : null}
-      {!calendar && !home ? (
-        <FlexRow wrap>
-          {['all', 'NOT_READY', 'PRACTICING', 'READY'].map((status, index) => (
-            <Pill
-              key={status}
-              active={preparationFilter === status}
-              onPress={() => setPreparationFilter(status)}
-            >
-              <PillText active={preparationFilter === status}>
-                {['전체 곡', '준비 전', '연습 중', '준비 완료'][index]}
-              </PillText>
-            </Pill>
-          ))}
-        </FlexRow>
       ) : null}
       {home && (
         <>
