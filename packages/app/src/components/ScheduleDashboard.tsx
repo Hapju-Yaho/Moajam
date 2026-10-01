@@ -35,6 +35,7 @@ export function ScheduleDashboard({
         onLayout={(event) => setCalendarHeight(event.nativeEvent.layout.height)}
       >
         <RehearsalCalendar
+          allowPersonal={!!workspaceId}
           events={events}
           navigate={navigate}
           compact={compact}
@@ -58,6 +59,7 @@ export function ScheduleDashboard({
           </ScrollView>
         </Surface>
         <Notifications
+          navigate={navigate}
           key={workspaceId ?? 'personal'}
           title="최근 알림"
           height={cardHeight}

@@ -10,8 +10,8 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { RehearsalCalendar } from '../components/RehearsalCalendar';
 import { AppShell } from '../components/AppShell';
-import { PracticeStudio } from '../components/PracticeStudio';
 import { ScheduleDateTime } from '../components/ScheduleDateTime';
 import {
   ActionButton,
@@ -157,6 +157,7 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
   const { width } = useWindowDimensions();
   const {
     members,
+    workspace,
     workspaceId,
     rehearsals,
     saveRehearsal,
@@ -264,20 +265,18 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
         </ActionButton>
       </FlexBetween>
 
-      <FlexRow wrap>
-        {rehearsals.map((event) => (
-          <Pill
-            key={event.id}
-            active={selectedId === event.id}
-            onPress={() => navigate('rehearsals', { id: event.id, workspaceId })}
-          >
-            <PillText active={selectedId === event.id}>
-              {event.cancelled ? '[취소] ' : ''}
-              {event.date} · {event.title}
-            </PillText>
-          </Pill>
-        ))}
-      </FlexRow>
+      <RehearsalCalendar
+        events={rehearsals.map((event) => ({
+          ...event,
+          workspaceId,
+          bandName: workspace?.name ?? '',
+          bandColor: workspace?.color ?? '#416bd1',
+        }))}
+        navigate={navigate}
+        workspaceId={workspaceId}
+        initialDate={schedule?.date}
+        onSelectEvent={(event) => navigate('rehearsals', { id: event.id, workspaceId })}
+      />
       {schedule ? (
         <>
           <Surface>
@@ -316,8 +315,16 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
             </FlexBetween>
             <FlexRow wrap>
               {canManage ? (
-                <ActionButton secondary danger compact onPress={() => cancelRehearsal(schedule.id)}>
-                  {schedule.cancelled ? '일정 복원' : '일정 취소'}
+                <ActionButton
+                  secondary
+                  danger
+                  compact
+                  onPress={() => {
+                    cancelRehearsal(schedule.id);
+                    navigate('rehearsals', { workspaceId });
+                  }}
+                >
+                  일정 삭제
                 </ActionButton>
               ) : null}
               <Meta>{schedule.cancelled ? '취소된 합주입니다.' : '합주할 곡을 선택하세요.'}</Meta>
@@ -401,10 +408,6 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
                   + 항목 추가
                 </ActionButton>
               </Surface>
-              <PracticeStudio
-                key={`session/${workspaceId}/${selectedId}`}
-                scopeKey={`session/${workspaceId}/${selectedId}`}
-              />
             </Stack>
             <Stack gap={16} style={width < 940 ? undefined : { flex: 1 }}>
               <Surface>

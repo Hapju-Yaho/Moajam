@@ -42,6 +42,7 @@ async function fixture() {
   return {
     store,
     writes,
+    records,
     user: (value) => {
       user = value;
     },
@@ -75,4 +76,16 @@ test('a conflict stops later writes until explicit reload; accounts remain isola
   assert.equal(await f.store.readPersonal('score/personal', 'a'), undefined);
   await f.store.writePersonal('score/personal', { value: 4 }, 'a');
   await assert.rejects(f.store.writePersonal('score/personal', { value: 5 }, 'b'), /계정이 변경/);
+});
+
+test('practice preflight detects remote changes without advancing the local save revision', async () => {
+  const f = await fixture();
+  await f.store.readPersonal('practice/band/song');
+  f.records.set('a//me/documents/practice%2Fband%2Fsong', { revision: 1, value: { tracks: [] } });
+  await assert.rejects(f.store.assertPersonalUnchanged('practice/band/song'), /새로고침/);
+  assert.equal(f.writes.length, 0);
+  await f.store.readPersonal('practice/band/song');
+  await f.store.assertPersonalUnchanged('practice/band/song');
+  await f.store.writePersonal('practice/band/song', { tracks: [] });
+  assert.equal(f.writes[0].revision, 1);
 });

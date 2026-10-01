@@ -129,6 +129,29 @@ export class WorkspaceSyncController {
                 );
               saved.push(await tx.workspaceDocument.findUniqueOrThrow({ where }));
             }
+            if (doc.key === 'recommendations' || doc.key === 'rehearsals') {
+              const previous = (before?.value as { data?: { id: string }[] } | null)?.data ?? [];
+              const next = doc.value.data as { id: string; title: string }[];
+              const added = next.filter((item) => !previous.some((old) => old.id === item.id));
+              if (added.length) {
+                const members = await tx.workspaceMember.findMany({ where: { workspaceId } });
+                await tx.notification.createMany({
+                  data: added.flatMap((item) =>
+                    members.map((member) => ({
+                      workspaceId,
+                      userId: member.userId,
+                      kind: doc.key === 'recommendations' ? 'RECOMMENDATION' : 'REHEARSAL',
+                      entityId: item.id,
+                      message:
+                        `${doc.key === 'recommendations' ? '새 추천 곡' : '새 합주 일정'} · ${item.title}`.slice(
+                          0,
+                          500,
+                        ),
+                    })),
+                  ),
+                });
+              }
+            }
           }
           return { documents: saved };
         },

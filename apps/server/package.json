@@ -9,7 +9,7 @@
     "postinstall": "node scripts/database.mjs --generate",
     "start": "node scripts/database.mjs && node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/health/health.controller.spec.ts src/workspaces/workspaces.controller.spec.ts src/config/database-url.spec.ts src/common/auth/kakao.client.spec.ts",
+    "test": "node --import tsx --test src/health/health.controller.spec.ts src/workspaces/workspaces.controller.spec.ts src/config/database-url.spec.ts src/common/auth/kakao.client.spec.ts src/common/auth/auth.service.spec.ts",
     "prisma:generate": "node scripts/database.mjs --generate",
     "prisma:migrate": "node scripts/database.mjs --migrate",
     "prisma:deploy": "node scripts/database.mjs --deploy",

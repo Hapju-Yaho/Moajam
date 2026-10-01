@@ -68,6 +68,7 @@ async function load(path, fixture) {
     ...fixture,
     Blob,
     crypto: { randomUUID },
+    clientId: randomUUID,
     serverConfigured: false,
     currentIdentity: async () => 'm1',
     readRemoteMedia: () => {
@@ -82,7 +83,7 @@ async function load(path, fixture) {
     '',
   );
   const setup =
-    'const { localStorage, indexedDB, Blob, crypto, serverConfigured, currentIdentity, readRemoteMedia, writeRemoteMedia } = globalThis[' +
+    'const { localStorage, indexedDB, Blob, crypto, clientId, serverConfigured, currentIdentity, readRemoteMedia, writeRemoteMedia } = globalThis[' +
     JSON.stringify(id) +
     '];\n';
   const { outputText } = ts.transpileModule(setup + source, {

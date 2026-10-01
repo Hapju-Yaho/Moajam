@@ -2,6 +2,7 @@
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/sqlite"
+  importFileExtension = "js"
 }
 
 datasource db {
@@ -138,6 +139,8 @@ model SeparationJob {
 }
 
 model Notification {
+  kind String @default("NOTICE")
+  entityId String? @map("entity_id")
   id String @id @default(uuid())
   userId String @map("user_id")
   workspaceId String @map("workspace_id")

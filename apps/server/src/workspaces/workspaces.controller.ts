@@ -135,6 +135,35 @@ export class WorkspacesController {
       take: 50,
     });
   }
+  @Post('notifications/read-all') async readAllNotifications(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('workspaceId') workspaceId?: string,
+  ) {
+    const memberships = await this.db.workspaceMember.findMany({
+      where: { userId: user.id, ...(workspaceId ? { workspaceId } : {}) },
+      select: { workspaceId: true },
+    });
+    return this.db.notification.updateMany({
+      where: {
+        userId: user.id,
+        readAt: null,
+        workspaceId: { in: memberships.map((item) => item.workspaceId) },
+      },
+      data: { readAt: new Date() },
+    });
+  }
+  @Delete('notifications') async deleteAllNotifications(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('workspaceId') workspaceId?: string,
+  ) {
+    const memberships = await this.db.workspaceMember.findMany({
+      where: { userId: user.id, ...(workspaceId ? { workspaceId } : {}) },
+      select: { workspaceId: true },
+    });
+    return this.db.notification.deleteMany({
+      where: { userId: user.id, workspaceId: { in: memberships.map((item) => item.workspaceId) } },
+    });
+  }
   @Post('notifications/:id/read') async readNotification(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,

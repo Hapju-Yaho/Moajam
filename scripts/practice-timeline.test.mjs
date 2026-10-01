@@ -21,9 +21,8 @@ const { beatSeconds, musicalPosition, snapOffset, snapClipEdges, waveformPeaks }
 const { startMetronome, countIn } = await import(
   moduleUrl('../packages/app/src/lib/metronome.web.ts', { './practiceTimeline': timelineUrl })
 );
-const { trackClips, splitClip, moveClip, clipSourceTime } = await import(
-  moduleUrl('../packages/app/src/lib/practiceClips.ts')
-);
+const { trackClips, splitClip, moveClip, clipSourceTime, nextTrackName, moveClipToNewTrack } =
+  await import(moduleUrl('../packages/app/src/lib/practiceClips.ts'));
 const originalBlob = { fixture: 'audio' };
 const legacyTrack = () => ({
   id: 'bass',
@@ -118,7 +117,7 @@ test('clip movement snaps to beats while free movement preserves hundredths and 
   assert.equal(snapOffset(1.36, 120, '4/4', true), 1.5);
   assert.equal(snapOffset(1.36, 120, '4/4', false), 1.36);
   assert.equal(snapOffset(1.36, 120, '6/8', true), 1.25);
-  assert.equal(snapOffset(-90, 120, '4/4', false), -60);
+  assert.equal(snapOffset(-90, 120, '4/4', false), 0);
   assert.equal(snapOffset(700, 120, '4/4', true), 600);
 });
 
@@ -274,4 +273,51 @@ test('6/8 count-in ends after exactly one bar and can be cancelled before record
   });
   abort.abort();
   assert.equal(await cancelled, false);
+});
+
+test('clip movement and beat snapping stop at zero without trimming the source', () => {
+  for (const snap of [true, false]) assert.equal(snapOffset(-12, 120, '4/4', snap), 0);
+  const moved = moveClip([legacyTrack()], 'bass', 'bass', -10);
+  const clip = trackClips(moved[0])[0];
+  assert.equal(clip.offset, 0);
+  assert.equal(clip.sourceStart, 0);
+  assert.equal(clip.duration, 8);
+  assert.equal(
+    snapClipEdges(
+      { id: 'moving', offset: 0, duration: 2 },
+      [{ id: 'other', offset: 1.99, duration: 3 }],
+      100,
+    )?.offset ?? 0,
+    0,
+  );
+});
+
+test('new tracks reuse the lowest available exact track number after renaming', () => {
+  assert.equal(nextTrackName([]), '트랙1');
+  assert.equal(nextTrackName([{ name: '트랙1' }, { name: '기타' }, { name: '트랙3' }]), '트랙2');
+  assert.equal(nextTrackName([{ name: '보컬' }, { name: '트랙2' }]), '트랙1');
+});
+test('dropping into a new track moves only the selected clip and preserves source settings', () => {
+  const source = {
+    ...splitClip([legacyTrack()], 'bass', 5, 'right')[0],
+    name: '기타',
+    muted: true,
+  };
+  const other = { ...legacyTrack(), id: 'other', name: '기타_1', clips: [] };
+  const next = moveClipToNewTrack([source, other], 'right', 'new', 12);
+  const target = next[2];
+  assert.equal(target.name, '기타_2');
+  assert.equal(target.part, source.part);
+  assert.equal(target.volume, source.volume);
+  assert.equal(target.muted, true);
+  assert.equal(trackClips(target).length, 1);
+  assert.equal(trackClips(target)[0].sourceStart, 3);
+  assert.equal(trackClips(target)[0].blob, originalBlob);
+  assert.equal(trackClips(target)[0].offset, 12);
+  assert.deepEqual(
+    trackClips(next[0]).map((clip) => clip.id),
+    ['bass'],
+  );
+  assert.equal(trackClips(source).length, 2);
+  assert.equal(nextTrackName([{ name: '기타_2' }], '기타_'), '기타_1');
 });

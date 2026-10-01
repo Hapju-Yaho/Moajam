@@ -330,3 +330,27 @@ test('cancelled sessions are excluded; adjacent sessions do not conflict', () =>
   original.rehearsals[1].start = '12:30';
   assert.equal(conflictingRehearsals(personalRehearsals([original])).length, 2);
 });
+
+test('band practice feedback shares time and text while protecting each author', () => {
+  const key = 'song/song-1/feedback';
+  const note = { id: 'n1', authorId: 'member-a', time: 12.5, text: 'Listen here' };
+  assert.equal(isWorkspaceDocumentKey(key), true);
+  assert.equal(canWriteDocument(key, [], [note], 'member-a', false), true);
+  assert.equal(canWriteDocument(key, [], [note], 'member-b', false), false);
+  assert.equal(
+    canWriteDocument(
+      key,
+      [note],
+      [note, { ...note, id: 'n2', authorId: 'member-b' }],
+      'member-b',
+      false,
+    ),
+    true,
+  );
+  assert.equal(canWriteDocument(key, [note], [{ ...note, time: 20 }], 'member-b', false), false);
+  assert.equal(canWriteDocument(key, [note], [], 'member-b', false), false);
+  assert.equal(canWriteDocument(key, [note], [], 'member-a', false), true);
+  assert.equal(canWriteDocument(key, [note], [], 'owner', true), true);
+  assert.equal(canWriteDocument(key, [], [{ ...note, time: -1 }], 'member-a', false), false);
+  assert.equal(canWriteDocument(key, [], [{ ...note, time: Infinity }], 'member-a', false), false);
+});

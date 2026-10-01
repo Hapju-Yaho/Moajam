@@ -1,5 +1,5 @@
 import { api, currentIdentity, uploadRemoteFile } from './remote';
-import { readPersonal, writePersonal } from './personal-store';
+import { readPersonal, writePersonal, assertPersonalUnchanged } from './personal-store';
 const assets = new WeakMap<Blob, { user: string; id: Promise<string> }>();
 const queues = new Map<string, Promise<unknown>>();
 type AssetRef = { __moajamAssetId: string };
@@ -69,7 +69,10 @@ export async function writeRemoteMedia(key: string, value: unknown, owner?: stri
   const ref = `${user}/${key}`;
   const task = (queues.get(ref) ?? Promise.resolve())
     .catch(() => {})
-    .then(async () => writePersonal(key, await encode(value, key, user), user));
+    .then(async () => {
+      if (key.startsWith('practice/')) await assertPersonalUnchanged(key, user);
+      return writePersonal(key, await encode(value, key, user), user);
+    });
   queues.set(ref, task);
   try {
     await task;

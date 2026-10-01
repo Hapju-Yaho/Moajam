@@ -1,4 +1,5 @@
 import { ScheduleModal } from './ScheduleModal';
+import { usePersonalSchedules } from '../state/personalSchedules';
 import { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { ActionButton, Copy, FlexBetween, FlexRow, Heading, Meta, Surface } from './ProductUI';
@@ -14,18 +15,41 @@ export function RehearsalCalendar({
   navigate,
   compact = false,
   workspaceId,
+  onSelectEvent,
+  initialDate,
+  allowPersonal = false,
 }: {
   events: CalendarEvent[];
   navigate: ScreenProps['navigate'];
   compact?: boolean;
   workspaceId?: string;
+  onSelectEvent?: (event: CalendarEvent) => void;
+  initialDate?: string;
+  allowPersonal?: boolean;
 }) {
+  const personal = usePersonalSchedules();
+  const [showPersonal, setShowPersonal] = useState(false);
+  const calendarEvents =
+    allowPersonal && showPersonal
+      ? [
+          ...events,
+          ...personal.events.map((event) => ({
+            ...event,
+            personal: true,
+            workspaceId: 'personal',
+            bandName: '개인 일정',
+            bandColor: '#8b5cf6',
+          })),
+        ]
+      : events;
   const [registering, setRegistering] = useState(false);
   const today = dateKey(new Date());
-  const [month, setMonth] = useState(
-    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+  const [month, setMonth] = useState(() =>
+    initialDate
+      ? new Date(`${initialDate.slice(0, 7)}-01T00:00:00`)
+      : new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   );
-  const [selected, setSelected] = useState(today);
+  const [selected, setSelected] = useState(initialDate ?? today);
   const { width } = useWindowDimensions();
   const narrow = width < 650;
   const offset = month.getDay();
@@ -39,14 +63,28 @@ export function RehearsalCalendar({
     setMonth(next);
     setSelected(dateKey(next));
   };
-  const selectedEvents = events.filter((event) => event.date === selected);
+  const selectedEvents = calendarEvents.filter((event) => event.date === selected);
   return (
     <Surface>
       <FlexBetween style={{ flexWrap: 'wrap' }}>
         <Heading>
           {month.getFullYear()}년 {month.getMonth() + 1}월
         </Heading>
-        <FlexRow>
+        <FlexRow wrap>
+          {allowPersonal && (
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: showPersonal }}
+              onPress={() => setShowPersonal(!showPersonal)}
+              style={{
+                padding: 8,
+                borderRadius: 8,
+                backgroundColor: showPersonal ? '#ede9fe' : '#f1f5f9',
+              }}
+            >
+              <Meta>개인 일정도 확인하기 {showPersonal ? '켜짐' : '꺼짐'}</Meta>
+            </Pressable>
+          )}
           <ActionButton secondary compact onPress={() => shift(-1)}>
             이전 달
           </ActionButton>
@@ -65,6 +103,9 @@ export function RehearsalCalendar({
           </ActionButton>
         </FlexRow>
       </FlexBetween>
+      {allowPersonal && showPersonal && personal.error && (
+        <Meta>개인 일정을 불러오지 못했어요.</Meta>
+      )}
       <View style={{ flexDirection: 'row' }}>
         {['일', '월', '화', '수', '목', '금', '토'].map((day) => (
           <Meta
@@ -83,7 +124,7 @@ export function RehearsalCalendar({
         {cells.map((day, index) => {
           const valid = day > 0 && day <= days;
           const key = valid ? dateKey(new Date(month.getFullYear(), month.getMonth(), day)) : '';
-          const daily = events.filter((event) => event.date === key);
+          const daily = calendarEvents.filter((event) => event.date === key);
           return (
             <Pressable
               key={index}
@@ -130,7 +171,8 @@ export function RehearsalCalendar({
                     numberOfLines={1}
                     style={{ fontSize: narrow ? 9 : 10, color: event.bandColor }}
                   >
-                    {narrow ? event.start : event.bandName}
+                    {event.cancelled ? '[취소] ' : ''}
+                    {narrow ? event.start : event.title}
                   </Meta>
                 </View>
               ))}
@@ -149,7 +191,12 @@ export function RehearsalCalendar({
       </FlexBetween>
       {selectedEvents.length ? (
         selectedEvents.map((event) => (
-          <EventRow key={`${event.workspaceId}/${event.id}`} event={event} navigate={navigate} />
+          <EventRow
+            key={`${event.workspaceId}/${event.id}`}
+            event={event}
+            navigate={navigate}
+            onSelect={onSelectEvent}
+          />
         ))
       ) : (
         <Meta>이날은 등록된 일정이 없어요.</Meta>
@@ -166,8 +213,10 @@ export function RehearsalCalendar({
 export function EventRow({
   event,
   navigate,
+  onSelect,
 }: {
   event: CalendarEvent;
+  onSelect?: (event: CalendarEvent) => void;
   navigate: ScreenProps['navigate'];
 }) {
   const [editing, setEditing] = useState(false);
@@ -176,11 +225,7 @@ export function EventRow({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${event.bandName} ${event.title} 보기`}
-        onPress={() =>
-          event.personal
-            ? setEditing(true)
-            : navigate('rehearsals', { workspaceId: event.workspaceId, id: event.id })
-        }
+        onPress={() => (onSelect ? onSelect(event) : setEditing(true))}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }}
       >
         <View
@@ -205,14 +250,21 @@ export function EventRow({
         </View>
         <Meta>→</Meta>
       </Pressable>
-      {event.personal && (
-        <ScheduleModal
-          visible={editing}
-          date={event.date}
-          event={event}
-          onClose={() => setEditing(false)}
-        />
-      )}
+      <ScheduleModal
+        visible={editing}
+        date={event.date}
+        event={event}
+        workspaceId={event.personal ? undefined : event.workspaceId}
+        onClose={() => setEditing(false)}
+        onOpenRehearsal={
+          event.personal
+            ? undefined
+            : () => {
+                setEditing(false);
+                navigate('rehearsals', { workspaceId: event.workspaceId, id: event.id });
+              }
+        }
+      />
     </>
   );
 }

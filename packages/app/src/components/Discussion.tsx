@@ -52,52 +52,6 @@ export function Discussion({
   );
   return (
     <>
-      <Surface>
-        <Heading>의견 남기기</Heading>
-        <Input
-          multiline
-          accessibilityLabel="의견 내용"
-          maxLength={20000}
-          style={{ minHeight: 110, textAlignVertical: 'top' }}
-          value={draft}
-          onChangeText={setDraft}
-          placeholder="편곡, 톤, 연주 방식에 대한 의견"
-        />
-        <VideoInput value={videoUrl} onChange={setVideoUrl} />
-        <ActionButton
-          disabled={
-            (!draft.trim() && !videoUrl.trim()) || (!!videoUrl.trim() && !parseVideoUrl(videoUrl))
-          }
-          onPress={() => {
-            setItems((all) => [
-              {
-                id: `opinion-${Date.now()}`,
-                authorId: currentUserId,
-                text: draft.trim(),
-                videoUrl: parseVideoUrl(videoUrl)?.url,
-                date: new Date().toISOString(),
-                resolved: false,
-                likes: [],
-                replies: [],
-              },
-              ...all,
-            ]);
-            setDraft('');
-            setVideoUrl('');
-          }}
-        >
-          등록
-        </ActionButton>
-        <Meta>
-          의견 {items.length} · 결정 {items.filter((item) => item.resolved).length} · 참여{' '}
-          {
-            new Set(
-              items.flatMap((item) => [item.authorId, ...item.replies.map((r) => r.authorId)]),
-            ).size
-          }
-          명
-        </Meta>
-      </Surface>
       <Input
         accessibilityLabel="의견 검색"
         value={query}
@@ -170,7 +124,7 @@ export function Discussion({
                 })
               }
             >
-              ♥ {item.likes.length}
+              <Copy style={{ color: '#e53935' }}>♥ {item.likes.length}</Copy>
             </ActionButton>
             <ActionButton
               secondary
@@ -288,6 +242,52 @@ export function Discussion({
             : '첫 의견을 남겨보세요. 의견과 결정은 화면을 이동해도 유지됩니다.'}
         </Meta>
       ) : null}
+      <Surface>
+        <Heading>의견 남기기</Heading>
+        <Input
+          multiline
+          accessibilityLabel="의견 내용"
+          maxLength={20000}
+          style={{ minHeight: 110, textAlignVertical: 'top' }}
+          value={draft}
+          onChangeText={setDraft}
+          placeholder="편곡, 톤, 연주 방식에 대한 의견"
+        />
+        <VideoInput value={videoUrl} onChange={setVideoUrl} />
+        <ActionButton
+          disabled={
+            (!draft.trim() && !videoUrl.trim()) || (!!videoUrl.trim() && !parseVideoUrl(videoUrl))
+          }
+          onPress={() => {
+            setItems((all) => [
+              {
+                id: `opinion-${Date.now()}`,
+                authorId: currentUserId,
+                text: draft.trim(),
+                videoUrl: parseVideoUrl(videoUrl)?.url,
+                date: new Date().toISOString(),
+                resolved: false,
+                likes: [],
+                replies: [],
+              },
+              ...all,
+            ]);
+            setDraft('');
+            setVideoUrl('');
+          }}
+        >
+          등록
+        </ActionButton>
+        <Meta>
+          의견 {items.length} · 결정 {items.filter((item) => item.resolved).length} · 참여{' '}
+          {
+            new Set(
+              items.flatMap((item) => [item.authorId, ...item.replies.map((r) => r.authorId)]),
+            ).size
+          }
+          명
+        </Meta>
+      </Surface>
     </>
   );
 }

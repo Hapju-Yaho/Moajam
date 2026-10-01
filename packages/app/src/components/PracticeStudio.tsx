@@ -92,11 +92,22 @@ function NativeTrack({
     </Surface>
   );
 }
-export function PracticeStudio({ scopeKey }: { scopeKey: string; bpm?: number }) {
+export function PracticeStudio({
+  scopeKey,
+  feedback,
+}: {
+  scopeKey: string;
+  bpm?: number;
+  feedback?: boolean;
+}) {
+  const feedbackInput = useRef<import('react-native').TextInput>(null);
   const [uploadPart, setUploadPart] = useState<TrackPart>('UNASSIGNED');
   const [tracks, setTracks] = useState<Track[]>([]);
   const [memo, setMemo] = useState('');
   const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (feedback && ready) feedbackInput.current?.focus();
+  }, [feedback, ready]);
   const loadedScope = useRef('');
   const extras = useRef<Record<string, unknown>>({});
   const [error, setError] = useState('');
@@ -124,13 +135,21 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string; bpm?: number })
       alive = false;
     };
   }, [scopeKey]);
-  useEffect(() => {
-    if (ready && loadedScope.current === scopeKey)
-      void writeMedia(`practice/${scopeKey}`, { ...extras.current, tracks, memo }).catch(
-        (failure: unknown) =>
-          setError(failure instanceof Error ? failure.message : '기록 저장에 실패했습니다.'),
-      );
-  }, [tracks, memo, scopeKey, ready]);
+  const [saving, setSaving] = useState(false);
+  const [savedMessage, setSavedMessage] = useState('');
+  async function saveChanges() {
+    if (!ready || saving || recording.isRecording || busy) return;
+    setSaving(true);
+    setSavedMessage('');
+    try {
+      await writeMedia(`practice/${scopeKey}`, { ...extras.current, tracks, memo });
+      setSavedMessage('변경사항을 저장했어요.');
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '저장에 실패했어요.');
+    } finally {
+      setSaving(false);
+    }
+  }
   async function record() {
     setBusy(true);
     setError('');
@@ -173,10 +192,19 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string; bpm?: number })
   }
   return (
     <Surface>
-      <Heading>세션별 트랙</Heading>
+      <FlexRow wrap>
+        <Heading>세션별 트랙</Heading>
+        <ActionButton
+          disabled={!ready || saving || busy || recording.isRecording}
+          onPress={() => void saveChanges()}
+        >
+          {saving ? '저장 중…' : '변경사항 공유하기'}
+        </ActionButton>
+      </FlexRow>
+      <Meta>{savedMessage || '변경 후 화면을 이동하기 전에 변경사항 공유하기를 눌러주세요.'}</Meta>
       <Meta>
         악기 파트를 고른 뒤 음원을 추가하세요. {serverConfigured ? '내 계정' : '이 기기'}에 비공개로
-        저장합니다. 녹음을 중지한 후 화면을 이동해주세요.
+        저장합니다. 변경사항 공유하기를 눌렀을 때 저장돼요. 녹음을 중지한 후 화면을 이동해주세요.
       </Meta>
       <TrackPartPicker
         value={uploadPart}
@@ -225,9 +253,12 @@ export function PracticeStudio({ scopeKey }: { scopeKey: string; bpm?: number })
           />
         )),
       )}
+      <Heading>세부 피드백</Heading>
       <Input
         multiline
-        placeholder="연습 메모"
+        ref={feedbackInput}
+        accessibilityLabel="세부 피드백"
+        placeholder="세부 피드백"
         value={memo}
         onChangeText={setMemo}
         editable={ready}

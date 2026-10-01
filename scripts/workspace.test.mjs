@@ -153,10 +153,10 @@ test('practice entered from a song preserves that song and has a return path', (
     '/workspaces/b/songs/same-song',
   );
 });
-test('a practice link without a selected song opens the song picker', () => {
+test('a practice link without a selected song opens the band practice picker', () => {
   assert.equal(
     buildAppPath('practice', undefined, { route: 'home', workspaceId: 'b' }),
-    '/me/practice',
+    '/workspaces/b/practice',
   );
 });
 test('personal home never inherits the band URL', () => {
@@ -167,5 +167,16 @@ test('personal home never inherits the band URL', () => {
       entityId: 'same-song',
     }),
     '/me',
+  );
+});
+
+test('feedback links retain the selected band and song and target the feedback section', () => {
+  assert.equal(
+    buildAppPath(
+      'practice',
+      { id: 'song-a', workspaceId: 'band-a', feedback: true },
+      { route: 'song', workspaceId: 'band-b' },
+    ),
+    '/workspaces/band-a/songs/song-a/practice?feedback=true',
   );
 });

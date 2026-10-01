@@ -43,12 +43,19 @@ async function fixture({
           state: 'test-state',
           expiresIn: 600,
         });
-      if (url.endsWith('/auth/kakao'))
+      if (
+        url.endsWith('/auth/kakao') ||
+        url.endsWith('/auth/refresh') ||
+        url.endsWith('/auth/renew')
+      )
         return Response.json({
           accessToken: 'service-jwt',
+          refreshToken: 'refresh-secret',
           expiresAt: Date.now() + 100000,
           user: { id: 'k', provider: 'kakao' },
         });
+      if (url.endsWith('/me/documents/empty')) return new Response('', { status: 200 });
+      if (url.endsWith('/me/documents/null')) return Response.json(null);
       if (url.endsWith('/auth/logout')) return Response.json({ ok: true });
       return denied
         ? Response.json({ detail: 'expired' }, { status: 401 })
@@ -204,4 +211,54 @@ test('denied Kakao consent and expired attempts never create a session', async (
     await assert.rejects(f.client.signInWithKakao());
     assert.ok(!f.calls.some((call) => call.url.endsWith('/auth/kakao')));
   }
+});
+
+test('missing practice documents accept empty 200 and JSON null responses', async () => {
+  const { client } = await fixture();
+  await client.currentIdentity();
+  assert.equal(await client.api('/me/documents/empty'), null);
+  assert.equal(await client.api('/me/documents/null'), null);
+});
+
+test('expired Kakao access token renews once for concurrent requests without losing identity', async () => {
+  const store = new Map([
+    [
+      'moajam.auth-session:http://example.test/v1',
+      JSON.stringify({
+        token: 'expired',
+        refreshToken: 'refresh-secret',
+        expiresAt: Date.now() - 100,
+        user: { id: 'k', provider: 'kakao' },
+      }),
+    ],
+  ]);
+  const f = await fixture({ mode: 'kakao', store });
+  assert.deepEqual(await Promise.all([f.client.currentIdentity(), f.client.currentIdentity()]), [
+    'k',
+    'k',
+  ]);
+  assert.equal(f.calls.filter((call) => call.url.endsWith('/auth/refresh')).length, 1);
+  assert.equal(
+    JSON.parse(store.get('moajam.auth-session:http://example.test/v1')).token,
+    'service-jwt',
+  );
+});
+test('expired temporary session resumes the existing account rather than creating a new account', async () => {
+  const store = new Map([
+    [
+      'moajam.auth-session:http://example.test/v1',
+      JSON.stringify({
+        token: 'expired',
+        expiresAt: Date.now() - 100,
+        user: { id: 'a', provider: 'temporary' },
+      }),
+    ],
+    ['moajam.temporary-resume:http://example.test/v1', 'resume-secret'],
+  ]);
+  const f = await fixture({ store });
+  assert.equal(await f.client.currentIdentity(), 'a');
+  assert.equal(
+    f.calls.find((call) => call.url.endsWith('/auth/temporary')).body.resumeKey,
+    'resume-secret',
+  );
 });

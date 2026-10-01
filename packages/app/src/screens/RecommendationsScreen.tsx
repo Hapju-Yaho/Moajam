@@ -150,7 +150,10 @@ const StepBadge = styled.View`
 
 type MetadataState = 'idle' | 'loading' | 'success' | 'error';
 
-export function RecommendationsScreen({ navigate }: ScreenProps) {
+export function RecommendationsScreen({
+  navigate,
+  embedded = false,
+}: ScreenProps & { embedded?: boolean }) {
   const { width } = useWindowDimensions();
   const {
     recommendations: songs,
@@ -274,8 +277,8 @@ export function RecommendationsScreen({ navigate }: ScreenProps) {
     [filter, query, songs],
   );
 
-  return (
-    <AppShell activeRoute="recommendations" onNavigate={navigate}>
+  const content = (
+    <>
       <PageHeader>
         <Between>
           <View>
@@ -566,6 +569,13 @@ export function RecommendationsScreen({ navigate }: ScreenProps) {
           </ModalBackdrop>
         </KeyboardAvoidingView>
       </Modal>
+    </>
+  );
+  return embedded ? (
+    <View style={{ gap: 16 }}>{content}</View>
+  ) : (
+    <AppShell activeRoute="songs" onNavigate={navigate}>
+      {content}
     </AppShell>
   );
 }

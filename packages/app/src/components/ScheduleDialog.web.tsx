@@ -10,7 +10,8 @@ export function ScheduleDialog({
   visible,
   onClose,
   children,
-}: PropsWithChildren<{ visible: boolean; onClose: () => void }>) {
+  label = '일정 등록 및 수정',
+}: PropsWithChildren<{ visible: boolean; onClose: () => void; label?: string }>) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const element = dialog.current;
@@ -24,7 +25,7 @@ export function ScheduleDialog({
     'dialog',
     {
       ref: dialog,
-      'aria-label': '일정 등록 및 수정',
+      'aria-label': label,
       onCancel: (event: SyntheticEvent<HTMLDialogElement>) => {
         event.preventDefault();
         onClose();
@@ -44,5 +45,6 @@ export function ScheduleDialog({
       },
     },
     children,
+    (label = '일정 등록 및 수정'),
   );
 }
