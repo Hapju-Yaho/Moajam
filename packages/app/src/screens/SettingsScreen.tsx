@@ -1,3 +1,4 @@
+import { BandSettings } from '../components/BandSettings';
 import { useState } from 'react';
 import { AccountPanel } from '../components/AccountPanel';
 import { AppShell } from '../components/AppShell';
@@ -144,6 +145,7 @@ export function SettingsScreen({ navigate }: ScreenProps) {
           멤버 관리
         </ActionButton>
       </Surface>
+      {workspace && <BandSettings key={workspace.id} />}
       <AccountPanel />
       <Surface>
         <Heading>내 데이터</Heading>

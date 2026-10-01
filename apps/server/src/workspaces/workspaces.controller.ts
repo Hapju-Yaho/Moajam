@@ -15,7 +15,17 @@ import {
   ConflictException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { IsIn, IsInt, IsObject, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import {
+  IsOptional,
+  Matches,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../common/database/prisma.service.js';
 import { CurrentUser } from '../common/auth/current-user.decorator.js';
@@ -26,6 +36,12 @@ import { StorageService } from '../media/storage.service.js';
 import { SeparationService } from '../media/separation.service.js';
 
 class CreateWorkspaceDto {
+  @IsOptional() @IsString() @MaxLength(2000) description?: string;
+  @IsOptional()
+  @IsString()
+  @MaxLength(700000)
+  @Matches(/^(data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)?$/)
+  photo?: string;
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(80) name!: string;
 }
 class ProfileDto {
@@ -212,6 +228,7 @@ export class WorkspacesController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateWorkspaceDto,
   ) {
+    if (!dto.name.trim()) throw new BadRequestException('밴드 이름을 입력해주세요.');
     return this.db.$transaction(async (tx) => {
       await tx.profile.upsert({
         where: { id: user.id },
@@ -222,10 +239,35 @@ export class WorkspacesController {
         data: {
           name: dto.name.trim(),
           createdById: user.id,
+          documents: {
+            create: {
+              key: 'band/profile',
+              value: { data: { description: dto.description ?? '', photo: dto.photo ?? '' } },
+              updatedBy: user.id,
+            },
+          },
           members: { create: { userId: user.id, role: 'OWNER' } },
         },
         include: { members: { include: { user: true } } },
       });
+    });
+  }
+  @Patch('workspaces/:workspaceId') async updateBand(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('workspaceId') workspaceId: string,
+    @Body() dto: CreateWorkspaceDto,
+  ) {
+    await this.membership(workspaceId, user.id, true);
+    if (!dto.name.trim()) throw new BadRequestException('밴드 이름을 입력해주세요.');
+    return this.db.$transaction(async (tx) => {
+      await tx.workspace.update({ where: { id: workspaceId }, data: { name: dto.name.trim() } });
+      const value = { data: { description: dto.description ?? '', photo: dto.photo ?? '' } };
+      await tx.workspaceDocument.upsert({
+        where: { workspaceId_key: { workspaceId, key: 'band/profile' } },
+        create: { workspaceId, key: 'band/profile', value, updatedBy: user.id },
+        update: { value, updatedBy: user.id, revision: { increment: 1 } },
+      });
+      return { id: workspaceId };
     });
   }
   @Patch('workspaces/:workspaceId/members/:userId') async member(

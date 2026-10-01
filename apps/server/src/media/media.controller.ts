@@ -13,7 +13,17 @@ import {
   ServiceUnavailableException,
   BadRequestException,
 } from '@nestjs/common';
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../common/database/prisma.service.js';
 import { CurrentUser } from '../common/auth/current-user.decorator.js';
@@ -26,6 +36,9 @@ class UploadDto {
   @ApiProperty() @IsInt() @Min(1) @Max(104857600) size!: number;
   @ApiProperty() @IsString() @MaxLength(240) scope!: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() workspaceId?: string;
+}
+class RenameAssetDto {
+  @IsString() @MinLength(1) @MaxLength(255) name!: string;
 }
 class VisibilityDto {
   @ApiProperty() @IsIn(['PRIVATE', 'WORKSPACE']) visibility!: 'PRIVATE' | 'WORKSPACE';
@@ -155,6 +168,15 @@ export class MediaController {
     )
       throw new ForbiddenException();
     return this.db.mediaAsset.update({ where: { id }, data: dto });
+  }
+  @Patch('assets/:id/name') async rename(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: RenameAssetDto,
+  ) {
+    await this.asset(id, user.id, true);
+    if (!dto.name.trim()) throw new BadRequestException('클립 이름을 입력해주세요.');
+    return this.db.mediaAsset.update({ where: { id }, data: { name: dto.name.trim() } });
   }
   @Delete('assets/:id') async remove(
     @CurrentUser() user: AuthenticatedUser,

@@ -1,3 +1,5 @@
+import { BandListReveal } from './BandListReveal';
+import { ProfilePhoto } from './ProfilePhoto';
 import styled from '@emotion/native';
 import { Stack, theme } from '@moajam/ui';
 import { useState, type PropsWithChildren } from 'react';
@@ -227,6 +229,9 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [joining, setJoining] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [createContent, setCreateContent] = useState(false);
+  const [bandDescription, setBandDescription] = useState('');
+  const [bandPhoto, setBandPhoto] = useState('');
   const [name, setName] = useState('');
   const [creatingBusy, setCreatingBusy] = useState(false);
   const [createError, setCreateError] = useState('');
@@ -247,6 +252,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
   const openCreate = () => {
     setSwitcherOpen(false);
     setCreateError('');
+    setCreateContent(true);
     setCreating(true);
   };
   const openJoin = () => {
@@ -313,12 +319,22 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
       accessibilityRole="button"
       accessibilityLabel="밴드 변경"
       accessibilityState={{ expanded: switcherOpen }}
-      onPress={() => setSwitcherOpen((open) => !open)}
+      onPress={() => {
+        setCreateContent(false);
+        setSwitcherOpen((open) => !open);
+      }}
       style={{ gap: 10 }}
     >
-      <WorkspaceThumb style={{ backgroundColor: workspace?.color ?? '#43896b' }}>
-        <AppIcon name="guitar" color="white" size={20} />
-      </WorkspaceThumb>
+      {workspace?.photo ? (
+        <Image
+          source={{ uri: workspace.photo }}
+          style={{ width: 36, height: 36, borderRadius: 18 }}
+        />
+      ) : (
+        <WorkspaceThumb style={{ backgroundColor: workspace?.color ?? '#43896b' }}>
+          <AppIcon name="guitar" color="white" size={20} />
+        </WorkspaceThumb>
+      )}
       <View style={{ flex: 1 }}>
         <SidebarText numberOfLines={1}>{workspace?.name ?? '밴드 선택'}</SidebarText>
         <SidebarText small>{members.length}명의 멤버</SidebarText>
@@ -348,36 +364,41 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
             <WorkspaceCard>
               {workspaces.length ? switcher : emptyBand}
               {workspaces.length > 0 && switcherOpen && (
-                <Stack gap={4} style={{ padding: 6, borderTopWidth: 1, borderTopColor: '#e1e7f0' }}>
-                  {workspaces.map((band) => (
-                    <NavItem
-                      key={band.id}
-                      active={workspace?.id === band.id}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${band.name} 선택`}
-                      accessibilityState={{ selected: workspace?.id === band.id }}
-                      onPress={() => choose(band.id)}
-                    >
-                      <View
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: 4,
-                          backgroundColor: band.color,
-                        }}
-                      />
-                      <NavLabel
-                        numberOfLines={1}
-                        style={{ flex: 1 }}
+                <BandListReveal>
+                  <Stack
+                    gap={4}
+                    style={{ padding: 6, borderTopWidth: 1, borderTopColor: '#e1e7f0' }}
+                  >
+                    {workspaces.map((band) => (
+                      <NavItem
+                        key={band.id}
                         active={workspace?.id === band.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${band.name} 선택`}
+                        accessibilityState={{ selected: workspace?.id === band.id }}
+                        onPress={() => choose(band.id)}
                       >
-                        {band.name}
-                      </NavLabel>
-                      {workspace?.id === band.id && <Meta>✓</Meta>}
-                    </NavItem>
-                  ))}
-                  {bandActions}
-                </Stack>
+                        <View
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: 4,
+                            backgroundColor: band.color,
+                          }}
+                        />
+                        <NavLabel
+                          numberOfLines={1}
+                          style={{ flex: 1 }}
+                          active={workspace?.id === band.id}
+                        >
+                          {band.name}
+                        </NavLabel>
+                        {workspace?.id === band.id && <Meta>✓</Meta>}
+                      </NavItem>
+                    ))}
+                    {bandActions}
+                  </Stack>
+                </BandListReveal>
               )}
             </WorkspaceCard>
             <Stack gap={2}>{workspace ? nav(bandItems) : null}</Stack>
@@ -440,7 +461,11 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={accountPage ? '개인 홈으로 이동' : '공간 변경'}
-                onPress={() => (accountPage ? onNavigate('personal-home') : setSwitcherOpen(true))}
+                onPress={() => {
+                  setCreateContent(false);
+                  if (accountPage) onNavigate('personal-home');
+                  else setSwitcherOpen(true);
+                }}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -589,6 +614,14 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
             backgroundColor: 'rgba(16,29,53,0.48)',
           }}
         >
+          <Pressable
+            accessibilityLabel="밴드 창 닫기"
+            onPress={() => {
+              setSwitcherOpen(false);
+              setCreating(false);
+            }}
+            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}
+          />
           <Surface style={{ width: '100%', maxWidth: 410, maxHeight: '90%' }}>
             <View
               style={{
@@ -597,7 +630,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                 alignItems: 'center',
               }}
             >
-              <Heading>{creating ? '밴드 만들기' : '공간 변경'}</Heading>
+              <Heading>{createContent ? '밴드 만들기' : '공간 변경'}</Heading>
               <ActionButton
                 secondary
                 compact
@@ -609,7 +642,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                 닫기
               </ActionButton>
             </View>
-            {!creating && (
+            {!createContent && (
               <>
                 <ActionButton
                   secondary
@@ -660,8 +693,15 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                 )}
               </>
             )}
-            {creating && (
+            {createContent && (
               <View style={{ gap: 8 }}>
+                <Meta>밴드 프로필 이미지</Meta>
+                <ProfilePhoto
+                  horizontal
+                  value={bandPhoto}
+                  onChange={setBandPhoto}
+                  disabled={creatingBusy}
+                />
                 <Input
                   accessibilityLabel="새 밴드 이름"
                   placeholder="새 밴드 이름"
@@ -669,16 +709,27 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                   onChangeText={setName}
                   maxLength={40}
                 />
+                <Input
+                  accessibilityLabel="새 밴드 설명"
+                  placeholder="밴드 설명"
+                  multiline
+                  maxLength={2000}
+                  value={bandDescription}
+                  onChangeText={setBandDescription}
+                  editable={!creatingBusy}
+                />
                 <ActionButton
                   disabled={creatingBusy || !name.trim()}
                   onPress={() => {
                     if (!name.trim()) return;
                     setCreatingBusy(true);
                     setCreateError('');
-                    void createWorkspace(name)
+                    void createWorkspace(name, bandDescription, bandPhoto)
                       .then((id) => {
                         setCreating(false);
                         setName('');
+                        setBandDescription('');
+                        setBandPhoto('');
                         choose(id);
                       })
                       .catch((error: unknown) =>

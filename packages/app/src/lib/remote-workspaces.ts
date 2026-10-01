@@ -3,7 +3,12 @@ import { api, currentIdentity } from './remote-client';
 type RemoteBand = {
   id: string;
   name: string;
-  members: { userId: string; role: string; part: string; user: { displayName: string } }[];
+  members: {
+    userId: string;
+    role: string;
+    part: string;
+    user: { displayName: string; avatarUrl?: string | null };
+  }[];
 };
 type Document = { key: string; value: { data: unknown }; revision: number };
 const revisions = new Map<string, number>();
@@ -30,11 +35,15 @@ export async function loadRemoteWorkspaces(
       return {
         id: band.id,
         name: band.name,
-        description: '함께 만드는 밴드',
+        description:
+          (documents['band/profile'] as { description?: string })?.description ??
+          '함께 만드는 밴드',
+        photo: (documents['band/profile'] as { photo?: string })?.photo ?? '',
         color: '#4f75d8',
         members: band.members.map((member) => ({
           id: member.userId,
           name: member.user.displayName,
+          photo: member.user.avatarUrl ?? '',
           role: member.role,
           part: member.part,
           initials: member.user.displayName.slice(-2),
@@ -105,6 +114,6 @@ export async function saveRemoteWorkspace(
   result.documents.forEach((doc) => revisions.set(`${user}/${next.id}/${doc.key}`, doc.revision));
 }
 
-export async function createRemoteWorkspace(name: string) {
-  return api<{ id: string }>('/workspaces', 'POST', { name });
+export async function createRemoteWorkspace(name: string, description = '', photo = '') {
+  return api<{ id: string }>('/workspaces', 'POST', { name, description, photo });
 }

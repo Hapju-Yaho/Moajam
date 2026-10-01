@@ -1,6 +1,6 @@
 type Row = Record<string, unknown>;
 export const isWorkspaceDocumentKey = (key: string) =>
-  /^(recommendations|songs|rehearsals|song\/[\w-]+\/(discussion|feedback|checks|arrangement|links|session\/[\w-]+\/memo)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
+  /^(recommendations|songs|rehearsals|practice\/order|song\/[\w-]+\/(discussion|feedback|clip-notes|checks|arrangement|links|session\/[\w-]+\/memo)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
     key,
   );
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -76,6 +76,13 @@ export function canWriteDocument(
   user: string,
   owner: boolean,
 ): boolean {
+  if (key === 'practice/order')
+    return (
+      Array.isArray(after) &&
+      after.length <= 3000 &&
+      after.every((id) => typeof id === 'string' && /^[\w-]+$/.test(id)) &&
+      new Set(after).size === after.length
+    );
   if (key === 'recommendations') {
     if (!rows(after)) return false;
     const previous = rows(before) ? before : [];
@@ -188,7 +195,7 @@ export function canWriteDocument(
       ) &&
       authored(before, after, user, owner)
     );
-  if (key.endsWith('/comments') || key.endsWith('/discussion'))
+  if (key.endsWith('/comments') || key.endsWith('/discussion') || key.endsWith('/clip-notes'))
     return authored(before, after, user, owner);
   if (key.endsWith('/members'))
     return (

@@ -81,7 +81,13 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     const spec = await (await fetch(base.replace('/v1', '') + '/docs-json')).json();
     assert.ok(spec.paths['/v1/auth/temporary']);
     assert.ok(!spec.paths['/v1/local-auth/signin']);
-    const band = await call('/workspaces', 'POST', { name: 'Integration Band' }, a.token, 201);
+    const band = await call(
+      '/workspaces',
+      'POST',
+      { name: 'Integration Band', description: 'Band description', photo: '' },
+      a.token,
+      201,
+    );
     await call(`/workspaces/${band.id}/documents`, 'GET', undefined, b.token, 403);
     const invite = await call(
       `/workspaces/${band.id}/invitations`,
@@ -91,6 +97,45 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
       201,
     );
     await call('/invitations/accept', 'POST', { token: invite.token }, b.token, 201);
+    const bandProfile = (
+      await call(`/workspaces/${band.id}/documents`, 'GET', undefined, b.token)
+    ).find((doc) => doc.key === 'band/profile');
+    assert.equal(bandProfile.value.data.description, 'Band description');
+    await call(
+      `/workspaces/${band.id}`,
+      'PATCH',
+      { name: 'Forbidden', description: '', photo: '' },
+      b.token,
+      403,
+    );
+    await call(
+      `/workspaces/${band.id}`,
+      'PATCH',
+      {
+        name: 'Renamed band',
+        description: 'Updated description',
+        photo: 'data:image/png;base64,aA==',
+      },
+      a.token,
+    );
+    assert.equal(
+      (await call('/workspaces', 'GET', undefined, b.token)).find((item) => item.id === band.id)
+        .name,
+      'Renamed band',
+    );
+    const updatedProfile = (
+      await call(`/workspaces/${band.id}/documents`, 'GET', undefined, b.token)
+    ).find((doc) => doc.key === 'band/profile');
+    assert.equal(updatedProfile.value.data.photo, 'data:image/png;base64,aA==');
+    assert.equal(updatedProfile.value.data.description, 'Updated description');
+    await call(`/workspaces/${band.id}`, 'PATCH', { name: '   ' }, a.token, 400);
+    await call(
+      `/workspaces/${band.id}`,
+      'PATCH',
+      { name: 'Band', photo: 'javascript:alert(1)' },
+      a.token,
+      422,
+    );
     const sync = (documents, members = []) => ({ documents, members, removedMemberIds: [] });
     await call(
       `/workspaces/${band.id}/sync`,
@@ -110,8 +155,8 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     );
     const documents = await call(`/workspaces/${band.id}/documents`, 'GET', undefined, b.token);
     assert.deepEqual(
-      documents.map((doc) => doc.key),
-      ['songs'],
+      documents.map((doc) => doc.key).sort(),
+      ['band/profile', 'songs'],
       'all writes must roll back on conflict',
     );
     await call(
@@ -265,6 +310,20 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
       ).length,
       1,
     );
+    await call(
+      `/workspaces/${band.id}/sync`,
+      'PUT',
+      sync([{ key: 'rehearsals', revision: revision + 1, value: { data: [] } }]),
+      a.token,
+    );
+    for (const member of [a, b]) {
+      const cancellations = (await call('/notifications', 'GET', undefined, member.token)).filter(
+        (item) => item.kind === 'REHEARSAL_CANCELLED',
+      );
+      assert.equal(cancellations.length, 1);
+      assert.equal(cancellations[0].entityId, session.id);
+      assert.ok(cancellations[0].message.includes(session.title));
+    }
     const beforeBulk = await call('/notifications', 'GET', undefined, b.token);
     assert.ok(beforeBulk.some((item) => !item.readAt));
     await call(`/notifications/read-all?workspaceId=${band.id}`, 'POST', undefined, a.token, 201);
@@ -308,8 +367,26 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
       { visibility: 'WORKSPACE' },
       a.token,
     );
+    await call(`/assets/${asset.assetId}/name`, 'PATCH', { name: 'Not allowed' }, b.token, 403);
+    const renamedAsset = await call(
+      `/assets/${asset.assetId}/name`,
+      'PATCH',
+      { name: 'Renamed clip.wav' },
+      a.token,
+    );
+    assert.equal(renamedAsset.name, 'Renamed clip.wav');
+    await call(`/assets/${asset.assetId}/name`, 'PATCH', { name: '  ' }, a.token, 400);
     const download = await call(`/assets/${asset.assetId}/download`, 'GET', undefined, b.token);
     assert.equal(await (await fetch(download.url)).text(), 'test audio payload');
+    const segment = await fetch(download.url, { headers: { Range: 'bytes=5-9' } });
+    assert.equal(segment.status, 206);
+    assert.equal(segment.headers.get('content-range'), 'bytes 5-9/18');
+    assert.equal(await segment.text(), 'audio');
+    const suffix = await fetch(download.url, { headers: { Range: 'bytes=-7' } });
+    assert.equal(suffix.status, 206);
+    assert.equal(await suffix.text(), 'payload');
+    assert.equal((await fetch(download.url, { headers: { Range: 'bytes=99-' } })).status, 416);
+
     await call(
       '/me/documents/' + encodeURIComponent('practice/personal'),
       'PUT',

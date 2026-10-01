@@ -10,11 +10,21 @@ export function ScheduleDashboard({
   navigate,
   compact = false,
   workspaceId,
+  showNotifications = true,
+  allowPersonal = !!workspaceId,
+  initialDate,
+  onSelectEvent,
+  onSelectDate,
 }: {
   events: CalendarEvent[];
   navigate: ScreenProps['navigate'];
   compact?: boolean;
   workspaceId?: string;
+  showNotifications?: boolean;
+  allowPersonal?: boolean;
+  initialDate?: string;
+  onSelectEvent?: (event: CalendarEvent) => void;
+  onSelectDate?: (date: string) => void;
 }) {
   const { width } = useWindowDimensions();
   const stacked = width < 1100;
@@ -22,7 +32,9 @@ export function ScheduleDashboard({
   const upcoming = events
     .filter((event) => !event.cancelled && new Date(`${event.date}T${event.end}`) >= new Date())
     .sort((a, b) => `${a.date}T${a.start}`.localeCompare(`${b.date}T${b.start}`));
-  const cardHeight = stacked ? 270 : Math.max(230, (calendarHeight - 16) / 2);
+  const cardHeight = stacked
+    ? 270
+    : Math.max(230, showNotifications ? (calendarHeight - 16) / 2 : calendarHeight);
   return (
     <ResponsiveGrid stacked={stacked}>
       <View
@@ -35,7 +47,10 @@ export function ScheduleDashboard({
         onLayout={(event) => setCalendarHeight(event.nativeEvent.layout.height)}
       >
         <RehearsalCalendar
-          allowPersonal={!!workspaceId}
+          allowPersonal={allowPersonal}
+          initialDate={initialDate}
+          onSelectEvent={onSelectEvent}
+          onSelectDate={onSelectDate}
           events={events}
           navigate={navigate}
           compact={compact}
@@ -50,6 +65,7 @@ export function ScheduleDashboard({
               <EventRow
                 key={`${event.workspaceId}/${event.id}`}
                 event={event}
+                onSelect={onSelectEvent}
                 navigate={navigate}
               />
             ))}
@@ -58,13 +74,15 @@ export function ScheduleDashboard({
             )}
           </ScrollView>
         </Surface>
-        <Notifications
-          navigate={navigate}
-          key={workspaceId ?? 'personal'}
-          title="최근 알림"
-          height={cardHeight}
-          workspaceId={workspaceId}
-        />
+        {showNotifications && (
+          <Notifications
+            navigate={navigate}
+            key={workspaceId ?? 'personal'}
+            title="최근 알림"
+            height={cardHeight}
+            workspaceId={workspaceId}
+          />
+        )}
       </Stack>
     </ResponsiveGrid>
   );

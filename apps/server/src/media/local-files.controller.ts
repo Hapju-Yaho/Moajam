@@ -31,7 +31,11 @@ export class LocalFilesController {
     await this.storage.write(key, data, asset.mime);
     return { ok: true };
   }
-  @Get(':token') async download(@Param('token') token: string, @Res() reply: FastifyReply) {
+  @Get(':token') async download(
+    @Param('token') token: string,
+    @Res() reply: FastifyReply,
+    @Req() request: FastifyRequest,
+  ) {
     const key = this.storage.verify(token, 'GET');
     const asset = await this.db.mediaAsset.findUnique({ where: { objectKey: key } });
     if (!asset?.ready || asset.deletedAt) throw new NotFoundException();
@@ -39,6 +43,29 @@ export class LocalFilesController {
       .header('Cache-Control', 'private, no-store')
       .header('X-Content-Type-Options', 'nosniff')
       .type(asset.mime);
-    return reply.send(await this.storage.read(key));
+    const data = await this.storage.read(key);
+    reply.header('Accept-Ranges', 'bytes');
+    const range = request.headers.range;
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (!match || (!match[1] && !match[2]))
+        return reply.code(416).header('Content-Range', `bytes */${data.length}`).send();
+      const start = match[1] ? Number(match[1]) : Math.max(0, data.length - Number(match[2]));
+      const end =
+        match[1] && match[2] ? Math.min(Number(match[2]), data.length - 1) : data.length - 1;
+      if (
+        !Number.isSafeInteger(start) ||
+        !Number.isSafeInteger(end) ||
+        start > end ||
+        start >= data.length
+      )
+        return reply.code(416).header('Content-Range', `bytes */${data.length}`).send();
+      return reply
+        .code(206)
+        .header('Content-Range', `bytes ${start}-${end}/${data.length}`)
+        .header('Content-Length', end - start + 1)
+        .send(data.subarray(start, end + 1));
+    }
+    return reply.header('Content-Length', data.length).send(data);
   }
 }

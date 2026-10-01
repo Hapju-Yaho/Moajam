@@ -190,6 +190,7 @@ export function TrackTimeline({
   onAdd,
   onPatch,
   onPatchClip,
+  onClipDuration,
   onMoveClip,
   onMoveToNewTrack,
   onSave,
@@ -205,6 +206,7 @@ export function TrackTimeline({
   armed,
   onArm,
   onPublish,
+  onImportClip,
   publishing,
   transport: t,
 }: {
@@ -216,6 +218,7 @@ export function TrackTimeline({
   onAdd: () => void;
   onPatch: (id: string, changes: Partial<TimelineTrack>) => void;
   onPatchClip: (id: string, changes: Partial<TimelineClip>) => void;
+  onClipDuration: (id: string, duration: number) => void;
   onMoveToNewTrack: (id: string, offset: number) => void;
   onSave: () => void;
   onRefresh: () => void;
@@ -231,6 +234,7 @@ export function TrackTimeline({
   armed: string | null;
   onArm: (id: string) => void;
   onPublish?: (clip: TimelineClip) => void;
+  onImportClip: (trackId: string) => void;
   publishing: string | null;
   transport: Transport;
 }) {
@@ -725,7 +729,7 @@ export function TrackTimeline({
           )}
           {selected && onPublish && (
             <button disabled={!!publishing} onClick={() => onPublish(selected)}>
-              {publishing === selected.id ? '공개 중…' : '원본 밴드에 공개'}
+              {publishing === selected.id ? '보관 중…' : '클립 보관하기'}
             </button>
           )}
         </div>
@@ -884,6 +888,13 @@ export function TrackTimeline({
                         <Icon name="upload" />
                         파일 추가
                       </button>
+                      <button
+                        disabled={locked}
+                        onClick={() => onImportClip(track.id)}
+                        title="클립 보관함에서 가져오기"
+                      >
+                        클립 가져오기
+                      </button>
                     </div>
                   </div>
                   <div
@@ -1028,8 +1039,8 @@ export function TrackTimeline({
                           sourceStart={clip.sourceStart}
                           duration={clip.duration}
                           onDuration={(duration) => {
-                            if (!clip.trimmed && Math.abs(clip.duration - duration) > 0.01)
-                              onPatchClip(clip.id, { duration });
+                            if (!clip.trimmed && !(clip.duration > 0))
+                              onClipDuration(clip.id, duration);
                           }}
                         />
                       </div>
@@ -1126,7 +1137,6 @@ export function TrackTimeline({
               구간 반복
             </button>
           </div>
-          <span>가까운 클립 시작·끝에 자동으로 붙어요 · Alt를 누르면 자유 이동</span>
         </footer>
         <input
           className="studio-accessible-seek"

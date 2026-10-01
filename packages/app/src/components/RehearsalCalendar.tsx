@@ -1,3 +1,4 @@
+import { isRedCalendarDate } from '../lib/koreanHolidays';
 import { ScheduleModal } from './ScheduleModal';
 import { usePersonalSchedules } from '../state/personalSchedules';
 import { useState } from 'react';
@@ -16,6 +17,7 @@ export function RehearsalCalendar({
   compact = false,
   workspaceId,
   onSelectEvent,
+  onSelectDate,
   initialDate,
   allowPersonal = false,
 }: {
@@ -24,6 +26,7 @@ export function RehearsalCalendar({
   compact?: boolean;
   workspaceId?: string;
   onSelectEvent?: (event: CalendarEvent) => void;
+  onSelectDate?: (date: string) => void;
   initialDate?: string;
   allowPersonal?: boolean;
 }) {
@@ -79,10 +82,10 @@ export function RehearsalCalendar({
               style={{
                 padding: 8,
                 borderRadius: 8,
-                backgroundColor: showPersonal ? '#ede9fe' : '#f1f5f9',
+                backgroundColor: showPersonal ? '#2563eb' : '#e5e7eb',
               }}
             >
-              <Meta>개인 일정도 확인하기 {showPersonal ? '켜짐' : '꺼짐'}</Meta>
+              <Meta style={{ color: showPersonal ? '#fff' : '#64748b' }}>개인일정 표기</Meta>
             </Pressable>
           )}
           <ActionButton secondary compact onPress={() => shift(-1)}>
@@ -113,7 +116,7 @@ export function RehearsalCalendar({
             style={{
               width: `${100 / 7}%`,
               textAlign: 'center',
-              color: day === '일' ? '#d56e71' : '#72819a',
+              color: day === '일' ? '#d56e71' : day === '토' ? '#416bd1' : '#72819a',
             }}
           >
             {day}
@@ -132,7 +135,10 @@ export function RehearsalCalendar({
               accessibilityRole="button"
               accessibilityLabel={valid ? `${key} 일정 ${daily.length}건` : undefined}
               accessibilityState={{ selected: selected === key }}
-              onPress={() => setSelected(key)}
+              onPress={() => {
+                setSelected(key);
+                onSelectDate?.(key);
+              }}
               style={{
                 width: `${100 / 7}%`,
                 minHeight: compact || narrow ? 64 : 96,
@@ -149,7 +155,11 @@ export function RehearsalCalendar({
                   style={{
                     fontSize: 12,
                     fontWeight: key === today ? '600' : '500',
-                    color: key === today ? '#416bd1' : '#475569',
+                    color: isRedCalendarDate(key)
+                      ? '#c83c4c'
+                      : new Date(`${key}T12:00:00`).getDay() === 6 || key === today
+                        ? '#416bd1'
+                        : '#475569',
                   }}
                 >
                   {day}
