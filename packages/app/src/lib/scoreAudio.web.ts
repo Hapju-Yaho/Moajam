@@ -1,5 +1,13 @@
 import { cleanScoreConnections, noteTones, type Score, type ScoreNote } from './score';
 import { scoreBackingSegment } from './scoreBacking';
+import { samplePlaybackRate } from './samplePitch';
+import { createSampleVoice, type PreparedInstrumentSample } from './instrumentSample.web';
+
+function sampleOffset(sample: PreparedInstrumentSample, consumed: number) {
+  if (sample.sustain && consumed >= sample.loopEnd)
+    return sample.loopStart + ((consumed - sample.loopStart) % (sample.loopEnd - sample.loopStart));
+  return consumed < sample.buffer.duration ? consumed : null;
+}
 
 export function scheduleScoreBacking(
   context: BaseAudioContext,
@@ -28,7 +36,9 @@ export function scheduleScoreNote(
   start: number,
   bpm: number,
   remainingBeats = note.beats,
+  sample?: PreparedInstrumentSample,
 ) {
+  if (note.rest || note.blank) return;
   const tones = noteTones(note);
   const soundBeats = Math.max(
     0,
@@ -76,6 +86,30 @@ export function scheduleScoreNote(
   const level =
     (0.12 * (note.ghost ? 0.35 : 1) * (note.accent ? 1.25 : 1)) / Math.sqrt(tones.length);
   for (const tone of tones) {
+    if (sample) {
+      const rate = samplePlaybackRate(tone.pitch, sample.rootMidi);
+      const offset = sampleOffset(sample, ((note.beats - remainingBeats) * 60 * rate) / bpm);
+      if (offset === null) continue;
+      const source = createSampleVoice(context, sample);
+      const gain = context.createGain();
+      source.playbackRate.value = rate;
+      const audible = sample.sustain
+        ? duration
+        : Math.min(duration, (sample.buffer.duration - offset) / rate);
+      const attack = Math.min(0.004, audible / 4);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(level * 3, start + attack);
+      gain.gain.setValueAtTime(level * 3, start + audible - Math.min(0.025, audible / 4));
+      gain.gain.linearRampToValueAtTime(0, start + audible);
+      source.connect(gain).connect(destination);
+      source.start(start, offset);
+      source.stop(start + audible);
+      source.onended = () => {
+        source.disconnect();
+        gain.disconnect();
+      };
+      continue;
+    }
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     oscillator.type = 'triangle';
@@ -102,6 +136,7 @@ export function scheduleScorePassage(
   start: number,
   startBeat: number,
   endBeat: number,
+  sample?: PreparedInstrumentSample,
 ) {
   const notes = cleanScoreConnections(score).notes.filter((n) => n.part === part);
   const seconds = 60 / score.bpm;
@@ -118,7 +153,15 @@ export function scheduleScorePassage(
     const elapsed = Math.max(0, startBeat - chainStart);
     const when = start + Math.max(0, chainStart - startBeat) * seconds;
     if (chain.length === 1) {
-      scheduleScoreNote(context, destination, chain[0], when, score.bpm, chain[0].beats - elapsed);
+      scheduleScoreNote(
+        context,
+        destination,
+        chain[0],
+        when,
+        score.bpm,
+        chain[0].beats - elapsed,
+        sample,
+      );
       continue;
     }
     const tones = noteTones(chain[0])
@@ -152,16 +195,18 @@ export function scheduleScorePassage(
         ? left.frequency +
           ((right.frequency - left.frequency) * (elapsed - left.beat)) / (right.beat - left.beat)
         : left.frequency;
-      const oscillator = context.createOscillator(),
-        gain = context.createGain();
-      oscillator.type = 'triangle';
-      oscillator.frequency.setValueAtTime(frequency, when);
+      const voice = sample ? createSampleVoice(context, sample) : context.createOscillator();
+      const gain = context.createGain();
+      const parameter = 'playbackRate' in voice ? voice.playbackRate : voice.frequency;
+      const convert = (value: number) => (sample ? value / hz(sample.rootMidi) : value);
+      if ('type' in voice) voice.type = 'triangle';
+      parameter.setValueAtTime(convert(frequency), when);
       for (const p of points.filter(
         (p) => p.beat > elapsed && p.beat < elapsed + duration / seconds,
       )) {
         const time = when + (p.beat - elapsed) * seconds;
-        if (p.ramp) oscillator.frequency.linearRampToValueAtTime(p.frequency, time);
-        else oscillator.frequency.setValueAtTime(p.frequency, time);
+        if (p.ramp) parameter.linearRampToValueAtTime(convert(p.frequency), time);
+        else parameter.setValueAtTime(convert(p.frequency), time);
       }
       let offset = 0;
       const active =
@@ -170,9 +215,11 @@ export function scheduleScorePassage(
           return offset > elapsed;
         }) ?? chain[0];
       const levelFor = (n: ScoreNote) =>
-        (0.12 * (n.ghost ? 0.35 : 1) * (n.accent ? 1.25 : 1)) / Math.sqrt(tones.length);
+        ((sample ? 0.36 : 0.12) * (n.ghost ? 0.35 : 1) * (n.accent ? 1.25 : 1)) /
+        Math.sqrt(tones.length);
       let level = levelFor(active);
-      gain.gain.setValueAtTime(level, when);
+      gain.gain.setValueAtTime(sample ? 0 : level, when);
+      if (sample) gain.gain.linearRampToValueAtTime(level, when + Math.min(0.004, duration / 4));
       let boundary = 0;
       for (const n of chain) {
         if (boundary > elapsed && boundary < elapsed + duration / seconds) {
@@ -185,11 +232,32 @@ export function scheduleScorePassage(
       }
       gain.gain.setValueAtTime(level, when + Math.max(0, duration - Math.min(0.025, duration / 4)));
       gain.gain.linearRampToValueAtTime(0, when + duration);
-      oscillator.connect(gain).connect(destination);
-      oscillator.start(when);
-      oscillator.stop(when + duration);
-      oscillator.onended = () => {
-        oscillator.disconnect();
+      voice.connect(gain).connect(destination);
+      if (sample && 'playbackRate' in voice) {
+        let consumed = 0;
+        for (let index = 0; index < points.length; index++) {
+          const point = points[index],
+            next = points[index + 1];
+          const end = Math.min(elapsed, next?.beat ?? elapsed);
+          if (end <= point.beat) break;
+          const rightFrequency = next?.ramp
+            ? point.frequency +
+              (next.frequency - point.frequency) * ((end - point.beat) / (next.beat - point.beat))
+            : point.frequency;
+          consumed +=
+            (end - point.beat) * seconds * convert((point.frequency + rightFrequency) / 2);
+        }
+        const offset = sampleOffset(sample, consumed);
+        if (offset === null) {
+          voice.disconnect();
+          gain.disconnect();
+          return;
+        }
+        voice.start(when, offset);
+      } else voice.start(when);
+      voice.stop(when + duration);
+      voice.onended = () => {
+        voice.disconnect();
         gain.disconnect();
       };
     });

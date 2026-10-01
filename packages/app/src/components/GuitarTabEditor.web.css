@@ -18,6 +18,7 @@
   margin-top: 10px;
 }
 .score-backing button,
+.score-backing select,
 .score-backing input[type='number'] {
   border: 1px solid #d3dcd6;
   border-radius: 5px;

@@ -168,6 +168,33 @@ test('legacy records migrate without deleting originals and cleared records neve
   assert.deepEqual(await reloaded.readMedia('library/personal'), []);
 });
 
+test('score instrument sample restores tuning and bytes, stays private, and can be detached', async () => {
+  const f = storageFixture();
+  const store = await load(mediaPath, f);
+  const instrumentSample = {
+    file: new Blob(['single-note'], { type: 'audio/wav' }),
+    name: 'guitar.wav',
+    rootMidi: 57.15,
+    enabled: true,
+    sustain: true,
+  };
+  await store.writeMedia('score/personal', { title: 'Sample score', instrumentSample }, 'm1');
+  const reloaded = await load(mediaPath, f);
+  const restored = await reloaded.readMedia('score/personal', 'm1');
+  assert.equal(await restored.instrumentSample.file.text(), 'single-note');
+  assert.equal(restored.instrumentSample.rootMidi, 57.15);
+  assert.equal(restored.instrumentSample.sustain, true);
+  assert.equal(await reloaded.readMedia('score/personal', 'm2'), undefined);
+  await reloaded.writeMedia(
+    'score/personal',
+    { ...restored, instrumentSample: { ...restored.instrumentSample, enabled: false } },
+    'm1',
+  );
+  assert.equal(f.attachments.size, 1, 'changing settings reuses the saved attachment');
+  await reloaded.writeMedia('score/personal', { ...restored, instrumentSample: null }, 'm1');
+  assert.equal((await store.readMedia('score/personal', 'm1')).instrumentSample, null);
+});
+
 test('storage quota failure surfaces and preserves the last acknowledged document', async () => {
   const f = storageFixture();
   const store = await load(mediaPath, f);

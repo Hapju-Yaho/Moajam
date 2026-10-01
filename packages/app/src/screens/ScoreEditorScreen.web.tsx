@@ -35,6 +35,9 @@ import { validateAudioFile } from '../lib/trackParts';
 import { GuitarTabEditor } from '../components/GuitarTabEditor.web';
 import { scoreFromMusicXml } from '../lib/scoreImport.web';
 import { useIdentity } from '../state/Identity';
+import { ScoreInstrumentSample } from '../components/ScoreInstrumentSample.web';
+import type { InstrumentSample } from '../lib/samplePitch';
+import { prepareInstrumentSample } from '../lib/instrumentSample.web';
 export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   const userId = useIdentity();
   const { workspaceId, adoptedSongs } = useMockAppState();
@@ -81,6 +84,8 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const [audioUrl, setAudioUrl] = useState('');
   const [referenceAudio, setReferenceAudio] = useState<Blob | null>(null);
+  const [instrumentSample, setInstrumentSample] = useState<InstrumentSample | null>(null);
+  const [sampleLoading, setSampleLoading] = useState(false);
   const [audioPosition, setAudioPosition] = useState(0);
   const [audioMessage, setAudioMessage] = useState('');
   const [audioLoading, setAudioLoading] = useState(false);
@@ -147,14 +152,24 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
     decodedAudio.current = null;
     setAudioLoading(false);
     setAudioMessage('');
-    void readMedia<Score & { referenceAudio?: Blob }>(key, userId)
+    setInstrumentSample(null);
+    setSampleLoading(false);
+    void readMedia<Score & { referenceAudio?: Blob; instrumentSample?: InstrumentSample }>(
+      key,
+      userId,
+    )
       .then((value) => {
         if (active) {
+          setInstrumentSample(value?.instrumentSample ?? null);
           setReferenceAudio(value?.referenceAudio ?? null);
           setAudioUrl(value?.referenceAudio ? URL.createObjectURL(value.referenceAudio) : '');
           setAudioPosition(0);
           if (value) {
-            setScore(cleanScoreConnections(value));
+            // Keep attachments out of undo snapshots and imported score metadata.
+            const document = { ...value };
+            delete document.referenceAudio;
+            delete document.instrumentSample;
+            setScore(cleanScoreConnections(document));
             setPart(value.parts[0] ?? 'Guitar');
           } else
             setScore({
@@ -199,7 +214,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
       if (started) return;
       started = true;
       if (pendingSave.current === save) pendingSave.current = null;
-      void writeMedia(key, { ...score, referenceAudio }, userId)
+      void writeMedia(key, { ...score, referenceAudio, instrumentSample }, userId)
         .then(() => {
           if (active) setStatus('자동 저장됨');
         })
@@ -218,7 +233,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
       active = false;
       clearTimeout(timer);
     };
-  }, [key, score, loaded, referenceAudio, userId]);
+  }, [key, score, loaded, referenceAudio, instrumentSample, userId]);
   useEffect(() => {
     if (!score.parts.includes(part)) setPart(score.parts[0] ?? 'Guitar');
     if (selected && !score.notes.some((note) => note.id === selected && note.part === part))
@@ -262,7 +277,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
       stop();
       return;
     }
-    if (!loaded || audioLoading || !visible.length) return;
+    if (!loaded || audioLoading || sampleLoading || !visible.length) return;
     const { startBeat, endBeat, events } = scorePlaybackFrom(score, part, from);
     if (startBeat >= endBeat) return;
     const ctx = new AudioContext();
@@ -272,6 +287,10 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
     audio.current?.pause();
     try {
       await ctx.resume();
+      if (context.current !== ctx) return;
+      const sample = instrumentSample?.enabled
+        ? await prepareInstrumentSample(instrumentSample)
+        : undefined;
       if (context.current !== ctx) return;
       let backing: AudioBuffer | null = null;
       if (referenceAudio && referenceEnabled) {
@@ -325,15 +344,28 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
           );
         if (ctx.currentTime >= startAt + ((endBeat - startBeat) * 60) / score.bpm) stop();
       }, 40);
-      scheduleScorePassage(ctx, destination.input, score, part, startAt, startBeat, endBeat);
+      scheduleScorePassage(
+        ctx,
+        destination.input,
+        score,
+        part,
+        startAt,
+        startBeat,
+        endBeat,
+        sample,
+      );
       for (const { note: item, offset } of events) {
         const elapsed = (offset * 60) / score.bpm;
         timers.current.push(setTimeout(() => setCursor(item.id), (elapsed + 0.04) * 1000));
       }
-    } catch {
+    } catch (error) {
       if (context.current === ctx) {
         stop();
-        setAudioMessage('함께 재생하지 못했어요. 음원을 다시 선택하거나 함께 재생을 꺼주세요.');
+        setAudioMessage(
+          error instanceof Error
+            ? error.message
+            : '재생하지 못했어요. 녹음과 연결된 음원을 확인해주세요.',
+        );
       }
     }
   };
@@ -383,6 +415,13 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
           </Pill>
         ))}
       </FlexRow>
+      <ScoreInstrumentSample
+        key={`${userId}/${key}`}
+        sample={instrumentSample}
+        disabled={!loaded || playing}
+        onChange={setInstrumentSample}
+        onBusyChange={setSampleLoading}
+      />
       <section className="score-backing" aria-label="음원과 함께 재생">
         <div className="score-backing-row">
           <strong>함께 재생할 음원</strong>
@@ -511,7 +550,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
         selected={selected}
         cursor={cursor}
         playbackBeat={playbackBeat}
-        loaded={loaded && !audioLoading}
+        loaded={loaded && !audioLoading && !sampleLoading}
         playing={playing}
         onSelect={setSelected}
         onEdit={edit}

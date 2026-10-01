@@ -71,6 +71,10 @@ User ── PersonalWorkspace
 - `ExtractedInstrumentTrack`: 원본에서 분리된 대상 악기, 품질 지표, 누음 경고와 출력 설정
 - `EditableScore`: 파트·마디·음표를 가진 구조화 악보 문서와 기준 음원 연결
 - `ScoreRevision`: 자동 저장과 별도로 복원 가능한 악보 Snapshot
+- `ScoreInstrumentSample`: 악보당 하나의 비공개 단음 녹음 Blob, 파일명, 기준 MIDI 음높이
+  (미세 조율 포함), 사용 여부와 지속음 반복 설정. 기존 개인 미디어 저장 경로에 악보와 함께
+  저장하고 MusicXML에는 포함하지 않는다. 감지 실패 시 기준 음을 직접 지정하기 전에는 사용하지
+  않는다. 교체 실패 시 기존 샘플을 보존하며, 반복 여부와 피치 변환은 악보의 박자를 바꾸지 않는다.
 
 개인 엔터티에는 `workspaceId`를 강제하지 않는다. Workspace로 보낼 때 새 Resource를 생성하며 개인
 원본과 자동 동기화하지 않는다.
