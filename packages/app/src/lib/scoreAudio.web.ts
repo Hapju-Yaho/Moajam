@@ -1,7 +1,18 @@
 import { cleanScoreConnections, noteTones, type Score, type ScoreNote } from './score';
 import { scoreBackingSegment } from './scoreBacking';
 import { samplePlaybackRate } from './samplePitch';
-import { createSampleVoice, type PreparedInstrumentSample } from './instrumentSample.web';
+import {
+  createSampleVoice,
+  playbackSample,
+  type PreparedPlaybackInstrument,
+  type PreparedInstrumentSample,
+} from './instrumentSample.web';
+
+// Reserve accent headroom and average simultaneous voices instead of amplifying
+// a chord. This changes level only, without compression or waveform shaping.
+function sampleLevel(ghost: boolean | undefined, accent: boolean, voices: number) {
+  return ((ghost ? 0.35 : 1) * (accent ? 1 : 0.8)) / voices;
+}
 
 function sampleOffset(sample: PreparedInstrumentSample, consumed: number) {
   if (sample.sustain && consumed >= sample.loopEnd)
@@ -36,7 +47,7 @@ export function scheduleScoreNote(
   start: number,
   bpm: number,
   remainingBeats = note.beats,
-  sample?: PreparedInstrumentSample,
+  instrument?: PreparedPlaybackInstrument,
 ) {
   if (note.rest || note.blank) return;
   const tones = noteTones(note);
@@ -45,47 +56,51 @@ export function scheduleScoreNote(
     note.beats * (note.staccato ? 0.45 : 1) - (note.beats - remainingBeats),
   );
   if (!tones.length || !soundBeats) return;
-  if (note.dead) {
-    // A muted string is a brief, unpitched attack; its rhythmic slot stays unchanged.
-    const hitDuration = Math.min(0.065, (note.beats * (note.staccato ? 0.45 : 1) * 60) / bpm);
-    const elapsed = ((note.beats - remainingBeats) * 60) / bpm;
-    if (elapsed >= hitDuration) return;
-    const buffer = context.createBuffer(
-      1,
-      Math.max(1, Math.ceil(hitDuration * context.sampleRate)),
-      context.sampleRate,
-    );
-    const samples = buffer.getChannelData(0);
-    let seed = 1729;
-    for (let i = 0; i < samples.length; i++) {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      const progress = i / samples.length;
-      samples[i] =
-        (seed / 0x80000000 - 1) *
-        Math.min(1, i / (context.sampleRate * 0.002)) *
-        Math.pow(1 - progress, 3);
-    }
-    const source = context.createBufferSource();
-    const filter = context.createBiquadFilter();
-    const gain = context.createGain();
-    source.buffer = buffer;
-    filter.type = 'bandpass';
-    filter.frequency.value = 900;
-    filter.Q.value = 0.65;
-    gain.gain.value = 0.45 * (note.accent ? 1.25 : 1);
-    source.connect(filter).connect(gain).connect(destination);
-    source.start(start, elapsed, hitDuration - elapsed);
-    source.onended = () => {
-      source.disconnect();
-      filter.disconnect();
-      gain.disconnect();
-    };
-    return;
-  }
   const duration = (soundBeats * 60) / bpm;
-  const level =
-    (0.12 * (note.ghost ? 0.35 : 1) * (note.accent ? 1.25 : 1)) / Math.sqrt(tones.length);
   for (const tone of tones) {
+    const sample = instrument ? playbackSample(instrument, tone.pitch) : undefined;
+    if (tone.dead) {
+      // A muted string is a brief, unpitched attack; its rhythmic slot stays unchanged.
+      const hitDuration = Math.min(0.065, (note.beats * (note.staccato ? 0.45 : 1) * 60) / bpm);
+      const elapsed = ((note.beats - remainingBeats) * 60) / bpm;
+      if (elapsed >= hitDuration) continue;
+      const buffer = context.createBuffer(
+        1,
+        Math.max(1, Math.ceil(hitDuration * context.sampleRate)),
+        context.sampleRate,
+      );
+      const samples = buffer.getChannelData(0);
+      let seed = 1729 + tone.pitch;
+      for (let i = 0; i < samples.length; i++) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        const progress = i / samples.length;
+        samples[i] =
+          (seed / 0x80000000 - 1) *
+          Math.min(1, i / (context.sampleRate * 0.002)) *
+          Math.pow(1 - progress, 3);
+      }
+      const source = context.createBufferSource();
+      const filter = context.createBiquadFilter();
+      const gain = context.createGain();
+      source.buffer = buffer;
+      filter.type = 'bandpass';
+      filter.frequency.value = 900;
+      filter.Q.value = 0.65;
+      gain.gain.value =
+        (0.45 * (note.accent ? 1.25 : 1)) / (sample ? tones.length : Math.sqrt(tones.length));
+      source.connect(filter).connect(gain).connect(destination);
+      source.start(start, elapsed, hitDuration - elapsed);
+      source.onended = () => {
+        source.disconnect();
+        filter.disconnect();
+        gain.disconnect();
+      };
+      continue;
+    }
+
+    const level =
+      (0.12 * (tone.ghost ? 0.35 : 1) * (note.accent ? 1.25 : 1)) / Math.sqrt(tones.length);
+
     if (sample) {
       const rate = samplePlaybackRate(tone.pitch, sample.rootMidi);
       const offset = sampleOffset(sample, ((note.beats - remainingBeats) * 60 * rate) / bpm);
@@ -97,9 +112,11 @@ export function scheduleScoreNote(
         ? duration
         : Math.min(duration, (sample.buffer.duration - offset) / rate);
       const attack = Math.min(0.004, audible / 4);
+      const amplitude =
+        sampleLevel(tone.ghost, note.accent, tones.length) * (sample.playbackGain ?? 1);
       gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(level * 3, start + attack);
-      gain.gain.setValueAtTime(level * 3, start + audible - Math.min(0.025, audible / 4));
+      gain.gain.linearRampToValueAtTime(amplitude, start + attack);
+      gain.gain.setValueAtTime(amplitude, start + audible - Math.min(0.025, audible / 4));
       gain.gain.linearRampToValueAtTime(0, start + audible);
       source.connect(gain).connect(destination);
       source.start(start, offset);
@@ -114,8 +131,12 @@ export function scheduleScoreNote(
     const gain = context.createGain();
     oscillator.type = 'triangle';
     oscillator.frequency.value = 440 * Math.pow(2, (tone.pitch - 69) / 12);
-    gain.gain.setValueAtTime(level, start);
-    gain.gain.exponentialRampToValueAtTime(0.001, start + duration * 0.95);
+    // Keep a clear body through the note instead of fading almost to silence
+    // immediately. The old envelope made bass notes especially hard to hear.
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(level, start + Math.min(0.005, duration / 4));
+    gain.gain.exponentialRampToValueAtTime(level * 0.6, start + duration * 0.8);
+    gain.gain.linearRampToValueAtTime(0, start + duration);
     oscillator.connect(gain).connect(destination);
     oscillator.start(start);
     oscillator.stop(start + duration);
@@ -136,7 +157,7 @@ export function scheduleScorePassage(
   start: number,
   startBeat: number,
   endBeat: number,
-  sample?: PreparedInstrumentSample,
+  instrument?: PreparedPlaybackInstrument,
 ) {
   const notes = cleanScoreConnections(score).notes.filter((n) => n.part === part);
   const seconds = 60 / score.bpm;
@@ -160,7 +181,7 @@ export function scheduleScorePassage(
         when,
         score.bpm,
         chain[0].beats - elapsed,
-        sample,
+        instrument,
       );
       continue;
     }
@@ -169,6 +190,7 @@ export function scheduleScorePassage(
       .sort((a, b) => a.pitch - b.pitch);
     const duration = (Math.min(at, endBeat) - Math.max(startBeat, chainStart)) * seconds;
     tones.forEach((_, toneIndex) => {
+      const sample = instrument ? playbackSample(instrument, tones[toneIndex].pitch) : undefined;
       const points: { beat: number; frequency: number; ramp: boolean }[] = [];
       let beat = 0;
       chain.forEach((note, index) => {
@@ -214,9 +236,14 @@ export function scheduleScorePassage(
           offset += n.beats;
           return offset > elapsed;
         }) ?? chain[0];
-      const levelFor = (n: ScoreNote) =>
-        ((sample ? 0.36 : 0.12) * (n.ghost ? 0.35 : 1) * (n.accent ? 1.25 : 1)) /
-        Math.sqrt(tones.length);
+      const levelFor = (n: ScoreNote) => {
+        const ghost = noteTones(n)
+          .slice()
+          .sort((a, b) => a.pitch - b.pitch)[toneIndex]?.ghost;
+        return sample
+          ? sampleLevel(ghost, n.accent, tones.length) * (sample.playbackGain ?? 1)
+          : (0.12 * (ghost ? 0.35 : 1) * (n.accent ? 1.25 : 1)) / Math.sqrt(tones.length);
+      };
       let level = levelFor(active);
       gain.gain.setValueAtTime(sample ? 0 : level, when);
       if (sample) gain.gain.linearRampToValueAtTime(level, when + Math.min(0.004, duration / 4));

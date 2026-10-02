@@ -2,10 +2,15 @@ export async function shareLink(path: string) {
   await navigator.clipboard.writeText(new URL(path, location.origin).href);
 }
 export function downloadText(name: string, text: string, type = 'text/plain') {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+  downloadBlob(name, new Blob([text], { type }));
+}
+export function downloadBlob(name: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = name;
+  document.body.append(link);
   link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }

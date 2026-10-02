@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Buffer } from 'node:buffer';
+import { Blob, Buffer } from 'node:buffer';
 import { URL } from 'node:url';
 import test from 'node:test';
 import ts from 'typescript';
@@ -18,11 +18,23 @@ function moduleUrl(path) {
 const { detectSamplePitch, samplePlaybackRate } = await import(
   moduleUrl(new URL('../packages/app/src/lib/samplePitch.ts', import.meta.url))
 );
-const { prepareSampleBuffer, importInstrumentSample } = await import(
+const {
+  prepareSampleBuffer,
+  importInstrumentSample,
+  prepareInstrumentSample,
+  inspectInstrumentSample,
+  instrumentSampleGain,
+} = await import(
   moduleUrl(new URL('../packages/app/src/lib/instrumentSample.web.ts', import.meta.url))
 );
-const { scheduleScoreNote, scheduleScorePassage } = await import(
+const { scheduleScoreNote, scheduleScorePassage, createScoreOutput } = await import(
   moduleUrl(new URL('../packages/app/src/lib/scoreAudio.web.ts', import.meta.url))
+);
+const { prepareSoundfontInstrument, soundfontMidi, normalizeSoundfontVolume } = await import(
+  moduleUrl(new URL('../packages/app/src/lib/soundfont.web.ts', import.meta.url))
+);
+const { renameScorePart, removeScorePart } = await import(
+  moduleUrl(new URL('../packages/app/src/lib/score.ts', import.meta.url))
 );
 
 function wave(frequency, rate = 44100, duration = 1, harmonics = false) {
@@ -58,10 +70,45 @@ test('silence, noise, very short recordings and unstable pitch require manual se
   );
   assert.equal(detectSamplePitch(sweep, 44100), null);
 });
+
+test('short selected regions still detect guitar notes instead of leaving an unusable root', () => {
+  for (const rate of [22050, 44100, 48000]) {
+    for (const duration of [0.05, 0.1, 0.153]) {
+      for (const midi of [40, 57, 69, 84]) {
+        const found = detectSamplePitch(wave(440 * 2 ** ((midi - 69) / 12), rate, duration), rate);
+        assert.notEqual(found, null, `${rate}Hz, ${duration}s, MIDI ${midi}`);
+        assert.ok(Math.abs(found - midi) < 0.15, `${found} != ${midi}`);
+      }
+    }
+  }
+});
 test('playback ratios transpose exact octaves and account for tuning', () => {
   assert.equal(samplePlaybackRate(72, 60), 2);
   assert.equal(samplePlaybackRate(48, 60), 0.5);
   assert.equal(samplePlaybackRate(60.2, 60.2), 1);
+});
+
+test('quiet plucked bass with silence and changing harmonic balance still detects its root', () => {
+  for (const rate of [22050, 44100, 48000]) {
+    const frequency = 440 * 2 ** ((28 - 69) / 12);
+    const quiet = new Float32Array(rate * 6);
+    quiet.set(
+      wave(frequency, rate, 0.8).map((value) => value * 0.016),
+      Math.round(rate * 1.2),
+    );
+    assert.ok(Math.abs(detectSamplePitch(quiet, rate) - 28) < 0.1);
+    const pluck = Float32Array.from({ length: rate * 5 }, (_, i) => {
+      const time = i / rate;
+      const angle = 2 * Math.PI * frequency * time;
+      return (
+        0.15 * Math.exp(-3 * time) * Math.sin(4 * angle) +
+        0.012 * Math.exp(-0.8 * time) * Math.sin(angle)
+      );
+    });
+    const root = detectSamplePitch(pluck, rate);
+    assert.notEqual(root, null);
+    assert.ok(Math.abs(root - 28) < 0.2, `bass root ${root} at ${rate}`);
+  }
 });
 
 function buffer(data, rate = 44100, opposite = false) {
@@ -76,7 +123,8 @@ function buffer(data, rate = 44100, opposite = false) {
 function fixture() {
   const voices = [],
     gains = [],
-    oscillators = [];
+    oscillators = [],
+    compressors = [];
   const parameter = () => ({
     value: 0,
     events: [],
@@ -89,9 +137,16 @@ function fixture() {
     exponentialRampToValueAtTime(...values) {
       this.events.push(['exponential', ...values]);
     },
+    cancelScheduledValues(...values) {
+      this.events.push(['cancel', ...values]);
+    },
+    setTargetAtTime(...values) {
+      this.events.push(['target', ...values]);
+    },
   });
   const node = () => ({
     connect(destination) {
+      this.destination = destination;
       return destination;
     },
     disconnect() {
@@ -108,8 +163,17 @@ function fixture() {
     },
   });
   const context = {
+    currentTime: 2,
+    destination: {},
     sampleRate: 44100,
-    createBuffer: (_, length, rate) => buffer(new Float32Array(length), rate),
+    createBuffer: (channels, length, rate) => {
+      const data = Array.from({ length: channels }, () => new Float32Array(length));
+      return {
+        ...buffer(data[0], rate),
+        numberOfChannels: channels,
+        getChannelData: (channel) => data[channel],
+      };
+    },
     createBufferSource() {
       const source = { ...voice(), playbackRate: parameter() };
       voices.push(source);
@@ -126,6 +190,19 @@ function fixture() {
       return gain;
     },
     createBiquadFilter: () => ({ ...node(), frequency: parameter(), Q: parameter() }),
+    createWaveShaper: () => node(),
+    createDynamicsCompressor() {
+      const compressor = {
+        ...node(),
+        threshold: parameter(),
+        knee: parameter(),
+        ratio: parameter(),
+        attack: parameter(),
+        release: parameter(),
+      };
+      compressors.push(compressor);
+      return compressor;
+    },
   };
   const sample = {
     buffer: buffer(wave(261.626)),
@@ -134,8 +211,30 @@ function fixture() {
     loopStart: 0.3,
     loopEnd: 0.8,
   };
-  return { context, voices, gains, oscillators, sample };
+  return { context, voices, gains, oscillators, compressors, sample };
 }
+
+test('score and backing apply only independent volume and mute without output amplification', () => {
+  const f = fixture();
+  const scoreOutput = createScoreOutput(f.context, 0.8);
+  const backingOutput = createScoreOutput(f.context, 0.4);
+  assert.equal(scoreOutput.input.gain.value, 0.8);
+  assert.equal(backingOutput.input.gain.value, 0.4);
+  assert.equal(scoreOutput.input.destination, backingOutput.input.destination);
+  assert.equal(f.compressors.length, 0);
+  assert.equal(scoreOutput.input.destination, f.context.destination);
+  assert.equal(f.gains.length, 2, 'no hidden boost after the two volume controls');
+  scoreOutput.setVolume(0);
+  assert.equal(scoreOutput.input.gain.events.at(-1)[1], 0);
+  assert.equal(backingOutput.input.gain.value, 0.4);
+  scoreOutput.setVolume(8);
+  assert.equal(scoreOutput.input.gain.events.at(-1)[1], 1);
+  const other = fixture();
+  assert.notEqual(
+    createScoreOutput(other.context, 1).input.destination,
+    scoreOutput.input.destination,
+  );
+});
 const note = (changes = {}) => ({
   id: 'a',
   part: 'Guitar',
@@ -149,7 +248,22 @@ const note = (changes = {}) => ({
 });
 const score = (notes) => ({ title: '', bpm: 120, notes, parts: ['Guitar'], sync: {} });
 
-test('preparation trims silence, normalizes and preserves opposite-phase stereo', () => {
+test('basic bass and guitar keep an audible body and release to silence at the note end', () => {
+  for (const pitch of [28, 64]) {
+    const f = fixture();
+    scheduleScoreNote(f.context, {}, note({ pitch }), 0, 120);
+    const events = f.gains[0].gain.events;
+    const attack = events.find(([kind, value]) => kind === 'ramp' && value > 0);
+    const body = events.find(([kind]) => kind === 'exponential');
+    assert.ok(attack[2] > 0 && attack[2] <= 0.01);
+    assert.ok(body[1] >= attack[1] * 0.5, 'the body must not immediately fade almost to silence');
+    assert.ok(body[2] >= 0.35);
+    assert.deepEqual(events.at(-1), ['ramp', 0, 0.5]);
+    assert.equal(f.oscillators[0].stopped, 0.5);
+  }
+});
+
+test('preparation trims silence while preserving original levels and stereo channels', () => {
   const { context } = fixture();
   const data = new Float32Array(88200);
   data.set(wave(220), 22050);
@@ -158,10 +272,114 @@ test('preparation trims silence, normalizes and preserves opposite-phase stereo'
   const values = prepared.getChannelData(0);
   assert.equal(Math.abs(values[0]), 0);
   assert.equal(Math.abs(values.at(-1)), 0);
-  assert.ok(values.some((v) => Math.abs(v) > 0.79));
+  assert.equal(prepared.numberOfChannels, 2);
+  assert.ok(values.some((v) => Math.abs(v) > 0.24));
+  assert.ok(values.every((v) => Math.abs(v) <= 0.25));
+  const right = prepared.getChannelData(1);
+  for (let i = 0; i < values.length; i++) assert.equal(Math.abs(values[i] + right[i]), 0);
   assert.ok(Math.abs(detectSamplePitch(values, 44100) - 57) < 0.03);
   assert.throws(() => prepareSampleBuffer(context, buffer(new Float32Array(44100))), /소리를 찾지/);
   assert.throws(() => prepareSampleBuffer(context, buffer(new Float32Array(44100 * 16))), /15초/);
+});
+
+test('quiet and loud recordings retain their level ratio and unmodified interior samples', () => {
+  const { context } = fixture();
+  for (const scale of [0.04, 1, 3.8]) {
+    const data = wave(110).map((value) => value * scale);
+    const prepared = prepareSampleBuffer(context, buffer(data), { trimStart: 0.2, trimEnd: 0.8 });
+    const output = prepared.getChannelData(0);
+    for (let i = 200; i < output.length - 200; i++) assert.equal(output[i], data[8820 + i]);
+  }
+});
+
+test('recording gain doubles quiet audio and respects the loudest stereo channel without changing PCM', () => {
+  const { context } = fixture();
+  const audio = context.createBuffer(2, 4, 44100);
+  audio.getChannelData(0).set([0, 0.1, -0.2, 0.05]);
+  audio.getChannelData(1).set([0, -0.05, 0.1, -0.025]);
+  const originals = [0, 1].map((channel) => audio.getChannelData(channel).slice());
+  assert.equal(instrumentSampleGain(audio), 2);
+  for (const channel of [0, 1]) assert.deepEqual(audio.getChannelData(channel), originals[channel]);
+  audio.getChannelData(1)[2] = 0.95;
+  const gain = instrumentSampleGain(audio);
+  assert.ok(gain < 1);
+  assert.ok(Math.abs(audio.getChannelData(1)[2] * gain - 0.85) < 1e-8);
+  assert.equal(instrumentSampleGain(buffer(new Float32Array(10))), 1);
+});
+
+test('recording boost reaches single notes and tied chords while preserving articulation and peak headroom', () => {
+  for (const count of [1, 6]) {
+    for (const tied of [false, true]) {
+      for (const accent of [false, true]) {
+        const f = fixture();
+        const prepared = { ...f.sample, playbackGain: instrumentSampleGain(f.sample.buffer) };
+        const tones = Array.from({ length: count }, (_, index) => ({
+          pitch: 60 + index,
+          string: index + 1,
+          ghost: index === 1,
+        }));
+        const first = note({ tones, accent });
+        if (tied) {
+          first.connection = { type: 'tie', targetId: 'b' };
+          scheduleScorePassage(
+            f.context,
+            {},
+            score([first, note({ id: 'b', tones, accent })]),
+            'Guitar',
+            0,
+            0,
+            2,
+            prepared,
+          );
+        } else scheduleScoreNote(f.context, {}, first, 0, 120, 1, prepared);
+        assert.equal(f.voices.length, count);
+        let combinedPeak = 0;
+        f.gains.forEach((gain, index) => {
+          const expected = (2 * (accent ? 1 : 0.8) * (index === 1 ? 0.35 : 1)) / count;
+          const positive = gain.gain.events.filter((event) => event[1] > 0);
+          assert.ok(positive.length > 0);
+          assert.ok(positive.every((event) => Math.abs(event[1] - expected) < 1e-10));
+          assert.equal(gain.gain.events.at(-1)[1], 0);
+          combinedPeak += expected * 0.25;
+        });
+        assert.ok(combinedPeak <= 0.85);
+      }
+    }
+  }
+});
+
+test('sample chords and tied chords keep combined voice gains within original full scale', () => {
+  for (const count of [1, 2, 6]) {
+    for (const accent of [false, true]) {
+      for (const tied of [false, true]) {
+        const f = fixture();
+        const tones = Array.from({ length: count }, (_, index) => ({
+          pitch: 60 + index,
+          string: index + 1,
+        }));
+        const first = note({ tones, accent });
+        if (tied) {
+          first.connection = { type: 'tie', targetId: 'b' };
+          scheduleScorePassage(
+            f.context,
+            {},
+            score([first, note({ id: 'b', tones, accent })]),
+            'Guitar',
+            0,
+            0,
+            2,
+            f.sample,
+          );
+        } else scheduleScoreNote(f.context, {}, first, 0, 120, 1, f.sample);
+        assert.equal(f.voices.length, count);
+        const combined = f.gains.reduce(
+          (sum, gain) => sum + Math.max(...gain.gain.events.map((event) => event[1])),
+          0,
+        );
+        assert.ok(combined > 0 && combined <= 1 + 1e-10, `combined gain ${combined}`);
+      }
+    }
+  }
 });
 test('invalid file type, empty and oversized recordings fail before audio decoding', async () => {
   await assert.rejects(importInstrumentSample({ name: 'note.wav', size: 0 }), /비어/);
@@ -170,6 +388,116 @@ test('invalid file type, empty and oversized recordings fail before audio decodi
     /10MB/,
   );
   await assert.rejects(importInstrumentSample({ name: 'image.png', size: 10 }), /오디오/);
+});
+test('manual boundaries use original recording times and never include audio outside the region', () => {
+  const { context } = fixture();
+  const data = new Float32Array(44100 * 3);
+  data.set(wave(220), 44100 / 2);
+  data.set(wave(440), 44100 * 2);
+  const original = buffer(data);
+  const selected = prepareSampleBuffer(context, original, { trimStart: 2, trimEnd: 2.5 });
+  assert.equal(selected.duration, 0.5);
+  assert.ok(Math.abs(detectSamplePitch(selected.getChannelData(0), 44100) - 69) < 0.03);
+  assert.equal(Math.abs(selected.getChannelData(0)[0]), 0);
+  assert.equal(Math.abs(selected.getChannelData(0).at(-1)), 0);
+  for (const [trimStart, trimEnd] of [
+    [-1, 1],
+    [1, 1],
+    [1, 0.5],
+    [0, 4],
+    [0, 0.049],
+    [NaN, 1],
+  ])
+    assert.throws(
+      () => prepareSampleBuffer(context, original, { trimStart, trimEnd }),
+      /재생 구간/,
+    );
+  assert.throws(
+    () => prepareSampleBuffer(context, original, { trimStart: 0, trimEnd: 0.2 }),
+    /악기 소리가 없/,
+  );
+  assert.ok(
+    Math.abs(
+      prepareSampleBuffer(context, original, { trimStart: 2, trimEnd: 2.05 }).duration - 0.05,
+    ) <
+      1 / 44100,
+  );
+});
+
+test('changing sample regions reuses the original audio and keeps sustain loops inside the selection', async (t) => {
+  let original = buffer(wave(220, 44100, 2));
+  let decodes = 0;
+  const previous = globalThis.OfflineAudioContext;
+  globalThis.OfflineAudioContext = class {
+    async decodeAudioData() {
+      decodes++;
+      return original;
+    }
+    createBuffer(_, length, rate) {
+      return buffer(new Float32Array(length), rate);
+    }
+  };
+  t.after(() => {
+    if (previous === undefined) delete globalThis.OfflineAudioContext;
+    else globalThis.OfflineAudioContext = previous;
+  });
+  const sample = { file: new Blob(['audio']), rootMidi: 57, sustain: false };
+  const details = await inspectInstrumentSample(sample.file);
+  assert.equal(details.duration, 2);
+  assert.equal(details.peaks.length, 240);
+  assert.ok((await prepareInstrumentSample(sample)).buffer.duration > 1.99);
+  const cropped = await prepareInstrumentSample({ ...sample, trimStart: 0.4, trimEnd: 0.7 });
+  assert.equal(cropped.buffer.duration, 0.3);
+  assert.equal(cropped.playbackGain, 2);
+  const longer = await prepareInstrumentSample({
+    ...sample,
+    trimStart: 1,
+    trimEnd: 1.5,
+    sustain: true,
+  });
+  assert.equal(longer.buffer.duration, 0.5);
+  assert.ok(longer.loopStart >= 0 && longer.loopEnd <= 0.5 && longer.loopEnd > longer.loopStart);
+  assert.equal(decodes, 1);
+  const repaired = await prepareInstrumentSample({
+    ...sample,
+    rootMidi: 0.01,
+    trimStart: 0.036,
+    trimEnd: 0.189,
+  });
+  assert.ok(Math.abs(repaired.rootMidi - 57) < 0.03);
+  const repairedPlayback = fixture();
+  scheduleScoreNote(repairedPlayback.context, {}, note({ pitch: 64 }), 0, 120, 1, repaired);
+  assert.ok(
+    repairedPlayback.voices[0].stopped > 0.09,
+    'selected audio must not shrink into a millisecond click',
+  );
+  const manual = await prepareInstrumentSample({ ...sample, rootMidi: 57.15, autoRoot: false });
+  assert.equal(manual.rootMidi, 57.15, 'manual tuning is preserved');
+  const automatic = await prepareInstrumentSample({ ...sample, rootMidi: 70, autoRoot: true });
+  assert.ok(Math.abs(automatic.rootMidi - 57) < 0.03);
+  const f = fixture();
+  scheduleScoreNote(f.context, {}, note({ pitch: 57, beats: 8 }), 0, 120, 8, cropped);
+  assert.ok(f.voices[0].stopped <= 0.33);
+  await assert.rejects(prepareInstrumentSample({ ...sample, trimStart: 0 }), /모두/);
+  original = buffer(wave(35, 44100, 2));
+  const lowShort = await prepareInstrumentSample({
+    ...sample,
+    file: new Blob(['low']),
+    trimStart: 0.014,
+    trimEnd: 0.064,
+    sustain: true,
+  });
+  assert.ok(lowShort.loopEnd > lowShort.loopStart, 'short bass loops cannot have zero length');
+  original = buffer(
+    Float32Array.from(
+      { length: 44100 },
+      (_, i) => 0.5 * Math.sin(2 * Math.PI * ((150 * i) / 44100 + 150 * (i / 44100) ** 2)),
+    ),
+  );
+  await assert.rejects(
+    prepareInstrumentSample({ ...sample, file: new Blob(['unstable']), autoRoot: true }),
+    /기준 음을 찾지/,
+  );
 });
 test('sample chords preserve note timing, articulation and release; rests stay silent', () => {
   const f = fixture();
@@ -247,4 +575,123 @@ test('basic tone fallback and dead-note percussion remain available', () => {
   scheduleScoreNote(f.context, {}, note({ dead: true }), 0, 120, 1, f.sample);
   assert.equal(f.voices.length, 1);
   assert.notEqual(f.voices[0].buffer, f.sample.buffer);
+});
+
+test('mixed chords keep normal, ghost and dead voices independent with and without samples', () => {
+  for (const sampled of [false, true]) {
+    const f = fixture();
+    scheduleScoreNote(
+      f.context,
+      {},
+      note({
+        staccato: true,
+        tones: [{ pitch: 60 }, { pitch: 64, ghost: true }, { pitch: 67, dead: true }],
+      }),
+      0,
+      120,
+      1,
+      sampled ? f.sample : undefined,
+    );
+    const pitched = sampled ? f.voices.filter((v) => v.buffer === f.sample.buffer) : f.oscillators;
+    const muted = f.voices.filter((v) => v.buffer !== f.sample.buffer);
+    assert.equal(pitched.length, 2);
+    assert.equal(muted.length, 1);
+    assert.equal(pitched[0].stopped, 0.225);
+    assert.equal(pitched[1].stopped, 0.225);
+    const level = (gain) =>
+      gain.gain.events.find(([kind, value]) => kind !== 'exponential' && value > 0)[1];
+    assert.ok(Math.abs(level(f.gains[1]) / level(f.gains[0]) - 0.35) < 1e-10);
+  }
+});
+
+test('soundfont selection follows part renames and removal', () => {
+  const source = {
+    ...score([]),
+    parts: ['Guitar', 'Bass'],
+    playbackInstruments: { Guitar: 'acoustic_guitar_steel', Bass: 'electric_bass_finger' },
+  };
+  const renamed = renameScorePart(source, 'Bass', '저음');
+  assert.equal(renamed.playbackInstruments['저음'], 'electric_bass_finger');
+  assert.equal(renamed.playbackInstruments.Bass, undefined);
+  assert.deepEqual(removeScorePart(renamed, '저음').playbackInstruments, {
+    Guitar: 'acoustic_guitar_steel',
+  });
+});
+
+test('soundfont volume increases with one stereo-linked gain and keeps peak headroom', () => {
+  const { context } = fixture();
+  const audio = context.createBuffer(2, 4, 44100);
+  audio.getChannelData(0).set([0, 0.1, -0.2, 0.05]);
+  audio.getChannelData(1).set([0, -0.05, 0.1, -0.025]);
+  normalizeSoundfontVolume(audio);
+  assert.ok(Math.abs(audio.getChannelData(0)[2] + 0.85) < 1e-6);
+  assert.ok(Math.abs(audio.getChannelData(0)[1] - 0.425) < 1e-6);
+  assert.ok(Math.abs(audio.getChannelData(1)[2] - 0.425) < 1e-6);
+  for (const channel of [0, 1])
+    assert.ok(audio.getChannelData(channel).every((value) => Math.abs(value) < 0.851));
+  const quiet = buffer(Float32Array.of(0, 0.001, -0.001));
+  normalizeSoundfontVolume(quiet);
+  assert.ok(Math.abs(quiet.getChannelData(0)[1] - 0.016) < 1e-6);
+  const silence = buffer(new Float32Array(10));
+  normalizeSoundfontVolume(silence);
+  assert.ok(silence.getChannelData(0).every((value) => value === 0));
+});
+
+test('soundfont loader decodes only requested pitches, caches them and retries failed downloads', async (t) => {
+  assert.equal(soundfontMidi('A0'), 21);
+  assert.equal(soundfontMidi('Db4'), 61);
+  const priorFetch = globalThis.fetch,
+    priorContext = globalThis.OfflineAudioContext;
+  let requests = 0,
+    decodes = 0,
+    fail = true;
+  globalThis.fetch = async () => {
+    requests++;
+    if (fail) {
+      fail = false;
+      return { ok: false };
+    }
+    return {
+      ok: true,
+      json: async () => ({ C4: 'data:audio/mp3;base64,YQ==', C5: 'data:audio/mp3;base64,Yg==' }),
+    };
+  };
+  globalThis.OfflineAudioContext = class {
+    async decodeAudioData() {
+      decodes++;
+      return buffer(wave(220));
+    }
+  };
+  t.after(() => {
+    globalThis.fetch = priorFetch;
+    if (priorContext === undefined) delete globalThis.OfflineAudioContext;
+    else globalThis.OfflineAudioContext = priorContext;
+  });
+  await assert.rejects(prepareSoundfontInstrument('acoustic_guitar_steel', [60]), /불러오지/);
+  const first = await prepareSoundfontInstrument('acoustic_guitar_steel', [60, 60]);
+  assert.equal(first.samples.size, 1);
+  const bank = await prepareSoundfontInstrument('acoustic_guitar_steel', [60, 72]);
+  assert.equal(requests, 2);
+  assert.equal(decodes, 2);
+  const f = fixture();
+  scheduleScoreNote(
+    f.context,
+    {},
+    note({ tones: [{ pitch: 60 }, { pitch: 72 }] }),
+    0,
+    120,
+    1,
+    bank,
+  );
+  assert.deepEqual(
+    f.voices.map((voice) => voice.playbackRate.value),
+    [1, 1],
+  );
+  assert.notEqual(f.voices[0].buffer, f.voices[1].buffer);
+  assert.equal(f.oscillators.length, 0);
+  const tied = score([note({ connection: { type: 'tie', targetId: 'b' } }), note({ id: 'b' })]);
+  scheduleScorePassage(f.context, {}, tied, 'Guitar', 0, 0, 2, bank);
+  assert.equal(f.voices.length, 3);
+  await assert.rejects(prepareSoundfontInstrument('../unknown', [60]), /악기를 다시/);
+  assert.equal(requests, 2);
 });

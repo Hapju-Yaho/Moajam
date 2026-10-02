@@ -199,7 +199,11 @@ export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID
           pitch > 127
         )
           throw invalid();
-        const tone: ScoreTone = { pitch };
+        const tone: ScoreTone = {
+          pitch,
+          ghost: !rest && node.querySelector('notehead')?.getAttribute('parentheses') === 'yes',
+          dead: !rest && node.querySelector('notehead')?.textContent?.trim() === 'x',
+        };
         const string = node.querySelector('technical string'),
           fret = node.querySelector('technical fret');
         if (string && fret) {
@@ -267,8 +271,6 @@ export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID
               lyric: node.querySelector('lyric text')?.textContent ?? '',
               accent: !!node.querySelector('accent'),
               staccato: !rest && !!node.querySelector('staccato'),
-              ghost: !rest && node.querySelector('notehead')?.getAttribute('parentheses') === 'yes',
-              dead: !rest && node.querySelector('notehead')?.textContent?.trim() === 'x',
             },
           });
       }

@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { GuitarStaff } from './GuitarStaff.web';
 import {
   insertScoreNote,
@@ -9,13 +9,16 @@ import {
   pitchName,
   removeScoreNotes,
   removeScoreString,
+  deleteScorePosition,
   scoreInstrument,
   scoreInstruments,
   setScoreFret,
   setScoreDuration,
+  setScoreDotted,
   setScoreDurations,
   setScoreArticulation,
-  tabTones,
+  setScoreToneArticulation,
+  selectedScoreTone,
   moveScoreNote,
   scoreSystemRows,
   moveScoreMeasureToRow,
@@ -63,6 +66,7 @@ export function GuitarTabEditor({
   clipboard,
   onCopy,
   onEditComplete,
+  onAudition,
 }: {
   score: Score;
   part: string;
@@ -73,6 +77,7 @@ export function GuitarTabEditor({
   loaded: boolean;
   onEdit: (score: Score, group?: string) => void;
   onEditComplete: () => void;
+  onAudition: (note: ScoreNote) => void;
   onSelect: (id: string | null) => void;
   onPlay: (from?: number) => void;
   onUndo: () => void;
@@ -91,6 +96,29 @@ export function GuitarTabEditor({
   const [zoom, setZoom] = useState(100),
     [showTab, setShowTab] = useState(true);
   const [message, setMessage] = useState('');
+  const [measureMenu, setMeasureMenu] = useState<{ line: number; x: number; y: number } | null>(
+    null,
+  );
+  const menuButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!measureMenu) return;
+    menuButton.current?.focus();
+    const close = () => setMeasureMenu(null);
+    const key = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        close();
+        editor.current?.focus({ preventScroll: true });
+      }
+    };
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', key);
+    };
+  }, [measureMenu]);
   const [range, setRange] = useState<{ anchor: string; end: string } | null>(null);
   const [selectedAt, setSelectedAt] = useState<{ id: string; beat: number } | null>(null);
   const [emptyBeat, setEmptyBeat] = useState<number | null>(null);
@@ -120,9 +148,19 @@ export function GuitarTabEditor({
   );
   const multiple = rangeNotes.length > 1;
   const soundingSelection = copiedSelection.filter((item) => !item.rest && !item.blank);
+  const activeString = Math.min(
+    string,
+    instrument.tuning.length || (note ? noteTones(note).length : 1) || 1,
+  );
+  const selectedTone = note ? selectedScoreTone(score, note, activeString) : undefined;
+  const toneSelection = soundingSelection.filter((item) =>
+    selectedScoreTone(score, item, activeString),
+  );
   const articulationPressed = (key: 'accent' | 'staccato' | 'ghost' | 'dead') =>
-    soundingSelection.length > 0 && soundingSelection.every((item) => item[key]);
-  const activeString = Math.min(string, instrument.tuning.length || 1);
+    key === 'ghost' || key === 'dead'
+      ? toneSelection.length > 0 &&
+        toneSelection.every((item) => selectedScoreTone(score, item, activeString)?.[key])
+      : soundingSelection.length > 0 && soundingSelection.every((item) => item[key]);
   const selectedBeat = note && !note.blank ? note.beats : beats;
   const dotted = DOTTED_SCORE_BEATS.includes(selectedBeat);
   const base = dotted ? selectedBeat / 1.5 : selectedBeat;
@@ -166,7 +204,7 @@ export function GuitarTabEditor({
     setString(row);
     const selectedNote = rows.find((item) => item.id === id);
     if (selectedNote) {
-      const tone = tabTones(selectedNote, instrument.tuning).find((item) => item.string === row);
+      const tone = selectedScoreTone(score, selectedNote, row);
       setFret(String(tone?.fret ?? 0));
       setPitch(tone?.pitch ?? selectedNote.pitch);
       if (!selectedNote.blank && selectedNote.beats <= 4) setBeats(selectedNote.beats);
@@ -242,11 +280,18 @@ export function GuitarTabEditor({
     if (disabled) return;
     if (copiedSelection.some((item) => !item.blank))
       commit(
-        setScoreArticulation(
-          score,
-          copiedSelection.map((item) => item.id),
-          key,
-        ),
+        key === 'ghost'
+          ? setScoreToneArticulation(
+              score,
+              copiedSelection.map((item) => item.id),
+              activeString,
+              key,
+            )
+          : setScoreArticulation(
+              score,
+              copiedSelection.map((item) => item.id),
+              key,
+            ),
         true,
       );
     else setArticulation((current) => ({ ...current, [key]: !current[key] }));
@@ -296,16 +341,30 @@ export function GuitarTabEditor({
           entry.id === item.id ? { ...entry, dead: false } : entry,
         ),
       };
-      commit(
+      const result =
         !note || note.blank
           ? {
               ...entered,
               notes: entered.notes.map((entry) =>
-                entry.id === item.id ? { ...entry, ...articulation } : entry,
+                entry.id === item.id
+                  ? {
+                      ...entry,
+                      staccato: articulation.staccato,
+                      ghost: false,
+                      tones: entry.tones?.map((tone) =>
+                        tone.string === activeString
+                          ? { ...tone, ghost: articulation.ghost }
+                          : tone,
+                      ),
+                    }
+                  : entry,
               ),
             }
-          : entered,
-      );
+          : entered;
+      commit(result);
+      const changed = result.notes.find((entry) => entry.id === item.id)!;
+      const tone = selectedScoreTone(result, changed, activeString);
+      if (tone) onAudition({ ...changed, pitch: tone.pitch, tones: [tone] });
       onSelect(item.id);
       setFret(String(value));
       digits.current =
@@ -325,11 +384,12 @@ export function GuitarTabEditor({
         : appendScoreNoteAt(score, item, before, () => crypto.randomUUID());
   const toggleDeadNote = () => {
     if (disabled || !hasSelection) return;
-    if (multiple || (note && !note.rest && !note.blank)) {
+    if (multiple || selectedTone) {
       commit(
-        setScoreArticulation(
+        setScoreToneArticulation(
           score,
           copiedSelection.map((item) => item.id),
+          activeString,
           'dead',
         ),
         true,
@@ -341,21 +401,28 @@ export function GuitarTabEditor({
         const entered = instrument.tuning.length
           ? setScoreFret(prepared, item.id, activeString, 0)
           : prepared;
-        commit({
-          ...entered,
-          notes: entered.notes.map((entry) =>
-            entry.id === item.id
-              ? {
-                  ...entry,
-                  dead: true,
-                  ghost: false,
-                  rest: false,
-                  blank: false,
-                  tones: instrument.tuning.length ? entry.tones : [{ pitch }],
-                }
-              : entry,
+        commit(
+          setScoreToneArticulation(
+            {
+              ...entered,
+              notes: entered.notes.map((entry) =>
+                entry.id === item.id
+                  ? {
+                      ...entry,
+                      dead: false,
+                      ghost: false,
+                      rest: false,
+                      blank: false,
+                      tones: instrument.tuning.length ? entry.tones : [{ pitch }],
+                    }
+                  : entry,
+              ),
+            },
+            [item.id],
+            activeString,
+            'dead',
           ),
-        });
+        );
         onSelect(item.id);
       } catch (error) {
         setMessage((error as Error).message);
@@ -372,7 +439,7 @@ export function GuitarTabEditor({
     try {
       const item = note ?? create();
       const next = prepareInput(item);
-      commit({
+      const result = {
         ...next,
         notes: next.notes.map((entry) =>
           entry.id === item.id
@@ -387,7 +454,9 @@ export function GuitarTabEditor({
               }
             : entry,
         ),
-      });
+      };
+      commit(result);
+      if (!asRest) onAudition(result.notes.find((entry) => entry.id === item.id)!);
       onSelect(item.id);
       digits.current = null;
       focus();
@@ -413,6 +482,27 @@ export function GuitarTabEditor({
         setSelectedAt(null);
       }
       setBeats(value);
+      setMessage('');
+    } catch (error) {
+      setMessage((error as Error).message);
+    }
+    digits.current = null;
+    focus();
+  };
+  const toggleDot = () => {
+    if (disabled || base < 0.125 || base > 4) return;
+    try {
+      if (note && !note.blank)
+        commit(
+          setScoreDotted(
+            score,
+            copiedSelection.map((item) => item.id),
+            !dotted,
+          ),
+          multiple,
+        );
+      setBeats(dotted ? base : base * 1.5);
+      setSelectedAt(null);
       setMessage('');
     } catch (error) {
       setMessage((error as Error).message);
@@ -610,7 +700,7 @@ export function GuitarTabEditor({
       );
     } else if (event.key === '.') {
       event.preventDefault();
-      if (base >= 0.125 && base <= 2) duration(dotted ? base : base * 1.5);
+      toggleDot();
     } else if (event.key.toLowerCase() === 'x') {
       event.preventDefault();
       toggleDeadNote();
@@ -631,13 +721,19 @@ export function GuitarTabEditor({
             ),
           );
           deselect();
-        } else if (instrument.tuning.length && !event.shiftKey)
-          commit(removeScoreString(score, note.id, activeString));
+        } else if (!event.shiftKey)
+          commit(
+            deleteScorePosition(
+              score,
+              note.id,
+              instrument.tuning.length ? activeString : undefined,
+            ),
+          );
         else {
           commit(removeScoreNotes(score, [note.id]));
           onSelect(null);
         }
-      }
+      } else if (hasSelection && !event.shiftKey) inputPitchOrRest(true);
     } else if (event.key === 'Insert') {
       event.preventDefault();
       insert(create());
@@ -780,8 +876,9 @@ export function GuitarTabEditor({
         <button
           aria-label="점음표"
           aria-pressed={dotted}
-          disabled={disabled || base < 0.125 || base > 2}
-          onClick={() => duration(dotted ? base : base * 1.5)}
+          title="점음표 · 원래 길이의 절반을 더함 (.)"
+          disabled={disabled || base < 0.125 || base > 4}
+          onClick={toggleDot}
         >
           • 점
         </button>
@@ -810,7 +907,7 @@ export function GuitarTabEditor({
             disabled || (multiple ? !soundingSelection.length : !!note?.rest && !note.blank)
           }
           aria-label="스타카토"
-          title="스타카토 · S · 짧게 끊어 연주"
+          title="스타카토 · S · 같은 박의 모든 음을 짧게 끊어 연주"
           aria-pressed={
             multiple
               ? articulationPressed('staccato')
@@ -823,30 +920,30 @@ export function GuitarTabEditor({
           • 스타카토
         </button>
         <button
-          disabled={disabled || !hasSelection || (multiple && !soundingSelection.length)}
-          aria-label="고스트/뮤트 노트"
-          title="고스트/뮤트 노트 · X · 줄을 뮤트한 짧은 소리 (데드 노트)"
+          disabled={disabled || !hasSelection || (multiple && !toneSelection.length)}
+          aria-label="데드노트 (뮤트)"
+          title="데드노트 · X · 선택한 음만 뮤트"
           aria-pressed={articulationPressed('dead')}
           onClick={toggleDeadNote}
         >
-          X 고스트/뮤트
+          X 데드노트
         </button>
         <button
           disabled={
-            disabled || (multiple ? !soundingSelection.length : !!note?.rest && !note.blank)
+            disabled || (multiple ? !toneSelection.length : !!note && !note.blank && !selectedTone)
           }
-          aria-label="약하게 (괄호)"
-          title="약하게 · O · 음정을 유지하고 괄호로 표시"
+          aria-label="고스트노트 (약하게)"
+          title="고스트노트 · O · 선택한 음만 약하게 연주하고 괄호로 표시"
           aria-pressed={
             multiple
               ? articulationPressed('ghost')
               : note && !note.blank
-                ? !!note.ghost
+                ? !!selectedTone?.ghost
                 : articulation.ghost
           }
           onClick={() => toggleArticulation('ghost')}
         >
-          ( ) 약하게
+          ( ) 고스트노트
         </button>
         <div className="score-volume">
           <button
@@ -1143,6 +1240,16 @@ export function GuitarTabEditor({
             )}
           </header>
           <GuitarStaff
+            onMeasureContextMenu={(bar, x, y) => {
+              const line = systems.findIndex(
+                (row) => bar >= row.start && bar < row.start + row.count,
+              );
+              setMeasureMenu({
+                line,
+                x: Math.max(8, Math.min(x, window.innerWidth - 248)),
+                y: Math.max(8, Math.min(y, window.innerHeight - 110)),
+              });
+            }}
             rangeIds={rangeNotes.map((item) => item.id)}
             onRangeSelect={selectRange}
             editable={!disabled}
@@ -1164,6 +1271,43 @@ export function GuitarTabEditor({
           />
         </div>
       </div>
+      {measureMenu && !disabled && (
+        <div
+          className="score-measure-menu"
+          role="menu"
+          aria-label="마디 줄 너비"
+          style={{ left: measureMenu.x, top: measureMenu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === 'Escape') {
+              setMeasureMenu(null);
+              focus();
+            }
+          }}
+        >
+          {[true, false].map((equal) => (
+            <button
+              key={String(equal)}
+              ref={equal ? menuButton : undefined}
+              role="menuitem"
+              onClick={() => {
+                const rows = new Set(score.equalWidthRows?.[part] ?? []);
+                if (equal) rows.add(measureMenu.line);
+                else rows.delete(measureMenu.line);
+                commit({
+                  ...score,
+                  equalWidthRows: { ...score.equalWidthRows, [part]: [...rows] },
+                });
+                setMeasureMenu(null);
+                focus();
+              }}
+            >
+              {equal ? '이 줄의 마디 너비 균등하게' : '이 줄의 마디 너비 자동 배분'}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="score-note-inspector">
         <strong>
           {multiple
@@ -1255,7 +1399,8 @@ export function GuitarTabEditor({
           <kbd>[</kbd> 길게 <kbd>]</kbd> 짧게 <kbd>R</kbd> 쉼표 <kbd>Space</kbd> 재생
         </span>
         <span>
-          <kbd>S</kbd> 스타카토 <kbd>X</kbd> 고스트/뮤트 <kbd>O</kbd> 약하게(괄호)
+          <kbd>S</kbd> 스타카토(박 전체) <kbd>X</kbd> 데드노트(선택 음) <kbd>O</kbd> 고스트노트(선택
+          음)
         </span>
         <span>
           <kbd>Ctrl Z</kbd> 실행 취소

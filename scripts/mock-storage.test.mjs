@@ -178,6 +178,9 @@ test('score instrument sample restores tuning and bytes, stays private, and can 
     rootMidi: 57.15,
     enabled: true,
     sustain: true,
+    trimStart: 0.25,
+    trimEnd: 1.5,
+    autoRoot: true,
   };
   await store.writeMedia('score/personal', { title: 'Sample score', instrumentSample }, 'm1');
   const reloaded = await load(mediaPath, f);
@@ -185,6 +188,9 @@ test('score instrument sample restores tuning and bytes, stays private, and can 
   assert.equal(await restored.instrumentSample.file.text(), 'single-note');
   assert.equal(restored.instrumentSample.rootMidi, 57.15);
   assert.equal(restored.instrumentSample.sustain, true);
+  assert.equal(restored.instrumentSample.trimStart, 0.25);
+  assert.equal(restored.instrumentSample.trimEnd, 1.5);
+  assert.equal(restored.instrumentSample.autoRoot, true);
   assert.equal(await reloaded.readMedia('score/personal', 'm2'), undefined);
   await reloaded.writeMedia(
     'score/personal',

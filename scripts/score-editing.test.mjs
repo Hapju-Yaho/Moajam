@@ -17,12 +17,22 @@ const {
   moveScoreNote,
   scoreChordPositions,
   setScoreArticulation,
+  setScoreToneArticulation,
+  selectedScoreTone,
+  noteTones,
+  tabTones,
+  setScoreFret,
+  scoreToMusicXml,
   setScoreDurations,
   setScoreConnection,
   cleanScoreConnections,
   copyScoreNotes,
   pasteScoreNotes,
   readScoreClipboard,
+  setScoreDotted,
+  scoreAccidentalMarks,
+  scoreMeasures,
+  deleteScorePosition,
 } = await source('../packages/app/src/lib/score.ts');
 const { scoreMeasureLayout, scoreSystemLayouts, scoreBeatHitRegions, scoreBeamGroups } =
   await source('../packages/app/src/lib/scoreLayout.ts');
@@ -35,6 +45,247 @@ const n = (id, beats = 1, part = 'Guitar') => ({
   lyric: '',
   rest: false,
   accent: false,
+});
+
+test('accidentals appear once per measure, reset at bar lines, and cancel only when needed', () => {
+  const score = {
+    title: '',
+    bpm: 120,
+    parts: ['Guitar'],
+    sync: {},
+    notes: [61, 61, 60, 60, 61, 61, 73, 61].map((pitch, i) => ({ ...n(String(i)), pitch })),
+  };
+  const bars = scoreMeasures(score, 'Guitar');
+  assert.deepEqual(scoreAccidentalMarks(bars[0]), [['♯'], [''], ['♮'], ['']]);
+  assert.deepEqual(scoreAccidentalMarks(bars[1]), [['♯'], [''], ['♯'], ['']]);
+  const tied = scoreMeasures(
+    {
+      ...score,
+      notes: [
+        { ...n('long', 6), pitch: 61 },
+        { ...n('next', 1), pitch: 61 },
+      ],
+    },
+    'Guitar',
+  );
+  assert.deepEqual(scoreAccidentalMarks(tied[1]), [[''], ['']]);
+});
+
+test('Delete keeps beat positions while cycling a note to blank, rest, and blank again', () => {
+  for (const part of ['Bass', 'Vocal']) {
+    let score = {
+      title: '',
+      bpm: 120,
+      parts: [part],
+      sync: { next: 3 },
+      notes: [
+        { ...n('a', 0.75, part), pitch: 28, tones: [{ pitch: 28, string: 4, fret: 0 }] },
+        n('next', 1, part),
+      ],
+    };
+    const original = score;
+    for (const blank of [true, false, true]) {
+      score = deleteScorePosition(score, 'a', part === 'Bass' ? 4 : undefined);
+      assert.equal(score.notes[0].blank, blank);
+      assert.equal(score.notes[0].rest, true);
+      assert.equal(score.notes[0].beats, 0.75);
+      assert.deepEqual(score.notes[0].tones, []);
+      assert.equal(score.notes[1], original.notes[1]);
+      assert.deepEqual(score.sync, original.sync);
+    }
+    assert.equal(original.notes[0].rest, false);
+  }
+});
+
+test('Delete on an empty chord string preserves other strings instead of replacing them with a rest', () => {
+  const score = {
+    title: '',
+    bpm: 120,
+    parts: ['Bass'],
+    sync: {},
+    notes: [
+      {
+        ...n('a', 1, 'Bass'),
+        tones: [
+          { pitch: 28, string: 4, fret: 0 },
+          { pitch: 33, string: 3, fret: 0 },
+        ],
+      },
+    ],
+  };
+  const next = deleteScorePosition(score, 'a', 4);
+  assert.deepEqual(next.notes[0].tones, [{ pitch: 33, string: 3, fret: 0 }]);
+  assert.equal(next.notes[0].rest, false);
+  assert.deepEqual(deleteScorePosition(next, 'a', 4).notes, next.notes);
+});
+
+test('dot toggles shift following notes and chord anchors without losing notes or affecting other parts', () => {
+  const score = {
+    title: '',
+    bpm: 120,
+    parts: ['Guitar', 'Bass'],
+    notes: [n('a'), n('b', 0.5), n('c', 2), n('bass', 4, 'Bass')],
+    sync: { a: 0, b: 1, c: 2, bass: 0 },
+    beatChords: { Guitar: { 1: 'C', 1.5: 'G' } },
+  };
+  const dotted = setScoreDotted(score, ['a', 'b'], true);
+  assert.deepEqual(
+    dotted.notes.map((note) => note.beats),
+    [1.5, 0.75, 2, 4],
+  );
+  assert.deepEqual(dotted.beatChords.Guitar, { 1.5: 'C', 2.25: 'G' });
+  assert.deepEqual(dotted.sync, { a: 0, bass: 0 });
+  assert.deepEqual(setScoreDotted(dotted, ['a', 'b'], false).notes, score.notes);
+  assert.deepEqual(
+    score.notes.map((note) => note.beats),
+    [1, 0.5, 2, 4],
+  );
+  assert.equal(
+    setScoreDotted({ ...score, notes: [n('whole', 4)] }, ['whole'], true).notes[0].beats,
+    6,
+  );
+  assert.throws(
+    () => setScoreDotted({ ...score, notes: [n('a'), n('tiny', 0.0625)] }, ['a', 'tiny'], true),
+    /점음표/,
+  );
+});
+
+test('equal measure widths fit dense and sparse measures within the same line', () => {
+  const points = [2, 16, 8, 1].map((count) =>
+    Array.from({ length: count }, (_, i) => ({ offset: (i * 4) / count, space: 40 })),
+  );
+  const layouts = scoreSystemLayouts(points, 800, true);
+  assert.deepEqual(
+    layouts.map((layout) => layout.width),
+    [200, 200, 200, 200],
+  );
+  layouts.forEach((layout, index) =>
+    points[index].forEach((point) =>
+      assert.ok(layout.xAt(point.offset) > 0 && layout.xAt(point.offset) < 200),
+    ),
+  );
+});
+
+test('tight measure spacing reserves room before an accidental instead of overlapping the previous note', () => {
+  const points = Array.from({ length: 8 }, (_, i) => ({
+    offset: i / 2,
+    space: 40,
+    minSpace: i === 1 ? 30 : 18,
+  }));
+  const [layout] = scoreSystemLayouts([points], 198, true);
+  assert.equal(layout.width, 198);
+  assert.ok(layout.xAt(1) - layout.xAt(0.5) >= 30);
+  for (let i = 1; i < 8; i++) assert.ok(layout.xAt(i / 2) - layout.xAt((i - 1) / 2) >= 18);
+});
+
+test('ghost and dead apply only to the selected string; staccato remains beat-wide', () => {
+  const score = {
+    title: '',
+    bpm: 120,
+    parts: ['Guitar'],
+    sync: {},
+    notes: [
+      {
+        ...n('a'),
+        tones: [
+          { pitch: 64, string: 1, fret: 0 },
+          { pitch: 59, string: 2, fret: 0 },
+        ],
+      },
+    ],
+  };
+  const ghost = setScoreToneArticulation(score, ['a'], 1, 'ghost');
+  assert.equal(selectedScoreTone(ghost, ghost.notes[0], 1).ghost, true);
+  assert.ok(!selectedScoreTone(ghost, ghost.notes[0], 2).ghost);
+  const dead = setScoreToneArticulation(ghost, ['a'], 2, 'dead');
+  assert.equal(selectedScoreTone(dead, dead.notes[0], 1).ghost, true);
+  assert.equal(selectedScoreTone(dead, dead.notes[0], 2).dead, true);
+  const staccato = setScoreArticulation(dead, ['a'], 'staccato');
+  assert.equal(staccato.notes[0].staccato, true);
+  assert.deepEqual(staccato.notes[0].tones, dead.notes[0].tones);
+  const entered = setScoreFret(dead, 'a', 2, 4);
+  assert.ok(!selectedScoreTone(entered, entered.notes[0], 2).dead);
+  assert.equal(selectedScoreTone(entered, entered.notes[0], 1).ghost, true);
+  const added = setScoreFret(dead, 'a', 3, 0);
+  assert.equal(selectedScoreTone(added, added.notes[0], 2).dead, true);
+  assert.ok(!selectedScoreTone(added, added.notes[0], 3).ghost);
+  assert.equal(setScoreToneArticulation(score, ['a'], 6, 'ghost'), score);
+  assert.equal(score.notes[0].tones[0].ghost, undefined);
+});
+
+test('legacy beat flags migrate without changing siblings; range edits only touch matching strings', () => {
+  const score = {
+    title: '',
+    bpm: 120,
+    parts: ['Guitar'],
+    sync: {},
+    notes: [
+      {
+        ...n('a'),
+        ghost: true,
+        tones: [
+          { pitch: 64, string: 1, fret: 0 },
+          { pitch: 59, string: 2, fret: 0 },
+        ],
+      },
+      {
+        ...n('b'),
+        tones: [
+          { pitch: 64, string: 1, fret: 0 },
+          { pitch: 55, string: 3, fret: 0 },
+        ],
+      },
+    ],
+  };
+  const changed = setScoreToneArticulation(score, ['a', 'b'], 2, 'dead');
+  assert.equal(selectedScoreTone(changed, changed.notes[0], 1).ghost, true);
+  assert.equal(selectedScoreTone(changed, changed.notes[0], 2).dead, true);
+  assert.equal(selectedScoreTone(changed, changed.notes[0], 2).ghost, false);
+  assert.equal(changed.notes[1], score.notes[1]);
+  assert.ok(tabTones(changed.notes[0], [65, 60, 56, 51, 46, 41]).some((tone) => tone.dead));
+  const legacyCopy = readScoreClipboard(
+    JSON.stringify({
+      type: 'moajam-score',
+      version: 1,
+      notes: copyScoreNotes(score, 'Guitar', ['a']),
+    }),
+  );
+  assert.ok(noteTones(legacyCopy[0]).every((tone) => tone.ghost));
+});
+
+test('per-tone effects survive clipboard and MusicXML export, including ordinary staff parts', () => {
+  const score = {
+    title: '',
+    bpm: 120,
+    parts: ['Vocal'],
+    sync: {},
+    notes: [{ ...n('a', 1, 'Vocal'), tones: [{ pitch: 60 }, { pitch: 64 }, { pitch: 67 }] }],
+  };
+  const ghost = setScoreToneArticulation(score, ['a'], 2, 'ghost');
+  const mixed = setScoreToneArticulation(ghost, ['a'], 3, 'dead');
+  const copied = readScoreClipboard(
+    JSON.stringify({
+      type: 'moajam-score',
+      version: 1,
+      notes: copyScoreNotes(mixed, 'Vocal', ['a']),
+    }),
+  );
+  assert.deepEqual(
+    noteTones(copied[0]).map((tone) => [!!tone.ghost, !!tone.dead]),
+    [
+      [false, false],
+      [true, false],
+      [false, true],
+    ],
+  );
+  const xml = scoreToMusicXml(mixed);
+  assert.equal((xml.match(/<notehead>x<\/notehead>/g) ?? []).length, 1);
+  assert.equal((xml.match(/parentheses="yes"/g) ?? []).length, 1);
+  copied[0].tones[1].ghost = 'bad';
+  assert.equal(
+    readScoreClipboard(JSON.stringify({ type: 'moajam-score', version: 1, notes: copied })),
+    null,
+  );
 });
 
 test('structural edits retime chord changes and invalidate only moved audio anchors', () => {
@@ -141,6 +392,36 @@ test('notation spacing protects dense glyphs and chord names with continuous hit
   assert.equal(hits[0].left, 0);
   assert.equal(hits.at(-1).right, layout.width);
   hits.slice(1).forEach((hit, i) => assert.equal(hit.left, hits[i].right));
+});
+
+test('dense score lines fit the available width with proportional spacing and unchanged measure order', () => {
+  const measures = [2, 8, 16, 4].map((count) =>
+    Array.from({ length: count }, (_, i) => ({ offset: (i * 4) / count, space: 40 })),
+  );
+  const natural = measures.map((points) => scoreMeasureLayout(points, 0));
+  const total = natural.reduce((sum, bar) => sum + bar.width, 0);
+  for (const available of [180, 540, 880]) {
+    const layouts = scoreSystemLayouts(measures, available);
+    assert.equal(layouts.length, 4, 'keep all four measures on the original line');
+    assert.ok(Math.abs(layouts.reduce((sum, bar) => sum + bar.width, 0) - available) < 1e-8);
+    layouts.forEach((layout, index) => {
+      assert.ok(Math.abs(layout.width / natural[index].width - available / total) < 1e-8);
+      const offsets = measures[index].map((point) => point.offset);
+      offsets.forEach((offset) => {
+        assert.ok(
+          Math.abs(layout.xAt(offset) - (natural[index].xAt(offset) * available) / total) < 1e-8,
+        );
+      });
+      const hits = [...scoreBeatHitRegions(offsets, layout.width, layout.xAt).values()];
+      assert.equal(hits[0].left, 0);
+      assert.equal(hits.at(-1).right, layout.width);
+      hits.forEach((hit, i) => {
+        assert.ok(hit.right > hit.left);
+        if (i) assert.equal(hit.left, hits[i - 1].right);
+      });
+    });
+    assert.ok(layouts[2].width > layouts[1].width && layouts[1].width > layouts[0].width);
+  }
 });
 
 test('beams stop at beat boundaries and rests', () => {

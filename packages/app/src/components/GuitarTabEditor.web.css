@@ -1,3 +1,79 @@
+.score-sample-region {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #d7e3dc;
+}
+.score-sample-waveform {
+  display: block;
+  width: 100%;
+  height: 88px;
+  margin: 0;
+  border-radius: 6px;
+  pointer-events: none;
+}
+.score-sample-wave-editor {
+  position: relative;
+  margin: 12px 0;
+  touch-action: none;
+  user-select: none;
+  cursor: ew-resize;
+}
+.score-backing .score-sample-handle {
+  position: absolute;
+  top: 0;
+  width: 24px;
+  height: 100%;
+  transform: translateX(-50%);
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.score-sample-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 10px;
+  width: 4px;
+  border-radius: 2px;
+  background: #147849;
+}
+.score-sample-handle span {
+  position: absolute;
+  top: 3px;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: #147849;
+  color: white;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.score-sample-handle-start span {
+  left: 14px;
+}
+.score-sample-handle-end span {
+  right: 14px;
+}
+.score-sample-handle:focus-visible {
+  outline: 2px solid #175cbd;
+  outline-offset: 2px;
+}
+.score-sample-wave-editor[aria-disabled='true'],
+.score-sample-wave-editor[aria-disabled='true'] .score-sample-handle {
+  cursor: default;
+}
+.score-sample-times {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.score-sample-boundary input[type='number'] {
+  width: 80px;
+}
 .score-backing {
   padding: 12px 14px;
   margin: 10px 0;
@@ -6,6 +82,13 @@
   border-radius: 10px;
   color: #344b3e;
   font-size: 12px;
+}
+.score-file-preview {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #d3dcd6;
+  border-radius: 6px;
+  background: #fff;
 }
 .score-backing-row,
 .score-backing label {
@@ -256,7 +339,8 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  min-width: 640px;
+  width: 100%;
+  min-width: 0;
   gap: 18px;
 }
 .score-range-status {
@@ -315,6 +399,25 @@
   background: #fff;
   font-size: 11px;
   gap: 12px;
+}
+.score-measure-menu {
+  position: fixed;
+  z-index: 30;
+  width: 240px;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid #d3dcd6;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 18px #263c3426;
+}
+.score-measure-menu button {
+  text-align: left;
+  border: 0;
+}
+.score-measure-menu button:hover {
+  background: #eaf0ec;
 }
 .score-note-inspector input {
   width: 100px;

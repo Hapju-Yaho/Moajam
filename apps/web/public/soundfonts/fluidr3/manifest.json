@@ -1,0 +1,72 @@
+{
+  "revision": "044fab8e1456bfafc5776e86dfd6bb8697149aef",
+  "source": "https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/044fab8e1456bfafc5776e86dfd6bb8697149aef",
+  "license": "CC-BY-3.0",
+  "instruments": {
+    "acoustic_guitar_nylon": {
+      "notes": 88,
+      "bytes": 1837105,
+      "sha256": "3e9d6f62ac01b2fb039dfc1ba5ff58c935257b9d7ad7e507a447d9bd0124d0e3"
+    },
+    "acoustic_guitar_steel": {
+      "notes": 88,
+      "bytes": 1984081,
+      "sha256": "6ce33f6e52d1e1cedce4d406d7ac0c8c9b52225d1d7ad81580d3b35eed6174cd"
+    },
+    "electric_guitar_clean": {
+      "notes": 88,
+      "bytes": 2108889,
+      "sha256": "b402a8dd9865bff91d2091789ff50970f7cc38ed094d5b6d45129ccd3f2bcc70"
+    },
+    "overdriven_guitar": {
+      "notes": 88,
+      "bytes": 2929577,
+      "sha256": "59b255a85e24c07c57a17666301eaad79c9a6b46d6697ceecaaf5ec4357b9d47"
+    },
+    "acoustic_bass": {
+      "notes": 88,
+      "bytes": 1957949,
+      "sha256": "73694bec951f26497807f842cd9454d19c47fa55955d70e62e06163939aab179"
+    },
+    "electric_bass_finger": {
+      "notes": 88,
+      "bytes": 1991301,
+      "sha256": "be762e6c402ec6f532389244b165aac8a1ebcd4ef7ef6c9a9544a9e15c9757c2"
+    },
+    "electric_bass_pick": {
+      "notes": 88,
+      "bytes": 2087213,
+      "sha256": "ad7aacd9f699b0cd257ac48300dd3aa93fbda1870a83481817c7efe0df1badb9"
+    },
+    "slap_bass_1": {
+      "notes": 88,
+      "bytes": 1899385,
+      "sha256": "1161d8628dd180f7363a5a7709db4048f32f93f82d4b5ee2fb06f902cef0499f"
+    },
+    "acoustic_grand_piano": {
+      "notes": 88,
+      "bytes": 2631621,
+      "sha256": "3ecf74e2f674056f1a1b82830b228b5d788e9036afc7eb290adc1fffeea7dca1"
+    },
+    "electric_piano_1": {
+      "notes": 88,
+      "bytes": 2232361,
+      "sha256": "7c15c4fa1161e27d28d238788ba3ca48d94b76231a00a2f4d97969cf39f153a2"
+    },
+    "string_ensemble_1": {
+      "notes": 88,
+      "bytes": 2803525,
+      "sha256": "c1ee52b8ff19046ecb8fe3ca43648d161f3197c24ab9f7cb7c1298b3bd50d404"
+    },
+    "choir_aahs": {
+      "notes": 88,
+      "bytes": 2803525,
+      "sha256": "7ebe4b3fb6e54b6baecd08a6cd7a78b1dd112e6d0c8897973ff932c3171984f8"
+    },
+    "synth_drum": {
+      "notes": 88,
+      "bytes": 1685797,
+      "sha256": "917834380c153338a07471da7244b4b3830159e80bf05b16a62a6d68d2b23d00"
+    }
+  }
+}

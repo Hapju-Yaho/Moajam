@@ -1,0 +1,31 @@
+FluidR3 GM instrument samples for Moajam
+
+Original soundfont: Fluid (R3), Frank Wen
+Copyright (c) 2000-2002, 2008 Frank Wen.
+Original contributors: Suren M., Seron, Scott Hanan, Steve Aupperle, Chris Gillman,
+Alex Taubr, Chris Prola, Andrew Klenk, Winfried Hubbe, Dylan, Tim Gort, Uros Katic,
+Ethan Winer.
+
+MP3 rendering and distribution: MIDI.js Soundfonts, Benjamin Gleitzman.
+Source: https://github.com/gleitz/midi-js-soundfonts
+Pinned revision: 044fab8e1456bfafc5776e86dfd6bb8697149aef
+
+This rendered FluidR3_GM distribution is identified by its publisher as
+Creative Commons Attribution 3.0 Unported (CC BY 3.0):
+https://creativecommons.org/licenses/by/3.0/
+Full legal terms: https://creativecommons.org/licenses/by/3.0/legalcode
+
+You may share and adapt these assets, including commercially, with appropriate
+credit and the license notice. The asset license does not license Moajam's code.
+No endorsement by the original authors is implied. No warranty is provided.
+
+Moajam changes: selected 13 instruments and converted the JavaScript data
+wrappers into JSON. The encoded MP3 recordings are unchanged. Playback applies
+note timing, pitch, articulation and user volume. Decoded instrument samples
+receive a stereo-linked fixed gain targeting 0.85 peak amplitude (up to 16x).
+See manifest.json for the unchanged packaged MP3 data hashes.
+
+SOURCE-README.md retains the upstream instrument-license information.
+SOURCE-LICENSE.txt retains the repository's MIT license for its code.
+The original FluidR3 MIT license is also reproduced in MuseScore's record:
+https://github.com/musescore/MuseScore/blob/main/share/sound/FluidR3Mono_License.md

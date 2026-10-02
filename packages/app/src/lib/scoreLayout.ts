@@ -1,6 +1,6 @@
 export const scoreBeatX = (offset: number, width: number) => 24 + (offset / 4) * (width - 40);
 
-// Midpoints partition the full measure: wide bars have no dead zones and dense notes never overlap.
+// Midpoints partition the full measure into contiguous note selection regions.
 export function scoreBeatHitRegions(
   offsets: number[],
   width: number,
@@ -58,14 +58,36 @@ export function scoreMeasureLayout(
 }
 
 export function scoreSystemLayouts(
-  measures: { offset: number; space: number }[][],
+  measures: { offset: number; space: number; minSpace?: number }[][],
   availableWidth: number,
+  equalWidths = false,
 ) {
   const minimums = measures.map((points) => scoreMeasureLayout(points, 0).width);
-  const extra = Math.max(0, availableWidth - minimums.reduce((sum, width) => sum + width, 0));
-  return measures.map((points, index) =>
-    scoreMeasureLayout(points, minimums[index] + extra / measures.length),
-  );
+  const total = minimums.reduce((sum, width) => sum + width, 0);
+  const extra = Math.max(0, availableWidth - total);
+  const scale = total > 0 ? Math.min(1, Math.max(0, availableWidth) / total) : 1;
+  return measures.map((points, index) => {
+    const layout = scoreMeasureLayout(points, minimums[index] + extra / measures.length);
+    const width = equalWidths
+      ? Math.max(0, availableWidth) / measures.length
+      : layout.width * scale;
+    if (width >= layout.width) return scoreMeasureLayout(points, width);
+    const compact = scoreMeasureLayout(
+      points.map((point) => ({ ...point, space: point.minSpace ?? point.space })),
+      0,
+    );
+    if (compact.width < layout.width && width >= compact.width) {
+      const ratio = (width - compact.width) / (layout.width - compact.width);
+      return {
+        width,
+        xAt: (offset: number) =>
+          compact.xAt(offset) + (layout.xAt(offset) - compact.xAt(offset)) * ratio,
+      };
+    }
+    // Keep the chosen measures on this line. Dense measures receive proportionally
+    // more width; when space is tight, compress positions without shrinking glyphs.
+    return { width, xAt: (offset: number) => compact.xAt(offset) * (width / compact.width) };
+  });
 }
 
 export function scoreBeamGroups(

@@ -1,4 +1,10 @@
-export type ScoreTone = { pitch: number; string?: number; fret?: number };
+export type ScoreTone = {
+  pitch: number;
+  string?: number;
+  fret?: number;
+  ghost?: boolean;
+  dead?: boolean;
+};
 export type ScoreConnectionType = 'hammer' | 'pull' | 'slide' | 'tie';
 export const scoreConnectionLabels = {
   hammer: '해머링',
@@ -8,7 +14,7 @@ export const scoreConnectionLabels = {
 };
 export const SCORE_DIVISIONS = 16;
 export const MIN_SCORE_BEATS = 1 / SCORE_DIVISIONS;
-export const DOTTED_SCORE_BEATS = [3, 1.5, 0.75, 0.375, 0.1875];
+export const DOTTED_SCORE_BEATS = [6, 3, 1.5, 0.75, 0.375, 0.1875];
 export type ScoreNote = {
   id: string;
   pitch: number;
@@ -33,7 +39,9 @@ export type Score = {
   sync: Record<string, number>;
   instruments?: Record<string, string>;
   systemLayout?: Record<string, number[]>;
+  equalWidthRows?: Record<string, number[]>;
   playbackVolume?: number;
+  playbackInstruments?: Record<string, string>;
   measureChords?: Record<string, Record<number, string>>;
   beatChords?: Record<string, Record<number, string>>;
   referenceAudioName?: string;
@@ -47,7 +55,7 @@ export function connectionError(
   type: ScoreConnectionType,
 ): string | null {
   if (!to || from.part !== to.part) return '같은 파트의 이어지는 두 음표를 선택해주세요.';
-  if ([from, to].some((n) => n.rest || n.blank || n.dead || n.staccato))
+  if ([from, to].some((n) => n.rest || n.blank || noteTones(n).some((t) => t.dead) || n.staccato))
     return '쉼표·빈 박·뮤트·스타카토 음표는 연결할 수 없어요.';
   const a = noteTones(from),
     b = noteTones(to);
@@ -255,7 +263,12 @@ export function scoreInstrument(score: Score, part: string) {
   };
 }
 export function noteTones(note: ScoreNote): ScoreTone[] {
-  return note.rest ? [] : note.tones?.length ? note.tones : [{ pitch: note.pitch }];
+  const tones = note.rest ? [] : note.tones?.length ? note.tones : [{ pitch: note.pitch }];
+  return tones.map((tone) => ({
+    ...tone,
+    ...(tone.ghost === undefined && note.ghost !== undefined ? { ghost: note.ghost } : {}),
+    ...(tone.dead === undefined && note.dead !== undefined ? { dead: note.dead } : {}),
+  }));
 }
 export function tabTones(note: ScoreNote, tuning: readonly number[]): ScoreTone[] {
   const used = new Set<number>();
@@ -271,7 +284,10 @@ export function tabTones(note: ScoreNote, tuning: readonly number[]): ScoreTone[
       used.add(tone.string);
       return { ...tone };
     }
-    return { pitch: tone.pitch };
+    const unassigned = { ...tone };
+    delete unassigned.string;
+    delete unassigned.fret;
+    return unassigned;
   });
   return result.map((tone) => {
     if (tone.string) return tone;
@@ -299,12 +315,28 @@ export function setScoreFret(score: Score, id: string, string: number, fret: num
     throw new Error('줄과 프렛을 확인해주세요. 프렛은 0~24까지 입력할 수 있어요.');
   const tones = [
     ...tabTones(note, tuning).filter((tone) => tone.string !== string),
-    { string, fret, pitch: tuning[string - 1] + fret },
+    {
+      string,
+      fret,
+      pitch: tuning[string - 1] + fret,
+      dead: false,
+      ghost: tabTones(note, tuning).find((tone) => tone.string === string)?.ghost ?? false,
+    },
   ].sort((a, b) => (a.string ?? 99) - (b.string ?? 99));
   return {
     ...score,
     notes: score.notes.map((item) =>
-      item.id === id ? { ...item, blank: false, rest: false, pitch: tones[0].pitch, tones } : item,
+      item.id === id
+        ? {
+            ...item,
+            ghost: false,
+            dead: false,
+            blank: false,
+            rest: false,
+            pitch: tones[0].pitch,
+            tones,
+          }
+        : item,
     ),
   };
 }
@@ -330,6 +362,31 @@ export function removeScoreString(score: Score, id: string, string: number): Sco
   };
 }
 
+// Delete cycles a silent slot between blank and rest without shifting later beats.
+export function deleteScorePosition(score: Score, id: string, string?: number): Score {
+  const note = score.notes.find((item) => item.id === id);
+  if (!note) return score;
+  if (!note.blank && !note.rest && string !== undefined)
+    return cleanScoreConnections(removeScoreString(score, id, string));
+  return cleanScoreConnections({
+    ...score,
+    notes: score.notes.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            rest: true,
+            blank: !item.blank,
+            tones: [],
+            accent: false,
+            staccato: false,
+            ghost: false,
+            dead: false,
+          }
+        : item,
+    ),
+  });
+}
+
 // Duration edits consume/release blank time without moving following notes or rests.
 export function setScoreDuration(
   score: Score,
@@ -343,10 +400,10 @@ export function setScoreDuration(
   if (
     !Number.isFinite(beats) ||
     beats < MIN_SCORE_BEATS ||
-    beats > 4 ||
+    beats > 6 ||
     !Number.isInteger(beats * SCORE_DIVISIONS)
   )
-    throw new Error('음표 길이는 1/16~4박으로 입력해주세요.');
+    throw new Error('음표 길이는 1/16~6박으로 입력해주세요.');
   if (
     !Number.isInteger(offset * SCORE_DIVISIONS) ||
     offset < 0 ||
@@ -401,6 +458,39 @@ export const pitchName = (pitch: number) =>
   ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][pitch % 12] +
   (Math.floor(pitch / 12) - 1);
 
+// Accidentals last for the same staff position through the current measure.
+export function scoreAccidentalMarks(fragments: ScoreFragment[]) {
+  const accidentals = new Map<number, boolean>();
+  return fragments.map(({ note, continued }) =>
+    noteTones(note).map((tone) => {
+      if (tone.dead || note.rest || note.blank) return '';
+      const step = staffPosition(tone.pitch);
+      const sharp = pitchName(tone.pitch).includes('♯');
+      const previous = accidentals.get(step) ?? false;
+      accidentals.set(step, sharp);
+      return continued || sharp === previous ? '' : sharp ? '♯' : '♮';
+    }),
+  );
+}
+
+export function setScoreDotted(score: Score, ids: string[], enabled: boolean): Score {
+  const chosen = new Set(ids);
+  const parts = new Set<string>();
+  const notes = score.notes.map((note) => {
+    if (!chosen.has(note.id) || note.blank) return note;
+    const dotted = DOTTED_SCORE_BEATS.includes(note.beats);
+    const base = dotted ? note.beats / 1.5 : note.beats;
+    if (![4, 2, 1, 0.5, 0.25, 0.125].includes(base))
+      throw new Error('점음표는 온음표부터 32분음표까지 적용할 수 있어요.');
+    const beats = enabled ? base * 1.5 : base;
+    if (beats === note.beats) return note;
+    parts.add(note.part);
+    return { ...note, beats };
+  });
+  // Shift following notes and their chord anchors together; never overwrite them.
+  return parts.size ? retimeScore(score, notes, [...parts]) : score;
+}
+
 export function renameScorePart(score: Score, previous: string | null, input: string): Score {
   const name = input.trim();
   if (!name || name.length > 40) throw new Error('파트 이름은 1~40자로 입력해주세요.');
@@ -436,6 +526,22 @@ export function renameScorePart(score: Score, previous: string | null, input: st
         Object.entries(score.instruments ?? {}).filter(([key]) => key !== previous),
       ),
       [name]: previous ? scoreInstrument(score, previous).id : 'guitar',
+    },
+    playbackInstruments: {
+      ...Object.fromEntries(
+        Object.entries(score.playbackInstruments ?? {}).filter(([key]) => key !== previous),
+      ),
+      ...(previous && score.playbackInstruments?.[previous]
+        ? { [name]: score.playbackInstruments[previous] }
+        : {}),
+    },
+    equalWidthRows: {
+      ...Object.fromEntries(
+        Object.entries(score.equalWidthRows ?? {}).filter(([key]) => key !== previous),
+      ),
+      ...(previous && score.equalWidthRows?.[previous]
+        ? { [name]: score.equalWidthRows[previous] }
+        : {}),
     },
     systemLayout: {
       ...Object.fromEntries(
@@ -532,10 +638,62 @@ export function setScoreArticulation(
             ...note,
             [key]: enabled,
             ...(key === 'dead' ? { ghost: false } : key === 'ghost' ? { dead: false } : {}),
+            ...(key === 'dead' || key === 'ghost'
+              ? {
+                  tones: noteTones(note).map((tone) => ({
+                    ...tone,
+                    [key]: enabled,
+                    [key === 'dead' ? 'ghost' : 'dead']: false,
+                  })),
+                }
+              : {}),
           }
         : note,
     ),
   };
+}
+
+// For TAB the target is a string; for a staff-only part it is the 1-based tone index.
+export function selectedScoreTone(score: Score, note: ScoreNote, selected: number) {
+  const tuning = scoreInstrument(score, note.part).tuning;
+  return tuning.length
+    ? tabTones(note, tuning).find((tone) => tone.string === selected)
+    : noteTones(note)[selected - 1];
+}
+
+export function setScoreToneArticulation(
+  score: Score,
+  ids: string[],
+  selected: number,
+  key: 'ghost' | 'dead',
+): Score {
+  const targets = score.notes.filter(
+    (note) =>
+      ids.includes(note.id) &&
+      !note.blank &&
+      !note.rest &&
+      selectedScoreTone(score, note, selected),
+  );
+  if (!targets.length) return score;
+  const enabled = !targets.every((note) => selectedScoreTone(score, note, selected)?.[key]);
+  return cleanScoreConnections({
+    ...score,
+    notes: score.notes.map((note) => {
+      if (!targets.includes(note)) return note;
+      const tuning = scoreInstrument(score, note.part).tuning;
+      const tones = tuning.length ? tabTones(note, tuning) : noteTones(note);
+      return {
+        ...note,
+        ghost: false,
+        dead: false,
+        tones: tones.map((tone, index) =>
+          (tuning.length ? tone.string === selected : index === selected - 1)
+            ? { ...tone, [key]: enabled, [key === 'dead' ? 'ghost' : 'dead']: false }
+            : tone,
+        ),
+      };
+    }),
+  });
 }
 
 export function setScoreDurations(
@@ -574,8 +732,14 @@ export function removeScorePart(score: Score, part: string): Score {
     instruments: Object.fromEntries(
       Object.entries(score.instruments ?? {}).filter(([key]) => key !== part),
     ),
+    playbackInstruments: Object.fromEntries(
+      Object.entries(score.playbackInstruments ?? {}).filter(([key]) => key !== part),
+    ),
     systemLayout: Object.fromEntries(
       Object.entries(score.systemLayout ?? {}).filter(([key]) => key !== part),
+    ),
+    equalWidthRows: Object.fromEntries(
+      Object.entries(score.equalWidthRows ?? {}).filter(([key]) => key !== part),
     ),
   };
 }
@@ -711,7 +875,9 @@ export function readScoreClipboard(text: string): ScoreClipboardNote[] | null {
               !tone ||
               !integer(tone.pitch, 0, 127) ||
               (tone.string !== undefined && !integer(tone.string, 1, 6)) ||
-              (tone.fret !== undefined && !integer(tone.fret, 0, 24)),
+              (tone.fret !== undefined && !integer(tone.fret, 0, 24)) ||
+              (tone.ghost !== undefined && typeof tone.ghost !== 'boolean') ||
+              (tone.dead !== undefined && typeof tone.dead !== 'boolean'),
           ))
       )
         return null;
@@ -730,7 +896,13 @@ export function readScoreClipboard(text: string): ScoreClipboardNote[] | null {
       ghost: note.ghost,
       dead: note.dead,
       staccato: note.staccato,
-      tones: note.tones?.map(({ pitch, string, fret }) => ({ pitch, string, fret })),
+      tones: note.tones?.map(({ pitch, string, fret, ghost, dead }) => ({
+        pitch,
+        string,
+        fret,
+        ghost,
+        dead,
+      })),
       copiedChords: note.copiedChords?.map(({ offset, chord }) => ({ offset, chord })),
     }));
   } catch {
@@ -1043,7 +1215,7 @@ export function scoreToMusicXml(score: Score): string {
               fingering || linkedTechnical
                 ? `<technical>${fingering}${linkedTechnical}</technical>`
                 : '';
-            contents += `<note${note.blank ? ' print-object="no"' : ''}>${toneIndex ? '<chord/>' : ''}${note.rest ? '<rest/>' : `<pitch><step>${pitch[0]}</step>${pitch.includes('♯') ? '<alter>1</alter>' : ''}<octave>${Math.floor(tone.pitch / 12) - 1}</octave></pitch>`}<duration>${duration}</duration>${ties}${note.dead && !note.rest ? '<notehead>x</notehead>' : note.ghost && !note.rest ? '<notehead parentheses="yes">normal</notehead>' : ''}${notation || technical || linkedNotation ? `<notations>${notation}${linkedNotation}${technical}</notations>` : ''}${note.lyric && !continued && !toneIndex ? `<lyric><text>${escape(note.lyric)}</text></lyric>` : ''}</note>`;
+            contents += `<note${note.blank ? ' print-object="no"' : ''}>${toneIndex ? '<chord/>' : ''}${note.rest ? '<rest/>' : `<pitch><step>${pitch[0]}</step>${pitch.includes('♯') ? '<alter>1</alter>' : ''}<octave>${Math.floor(tone.pitch / 12) - 1}</octave></pitch>`}<duration>${duration}</duration>${ties}${tone.dead && !note.rest ? '<notehead>x</notehead>' : tone.ghost && !note.rest ? '<notehead parentheses="yes">normal</notehead>' : ''}${notation || technical || linkedNotation ? `<notations>${notation}${linkedNotation}${technical}</notations>` : ''}${note.lyric && !continued && !toneIndex ? `<lyric><text>${escape(note.lyric)}</text></lyric>` : ''}</note>`;
           });
           used += duration;
           continued = true;

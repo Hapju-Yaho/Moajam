@@ -12,6 +12,7 @@ import {
   scoreMeasureCount,
   scoreChordPositions,
   scoreConnectionLabels,
+  scoreAccidentalMarks,
   type Score,
 } from '../lib/score';
 
@@ -34,6 +35,7 @@ export function GuitarStaff({
   rangeIds,
   onRangeSelect,
   editable,
+  onMeasureContextMenu,
 }: {
   score: Score;
   part: string;
@@ -53,6 +55,7 @@ export function GuitarStaff({
   rangeIds: string[];
   onRangeSelect: (anchor: string, end: string) => void;
   editable: boolean;
+  onMeasureContextMenu?: (measure: number, x: number, y: number) => void;
 }) {
   const systems = useRef<HTMLDivElement>(null);
   const drag = useRef<{ anchor: string; end: string; x: number; y: number; moved: boolean } | null>(
@@ -63,7 +66,7 @@ export function GuitarStaff({
   useEffect(() => {
     if (!systems.current) return;
     const observer = new ResizeObserver(([entry]) =>
-      setSystemWidth(Math.max(320, entry.contentRect.width)),
+      setSystemWidth(Math.max(1, entry.contentRect.width)),
     );
     observer.observe(systems.current);
     return () => observer.disconnect();
@@ -126,7 +129,6 @@ export function GuitarStaff({
     <div
       ref={systems}
       className="score-systems"
-      style={{ width: `${zoom}%`, minWidth: `${(640 * zoom) / 100}px` }}
       aria-label={`${part} 오선보${hasTab ? '와 TAB' : ''}`}
       onPointerDown={(event) => {
         suppressClick.current = false;
@@ -215,21 +217,30 @@ export function GuitarStaff({
           });
         const prefix = 76;
         const layouts = scoreSystemLayouts(
-          bars.map(({ fragments, bar }) => [
-            ...fragments
-              .filter(({ note }) => !note.blank)
-              .map(({ offset, note }) => ({
+          bars.map(({ fragments, bar }) => {
+            const notation = fragments.filter(({ note }) => !note.blank);
+            const marks = scoreAccidentalMarks(notation);
+            return [
+              ...notation.map(({ offset, note, beats }, index) => ({
                 offset,
                 space: Math.max(40, Math.min(10, note.lyric.length) * 7 + 10),
+                minSpace: Math.max(
+                  18 +
+                    (marks[index + 1]?.some(Boolean) ? 10 : 0) +
+                    (DOTTED_SCORE_BEATS.includes(beats) ? 8 : 0),
+                  Math.min(10, note.lyric.length) * 7 + 10,
+                ),
               })),
-            ...Object.entries(chordPositions)
-              .filter(([beat]) => Math.floor(Number(beat) / 4) === bar)
-              .map(([beat, chord]) => ({
-                offset: Number(beat) % 4,
-                space: chord.length * 10 + 14,
-              })),
-          ]),
+              ...Object.entries(chordPositions)
+                .filter(([beat]) => Math.floor(Number(beat) / 4) === bar)
+                .map(([beat, chord]) => ({
+                  offset: Number(beat) % 4,
+                  space: chord.length * 10 + 14,
+                })),
+            ];
+          }),
           systemWidth / (zoom / 100) - prefix - 1,
+          score.equalWidthRows?.[part]?.includes(line),
         );
         const drawingWidth = prefix + layouts.reduce((sum, layout) => sum + layout.width, 0) + 1;
         const positions = bars.flatMap(({ fragments }) =>
@@ -305,15 +316,18 @@ export function GuitarStaff({
                 </g>
               ))}
             {hasTab && (
-              <text aria-label="줄 시작 TAB" x="9" y={tabTop + 28} fontSize="14" fontWeight="700">
-                T
-                <tspan x="9" dy="17">
-                  A
-                </tspan>
-                <tspan x="9" dy="17">
-                  B
-                </tspan>
-              </text>
+              <g aria-label="줄 시작 TAB" fontSize="13" fontWeight="700">
+                {['T', 'A', 'B'].map((letter, index) => (
+                  <text
+                    key={letter}
+                    x="9"
+                    y={tabTop + (tuning.length - 1) * 10 + (index - 1) * 17}
+                    dominantBaseline="central"
+                  >
+                    {letter}
+                  </text>
+                ))}
+              </g>
             )}
             {bars.map(({ fragments, bar, emptyOffsets }, column) => {
               const { width, xAt } = layouts[column];
@@ -324,7 +338,7 @@ export function GuitarStaff({
                     noteTones(fragments[index].note).map(
                       (tone) =>
                         staffY(tone.pitch) -
-                        29 -
+                        25 -
                         Math.max(
                           0,
                           [1, 0.5, 0.25, 0.125].filter((limit) => fragments[index].beats < limit)
@@ -335,17 +349,7 @@ export function GuitarStaff({
                   ),
                 ),
               }));
-              const accidentals = new Map<number, boolean>();
-              const marks = fragments.map(({ note }) =>
-                noteTones(note).map((tone) => {
-                  if (note.dead) return '';
-                  const step = staffPosition(tone.pitch);
-                  const sharp = pitchName(tone.pitch).includes('♯');
-                  const previous = accidentals.get(step) ?? false;
-                  accidentals.set(step, sharp);
-                  return sharp ? '♯' : previous ? '♮' : '';
-                }),
-              );
+              const marks = scoreAccidentalMarks(fragments);
               const hitRegions = scoreBeatHitRegions(
                 [...fragments.map(({ offset }) => offset), ...emptyOffsets],
                 width,
@@ -375,10 +379,15 @@ export function GuitarStaff({
                   key={bar}
                   className="score-measure"
                   aria-label={`${bar + 1}마디`}
+                  onContextMenu={(event) => {
+                    if (!editable || !onMeasureContextMenu) return;
+                    event.preventDefault();
+                    onMeasureContextMenu(bar, event.clientX, event.clientY);
+                  }}
                   transform={`translate(${prefix + layouts.slice(0, column).reduce((sum, layout) => sum + layout.width, 0)}, 0)`}
                   data-playback-active={playHere ? 'true' : undefined}
                 >
-                  <text x="8" y={top + 18} fill="#82908c" fontSize="11">
+                  <text className="score-measure-number" x="2" y="74" fill="#82908c" fontSize="10">
                     {bar + 1}
                   </text>
                   {chordOffsets.map((offset) => {
@@ -406,9 +415,7 @@ export function GuitarStaff({
                           height="22"
                           fill="transparent"
                         />
-                        <title>
-                          {bar + 1}마디 {offset + 1}박 코드 편집
-                        </title>
+                        <title>{`${bar + 1}마디 ${offset + 1}박 코드 편집`}</title>
                         <text
                           x={xAt(offset)}
                           y={top + 36}
@@ -484,13 +491,38 @@ export function GuitarStaff({
                               : note.rest
                                 ? '쉼표'
                                 : noteTones(note)
-                                    .map((tone) => pitchName(tone.pitch))
+                                    .map(
+                                      (tone) =>
+                                        `${pitchName(tone.pitch)}${tone.dead ? ' 데드노트' : tone.ghost ? ' 고스트노트' : ''}`,
+                                    )
                                     .join(' ')
-                          } ${beats}박 길이${note.staccato && !note.rest ? ' 스타카토' : ''}${note.dead && !note.rest ? ' 고스트/뮤트 노트' : note.ghost && !note.rest ? ' 약하게' : ''}`}
+                          } ${beats}박 길이${note.staccato && !note.rest ? ' 스타카토' : ''}`}
                           aria-pressed={chosen || rangeIds.includes(note.id)}
-                          onClick={() =>
-                            chosen ? onDeselect() : onSelect(note.id, undefined, bar * 4 + offset)
-                          }
+                          onClick={(event) => {
+                            const matrix = event.currentTarget.getScreenCTM();
+                            const pitches = noteTones(note);
+                            if (!matrix || !pitches.length) {
+                              onSelect(note.id, undefined, bar * 4 + offset);
+                              return;
+                            }
+                            const point = new DOMPoint(
+                              event.clientX,
+                              event.clientY,
+                            ).matrixTransform(matrix.inverse());
+                            const index = pitches.reduce(
+                              (nearest, tone, i) =>
+                                Math.abs(staffY(tone.pitch) - point.y) <
+                                Math.abs(staffY(pitches[nearest].pitch) - point.y)
+                                  ? i
+                                  : nearest,
+                              0,
+                            );
+                            onSelect(
+                              note.id,
+                              tuning.length ? (tones[index]?.string ?? 1) : index + 1,
+                              bar * 4 + offset,
+                            );
+                          }}
                           onKeyDown={(event) => {
                             if (event.key === 'Enter') {
                               event.preventDefault();
@@ -508,7 +540,10 @@ export function GuitarStaff({
                           {!hasTab && chosen && (
                             <rect
                               x={x - cursorWidth / 2}
-                              y="92"
+                              y={
+                                staffY(noteTones(note)[selectedString - 1]?.pitch ?? note.pitch) -
+                                10
+                              }
                               width={cursorWidth}
                               height="20"
                               fill="none"
@@ -517,7 +552,7 @@ export function GuitarStaff({
                           )}
                           {note.blank ? null : note.rest ? (
                             <g>
-                              <text x={x - 9} y="116" fontSize="29">
+                              <text aria-label="오선 쉼표" x={x - 7} y="113" fontSize="24">
                                 {beats >= 4
                                   ? '𝄻'
                                   : beats >= 2
@@ -533,7 +568,13 @@ export function GuitarStaff({
                                             : '\u{1D141}'}
                               </text>
                               {DOTTED_SCORE_BEATS.includes(beats) && (
-                                <circle cx={x + 13} cy="103" r="2" fill="#293e34" />
+                                <circle
+                                  aria-label="점음표 점"
+                                  cx={x + 11}
+                                  cy="103"
+                                  r="1.6"
+                                  fill="#293e34"
+                                />
                               )}
                             </g>
                           ) : (
@@ -543,7 +584,7 @@ export function GuitarStaff({
                               const flags = [1, 0.5, 0.25, 0.125].filter(
                                 (limit) => beats < limit,
                               ).length;
-                              const stemHeight = 29 + Math.max(0, flags - 2) * 5;
+                              const stemHeight = 25 + Math.max(0, flags - 2) * 5;
                               for (let line = 132; line <= y; line += 10) ledgers.push(line);
                               for (let line = 72; line >= y; line -= 10) ledgers.push(line);
                               return (
@@ -551,66 +592,72 @@ export function GuitarStaff({
                                   {ledgers.map((line) => (
                                     <line
                                       key={line}
-                                      x1={x - 12}
-                                      x2={x + 12}
+                                      x1={x - 9}
+                                      x2={x + 9}
                                       y1={line}
                                       y2={line}
                                       stroke="#536159"
                                     />
                                   ))}
                                   {marks[index][toneIndex] && (
-                                    <text x={x - 22} y={y + 5} fontSize="17">
+                                    <text x={x - 9} y={y + 4} fontSize="14" textAnchor="end">
                                       {marks[index][toneIndex]}
                                     </text>
                                   )}
-                                  {note.dead ? (
+                                  {tone.dead ? (
                                     <path
                                       aria-label="뮤트 X 음표"
-                                      d={`M${x - 5} ${y - 5}l10 10m-10 0l10 -10`}
+                                      d={`M${x - 4} ${y - 4}l8 8m-8 0l8 -8`}
                                       stroke="#293e34"
-                                      strokeWidth="1.8"
+                                      strokeWidth="1.4"
                                       fill="none"
                                     />
                                   ) : (
                                     <ellipse
                                       cx={x}
                                       cy={y}
-                                      rx="6.5"
-                                      ry="4.2"
+                                      rx="5"
+                                      ry="3.3"
                                       transform={`rotate(-18 ${x} ${y})`}
                                       fill={beats >= 2 ? '#fffefb' : '#293e34'}
                                       stroke="#293e34"
-                                      strokeWidth="1.4"
+                                      strokeWidth="1.1"
                                     />
                                   )}
                                   {beats < 4 && (
                                     <line
-                                      x1={x + 6}
-                                      x2={x + 6}
+                                      x1={x + 4.5}
+                                      x2={x + 4.5}
                                       y1={y}
                                       y2={beam?.top ?? y - stemHeight}
                                       stroke="#293e34"
-                                      strokeWidth="1.4"
+                                      strokeWidth="1.1"
                                     />
                                   )}
                                   {Array.from({ length: beam ? 0 : flags }, (_, flag) => (
                                     <path
                                       key={flag}
-                                      d={`M${x + 6} ${y - stemHeight + flag * 7}q15 9 7 18`}
+                                      d={`M${x + 4.5} ${y - stemHeight + flag * 6}q12 7 6 15`}
                                       fill="none"
                                       stroke="#293e34"
-                                      strokeWidth="2"
+                                      strokeWidth="1.6"
                                     />
                                   ))}
                                   {DOTTED_SCORE_BEATS.includes(beats) && (
-                                    <circle cx={x + 15} cy={y - 2} r="2" fill="#293e34" />
+                                    <circle
+                                      aria-label="점음표 점"
+                                      cx={x + (tone.ghost ? 14 : 8.5)}
+                                      cy={(y - 82) % 10 === 0 ? y - 5 : y}
+                                      r="1.3"
+                                      fill="#293e34"
+                                    />
                                   )}
-                                  {note.ghost && !note.dead && (
+                                  {tone.ghost && !tone.dead && (
                                     <g aria-label="약하게 연주 괄호" fill="#65786c">
-                                      <text x={x - 14} y={y + 5} fontSize="17">
+                                      <text x={x - 11} y={y + 4} fontSize="14">
                                         (
                                       </text>
-                                      <text x={x + 9} y={y + 5} fontSize="17">
+                                      <text x={x + 7} y={y + 4} fontSize="14">
                                         )
                                       </text>
                                     </g>
@@ -621,9 +668,9 @@ export function GuitarStaff({
                                       cx={x}
                                       cy={
                                         Math.max(...noteTones(note).map((t) => staffY(t.pitch))) +
-                                        15
+                                        12
                                       }
-                                      r="2.3"
+                                      r="1.8"
                                       fill="#293e34"
                                     />
                                   )}
@@ -653,7 +700,7 @@ export function GuitarStaff({
                                 role="button"
                                 className="score-position-cell"
                                 tabIndex={0}
-                                aria-label={`${bar + 1}마디 ${offset + 1}박 ${row + 1}번 줄 ${tone ? `${note.dead ? 'X 고스트/뮤트 노트' : `${tone.fret}프렛`}${note.ghost && !note.dead ? ' 약하게' : ''}${note.staccato ? ' 스타카토' : ''}` : note.blank ? '빈 박' : note.rest ? '쉼표' : '빈 줄'}`}
+                                aria-label={`${bar + 1}마디 ${offset + 1}박 ${row + 1}번 줄 ${tone ? `${tone.dead ? 'X 데드노트' : `${tone.fret}프렛`}${tone.ghost && !tone.dead ? ' 고스트노트' : ''}${note.staccato ? ' 스타카토' : ''}` : note.blank ? '빈 박' : note.rest ? '쉼표' : '빈 줄'}`}
                                 aria-pressed={
                                   (chosen && selectedString === row + 1) ||
                                   rangeIds.includes(note.id)
@@ -694,13 +741,13 @@ export function GuitarStaff({
                                     <rect
                                       x={
                                         x -
-                                        (note.ghost || continued || tieTargets.has(note.id)
+                                        (tone.ghost || continued || tieTargets.has(note.id)
                                           ? 15
                                           : 9)
                                       }
                                       y={tabTop + row * 20 - 8}
                                       width={
-                                        note.ghost || continued || tieTargets.has(note.id) ? 30 : 18
+                                        tone.ghost || continued || tieTargets.has(note.id) ? 30 : 18
                                       }
                                       height="16"
                                       fill={
@@ -709,14 +756,14 @@ export function GuitarStaff({
                                     />
                                     <text
                                       x={x}
-                                      y={tabTop + row * 20 + 5}
+                                      y={tabTop + row * 20 + 4}
                                       textAnchor="middle"
-                                      fontSize="14"
+                                      fontSize="12"
                                       fontWeight="600"
                                     >
-                                      {note.dead
+                                      {tone.dead
                                         ? 'X'
-                                        : continued || note.ghost || tieTargets.has(note.id)
+                                        : continued || tone.ghost || tieTargets.has(note.id)
                                           ? `(${tone.fret})`
                                           : tone.fret}
                                     </text>
@@ -725,15 +772,10 @@ export function GuitarStaff({
                                 {tone && note.staccato && !continued && (
                                   <circle
                                     cx={x}
-                                    cy={tabTop + row * 20 + 8}
-                                    r="1.6"
+                                    cy={tabTop + row * 20 + 10}
+                                    r="1.3"
                                     fill="#293e34"
                                   />
-                                )}
-                                {note.rest && !note.blank && row === 0 && (
-                                  <text x={x} y={tabTop + 5} textAnchor="middle" fontSize="16">
-                                    𝄽
-                                  </text>
                                 )}
                               </g>
                             );
@@ -769,7 +811,7 @@ export function GuitarStaff({
                       aria-label="박 단위 음표 묶음"
                       pointerEvents="none"
                       stroke="#293e34"
-                      strokeWidth="3"
+                      strokeWidth="2.4"
                     >
                       {[0, 1, 2, 3].flatMap((level) =>
                         indices.flatMap((index, position) => {
@@ -786,14 +828,14 @@ export function GuitarStaff({
                             previous !== undefined &&
                             fragments[previous].beats < [1, 0.5, 0.25, 0.125][level];
                           if (!hasNext && hasPrevious) return [];
-                          const x = xAt(fragments[index].offset) + 6;
+                          const x = xAt(fragments[index].offset) + 4.5;
                           return [
                             <line
                               key={`${level}/${index}`}
                               x1={x}
                               x2={
                                 hasNext
-                                  ? xAt(fragments[next].offset) + 6
+                                  ? xAt(fragments[next].offset) + 4.5
                                   : x + (position === indices.length - 1 ? -8 : 8)
                               }
                               y1={top + level * 7}
