@@ -157,6 +157,7 @@ export function RecommendationsScreen({
   const { width } = useWindowDimensions();
   const {
     recommendations: songs,
+    adoptedSongs,
     addRecommendation,
     isAdopted,
     selectRecommendation,
@@ -165,6 +166,7 @@ export function RecommendationsScreen({
   } = useMockAppState();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'최신순' | '인기순'>('최신순');
+  const [includeAdopted, setIncludeAdopted] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [referenceUrl, setReferenceUrl] = useState('');
   const [title, setTitle] = useState('');
@@ -266,6 +268,7 @@ export function RecommendationsScreen({
   const filtered = useMemo(
     () =>
       songs
+        .filter((song) => includeAdopted || !adoptedSongs.some((adopted) => adopted.id === song.id))
         .filter((song) =>
           `${song.title} ${song.artist}`.toLowerCase().includes(query.toLowerCase()),
         )
@@ -274,7 +277,7 @@ export function RecommendationsScreen({
             ? b.likes - a.likes
             : Date.parse(b.recommendedAt) - Date.parse(a.recommendedAt),
         ),
-    [filter, query, songs],
+    [filter, query, songs, adoptedSongs, includeAdopted],
   );
 
   const content = (
@@ -295,6 +298,14 @@ export function RecommendationsScreen({
             <ChipText active={filter === item}>{item}</ChipText>
           </Chip>
         ))}
+        <Chip
+          active={includeAdopted}
+          accessibilityRole="button"
+          accessibilityState={{ selected: includeAdopted }}
+          onPress={() => setIncludeAdopted((value) => !value)}
+        >
+          <ChipText active={includeAdopted}>채택된 곡 포함</ChipText>
+        </Chip>
       </Inline>
       <View style={{ gap: 14 }}>
         <Between>
@@ -303,10 +314,18 @@ export function RecommendationsScreen({
         </Between>
         {filtered.length === 0 ? (
           <View style={{ padding: 24, gap: 8 }}>
-            <Body>{songs.length ? '검색한 곡이 없어요.' : '아직 추천한 곡이 없어요.'}</Body>
+            <Body>
+              {songs.length
+                ? query.trim()
+                  ? '검색한 곡이 없어요.'
+                  : '표시할 추천곡이 없어요.'
+                : '아직 추천한 곡이 없어요.'}
+            </Body>
             <Muted>
               {songs.length
-                ? '다른 곡명이나 아티스트로 검색해보세요.'
+                ? includeAdopted
+                  ? '다른 곡명이나 아티스트로 검색해보세요.'
+                  : '다른 검색어를 입력하거나 채택된 곡 포함을 켜보세요.'
                 : '곡 추천하기로 첫 후보를 등록해보세요.'}
             </Muted>
           </View>
@@ -368,7 +387,6 @@ export function RecommendationsScreen({
                       >
                         ♥ {song.likes}
                       </Text>
-                      <Muted>🎸 {song.votes}</Muted>
                       <Muted>▢ {song.comments}</Muted>
                     </Row>
                     <Muted>댓글 {song.comments}개 →</Muted>

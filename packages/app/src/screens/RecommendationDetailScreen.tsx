@@ -2,7 +2,7 @@ import { SongActions } from '../components/SongActions';
 import { theme } from '@moajam/ui';
 import { useState } from 'react';
 import { useIdentity } from '../state/Identity';
-import { Linking, Pressable, useWindowDimensions, View } from 'react-native';
+import { Pressable, useWindowDimensions, View } from 'react-native';
 import { AppShell } from '../components/AppShell';
 import { ReferenceVideo } from '../components/ReferenceVideo';
 import {
@@ -40,7 +40,6 @@ export function RecommendationDetailScreen({ navigate, entityId }: ScreenProps) 
   } = useMockAppState();
   const song = recommendations.find((item) => item.id === (entityId ?? selectedRecommendationId));
   const liked = song?.likedByMe ?? false;
-  const voted = song?.votedByMe ?? false;
   const [reason, setReason] = useState('');
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({
@@ -194,11 +193,6 @@ export function RecommendationDetailScreen({ navigate, entityId }: ScreenProps) 
                 {editError ? <Meta>{editError}</Meta> : null}
               </Surface>
             ) : null}
-            <FlexRow wrap>
-              <ActionButton secondary={!voted} onPress={() => toggleReaction(song.id, 'vote')}>
-                🎸 {song.votes} 채택 추천
-              </ActionButton>
-            </FlexRow>
           </Surface>
           <Surface>
             <Heading>레퍼런스</Heading>
@@ -214,15 +208,6 @@ export function RecommendationDetailScreen({ navigate, entityId }: ScreenProps) 
                 </Copy>
                 <Meta>등록된 레퍼런스 영상</Meta>
               </View>
-              <ActionButton
-                secondary
-                disabled={!song.referenceUrl}
-                onPress={() => {
-                  if (song.referenceUrl) void Linking.openURL(song.referenceUrl);
-                }}
-              >
-                새 창에서 열기
-              </ActionButton>
             </FlexBetween>
           </Surface>
         </Stack>

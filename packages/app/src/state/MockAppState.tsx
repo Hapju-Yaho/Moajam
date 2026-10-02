@@ -350,6 +350,17 @@ export function useMockAppState() {
       return true;
     },
     adoptedSongs,
+    reorderAdoptedSongs: (ids: string[]) => {
+      update((band) => {
+        const rank = new Map(ids.map((id, index) => [id, index]));
+        return {
+          ...band,
+          adoptedSongs: [...band.adoptedSongs].sort(
+            (a, b) => (rank.get(a.id) ?? ids.length) - (rank.get(b.id) ?? ids.length),
+          ),
+        };
+      });
+    },
     members,
     canManage,
     rehearsals: workspace?.rehearsals ?? [],
