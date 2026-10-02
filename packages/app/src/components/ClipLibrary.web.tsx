@@ -142,7 +142,16 @@ function Preview({ asset }: { asset: Asset }) {
       </div>
       {error && (
         <span role="alert">
-          {error} <button onClick={() => setAttempt((value) => value + 1)}>다시 시도</button>
+          {error}{' '}
+          <button
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setAttempt((value) => value + 1);
+            }}
+          >
+            다시 시도
+          </button>
         </span>
       )}
     </div>
@@ -159,6 +168,41 @@ export function ClipLibrary({
   version: number;
   onChoose?: (blob: Blob, name: string) => void;
 }) {
+  const disclosure = useRef<HTMLDetailsElement>(null);
+  const disclosureAnimation = useRef<Animation | null>(null);
+  const disclosureTarget = useRef<boolean | null>(null);
+  useEffect(() => () => disclosureAnimation.current?.cancel(), []);
+  const toggleDisclosure = () => {
+    const details = disclosure.current;
+    if (!details) return;
+    const nextOpen = !(disclosureTarget.current ?? details.open);
+    const startHeight = details.getBoundingClientRect().height;
+    disclosureAnimation.current?.cancel();
+    disclosureAnimation.current = null;
+    disclosureTarget.current = nextOpen;
+    if (!nextOpen) details.querySelectorAll('audio').forEach((audio) => audio.pause());
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      details.open = nextOpen;
+      disclosureTarget.current = null;
+      return;
+    }
+    // Keep the content visible until the closing animation finishes.
+    details.open = true;
+    const endHeight = nextOpen
+      ? details.getBoundingClientRect().height
+      : details.querySelector('summary')!.getBoundingClientRect().height;
+    const animation = details.animate(
+      [{ height: `${startHeight}px` }, { height: `${endHeight}px` }],
+      { duration: 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+    );
+    disclosureAnimation.current = animation;
+    animation.onfinish = () => {
+      if (disclosureAnimation.current !== animation) return;
+      details.open = nextOpen;
+      disclosureAnimation.current = null;
+      disclosureTarget.current = null;
+    };
+  };
   const userId = useIdentity();
   const alive = useRef(true);
   useEffect(() => {
@@ -224,7 +268,8 @@ export function ClipLibrary({
   return (
     <Surface>
       <details
-        style={{ position: 'relative' }}
+        ref={disclosure}
+        style={{ position: 'relative', overflow: 'hidden' }}
         open={onChoose ? true : undefined}
         onToggle={(event) => {
           if (!event.currentTarget.open)
@@ -233,17 +278,34 @@ export function ClipLibrary({
       >
         <summary
           className="clip-library-toggle"
-          style={{ display: 'inline-block', cursor: 'pointer', fontWeight: 600, padding: '4px 0' }}
+          onClick={(event) => {
+            event.preventDefault();
+            toggleDisclosure();
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+            fontWeight: 600,
+            padding: '4px 0',
+            listStyle: 'none',
+            cursor: 'pointer',
+          }}
         >
-          클립 보관함
+          <span style={{ cursor: 'pointer' }}>클립 보관함</span>
+          <button
+            className="clip-library-refresh"
+            style={{ position: 'static', flexShrink: 0 }}
+            disabled={busy || loading}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setAttempt((value) => value + 1);
+            }}
+          >
+            <span aria-hidden="true">↻</span> 새로고침
+          </button>
         </summary>
-        <button
-          style={{ position: 'absolute', top: 1, left: 128 }}
-          disabled={busy || loading}
-          onClick={() => setAttempt((value) => value + 1)}
-        >
-          <span aria-hidden="true">↻</span> 새로고침
-        </button>
         <div data-clip-library style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {loading && <Meta>클립 불러오는 중…</Meta>}
           {error && <div role="alert">{error}</div>}

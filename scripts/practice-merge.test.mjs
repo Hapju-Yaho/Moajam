@@ -161,3 +161,18 @@ test('local metronome preferences are excluded while tempo and meter stay shared
     false,
   );
 });
+
+test('remote track reordering survives independent local track edits', () => {
+  const first = { ...track, id: 'first' },
+    second = { ...track, id: 'second' };
+  const base = { tracks: [first, second], notes: [] };
+  const local = { ...base, tracks: [{ ...first, name: 'edited' }, second] };
+  const remote = { ...base, tracks: [second, first] };
+  const result = mergePractice(base, local, remote);
+  assert.equal(result.conflict, false);
+  assert.deepEqual(
+    result.document.tracks.map((track) => track.id),
+    ['second', 'first'],
+  );
+  assert.equal(result.document.tracks[1].name, 'edited');
+});

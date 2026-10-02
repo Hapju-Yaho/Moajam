@@ -1,3 +1,4 @@
+import { SortableSongList } from '../components/SortableSongList';
 import { RecommendationsScreen } from './RecommendationsScreen';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { AppShell } from '../components/AppShell';
@@ -17,14 +18,17 @@ import { useMockAppState, type AdoptedSong } from '../state/MockAppState';
 import { Avatar, AvatarText } from '../styles/layout';
 
 export function SongsScreen({ navigate }: ScreenProps) {
-  const { adoptedSongs } = useMockAppState();
+  const { adoptedSongs, reorderAdoptedSongs, workspaceId } = useMockAppState();
   return (
     <AppShell activeRoute="songs" onNavigate={navigate}>
       <PageHeading>참여 곡</PageHeading>
       <Stack gap={16}>
-        {adoptedSongs.map((song) => (
-          <SongTile key={song.id} song={song} navigate={navigate} />
-        ))}
+        <SortableSongList
+          key={workspaceId}
+          songs={adoptedSongs}
+          onReorder={reorderAdoptedSongs}
+          renderSong={(song) => <SongTile song={song} navigate={navigate} />}
+        />
         {!adoptedSongs.length && (
           <Surface>
             <Heading>아직 채택한 곡이 없어요</Heading>
@@ -32,6 +36,14 @@ export function SongsScreen({ navigate }: ScreenProps) {
           </Surface>
         )}
       </Stack>
+      <View
+        style={{
+          alignSelf: 'stretch',
+          height: 1,
+          backgroundColor: '#cbd5e1',
+          marginVertical: 12,
+        }}
+      />
       <RecommendationsScreen navigate={navigate} embedded />
     </AppShell>
   );

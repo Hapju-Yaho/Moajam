@@ -44,7 +44,7 @@ export function SongOverview({ song }: { song: WorkspaceSong }) {
                 setError('');
               }}
             >
-              곡 정보 편집
+              곡 정보 수정
             </ActionButton>
           )}
         </FlexBetween>

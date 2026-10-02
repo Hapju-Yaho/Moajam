@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import {
   beatSeconds,
@@ -188,6 +188,7 @@ export function TrackTimeline({
   error,
   onUpload,
   onAdd,
+  onReorder,
   onPatch,
   onPatchClip,
   onClipDuration,
@@ -216,6 +217,7 @@ export function TrackTimeline({
   error: string;
   onUpload: (files: File[], targetId: string) => void;
   onAdd: () => void;
+  onReorder: (ids: string[]) => void;
   onPatch: (id: string, changes: Partial<TimelineTrack>) => void;
   onPatchClip: (id: string, changes: Partial<TimelineClip>) => void;
   onClipDuration: (id: string, duration: number) => void;
@@ -238,6 +240,63 @@ export function TrackTimeline({
   publishing: string | null;
   transport: Transport;
 }) {
+  const [trackOrder, setTrackOrder] = useState<string[] | null>(null);
+  const movingTrack = useRef<{
+    id: string;
+    ids: string[];
+    startY: number;
+    top: number;
+    scrollTop: number;
+  } | null>(null);
+  const [liftedTrack, setLiftedTrack] = useState<{ id: string; delta: number } | null>(null);
+  const trackRows = useRef(new Map<string, HTMLDivElement>());
+  const rowPositions = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    const next = new Map<string, number>();
+    trackRows.current.forEach((row, id) => {
+      const top = row.offsetTop;
+      next.set(id, top);
+      if (liftedTrack?.id === id)
+        row.style.transform = `translateY(${liftedTrack.delta + (movingTrack.current?.top ?? top) - top}px)`;
+      const old = rowPositions.current.get(id);
+      if (
+        old !== undefined &&
+        old !== top &&
+        id !== liftedTrack?.id &&
+        !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      )
+        row.animate([{ transform: `translateY(${old - top}px)` }, { transform: 'translateY(0)' }], {
+          duration: 180,
+          easing: 'ease-out',
+        });
+    });
+    rowPositions.current = next;
+  });
+  const reorderTrack = (id: string, target: string) => {
+    const ids = trackOrder ?? tracks.map((track) => track.id);
+    const from = ids.indexOf(id),
+      to = ids.indexOf(target);
+    if (from < 0 || to < 0 || from === to) return ids;
+    const next = [...ids];
+    next.splice(from, 1);
+    next.splice(to, 0, id);
+    return next;
+  };
+  const finishTrackDrag = (commit: boolean) => {
+    const current = movingTrack.current;
+    if (!current) return;
+    const row = trackRows.current.get(current.id);
+    if (row && !window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+      row.animate([{ transform: row.style.transform }, { transform: 'translateY(0)' }], {
+        duration: 160,
+        easing: 'ease-out',
+      });
+    movingTrack.current = null;
+    setLiftedTrack(null);
+    setTrackOrder(null);
+    if (commit && !locked && current.ids.some((id, index) => id !== tracks[index]?.id))
+      onReorder(current.ids);
+  };
   const [zoom, setZoom] = useState(48);
   const [zoomDraft, setZoomDraft] = useState('100');
   useEffect(() => setZoomDraft(String(Math.round((zoom / 48) * 100))), [zoom]);
@@ -303,7 +362,10 @@ export function TrackTimeline({
     (_, index) => index * rulerStride,
   );
   const place = musicalPosition(t.position, t.bpm, t.signature);
-  const visible = tracks.filter(
+  const orderedTracks = trackOrder
+    ? trackOrder.flatMap((id) => tracks.find((track) => track.id === id) ?? [])
+    : tracks;
+  const visible = orderedTracks.filter(
     (track) => filter === 'ALL' || (track.part ?? 'UNASSIGNED') === filter,
   );
   const openFile = (id: string) => {
@@ -733,7 +795,48 @@ export function TrackTimeline({
             </button>
           )}
         </div>
-        <div className="studio-timeline" ref={viewport} tabIndex={0} aria-label="트랙 타임라인">
+        <div
+          className="studio-timeline"
+          ref={viewport}
+          tabIndex={0}
+          aria-label="트랙 타임라인"
+          onPointerMove={(event) => {
+            const current = movingTrack.current;
+            const container = viewport.current;
+            if (!current || !container || locked) return;
+            const bounds = container.getBoundingClientRect();
+            if (event.clientY < bounds.top + 28) container.scrollTop -= 12;
+            if (event.clientY > bounds.bottom - 28) container.scrollTop += 12;
+            setLiftedTrack({
+              id: current.id,
+              delta: event.clientY - current.startY + container.scrollTop - current.scrollTop,
+            });
+            // Use layout coordinates: animated bounds can swap the target back and forth.
+            const grid = container.querySelector<HTMLElement>('.studio-grid');
+            if (!grid) return;
+            const y = event.clientY - grid.getBoundingClientRect().top;
+            for (const [id, row] of trackRows.current) {
+              if (id === current.id) continue;
+              const down = current.ids.indexOf(current.id) < current.ids.indexOf(id);
+              const midpoint = row.offsetTop + row.offsetHeight / 2;
+              if (
+                y < row.offsetTop ||
+                y > row.offsetTop + row.offsetHeight ||
+                (down ? y < midpoint : y > midpoint)
+              )
+                continue;
+              const ids = [...current.ids];
+              ids.splice(ids.indexOf(current.id), 1);
+              ids.splice(current.ids.indexOf(id), 0, current.id);
+              current.ids = ids;
+              setTrackOrder(ids);
+              break;
+            }
+          }}
+          onPointerUp={() => finishTrackDrag(true)}
+          onPointerCancel={() => finishTrackDrag(false)}
+          onLostPointerCapture={() => finishTrackDrag(false)}
+        >
           <div
             className="studio-grid"
             style={
@@ -779,7 +882,7 @@ export function TrackTimeline({
               </div>
             </div>
             {visible.map((track) => {
-              const index = tracks.indexOf(track);
+              const index = orderedTracks.indexOf(track);
               const clips = trackClips(track);
               const slotEnds: number[] = [];
               const slots = new Map<string, number>();
@@ -796,10 +899,61 @@ export function TrackTimeline({
                 <div
                   className={`studio-track-row ${armed === track.id ? 'armed' : ''}`}
                   key={track.id}
-                  style={{ '--clip-color': color } as CSSProperties}
+                  ref={(row) => {
+                    if (row) trackRows.current.set(track.id, row);
+                    else trackRows.current.delete(track.id);
+                  }}
+                  style={
+                    {
+                      '--clip-color': color,
+                      position: 'relative',
+                      zIndex: liftedTrack?.id === track.id ? 7 : undefined,
+                      pointerEvents: liftedTrack?.id === track.id ? 'none' : undefined,
+                      boxShadow: liftedTrack?.id === track.id ? '0 6px 16px #0006' : undefined,
+                      transform:
+                        liftedTrack?.id === track.id
+                          ? `translateY(${liftedTrack.delta + (movingTrack.current?.top ?? 0) - (rowPositions.current.get(track.id) ?? 0)}px)`
+                          : undefined,
+                    } as CSSProperties
+                  }
                 >
                   <div className="studio-track-head">
                     <div className="studio-track-title">
+                      <button
+                        type="button"
+                        disabled={locked}
+                        aria-label={`${track.name} 트랙 순서 변경`}
+                        title="드래그 또는 위·아래 방향키로 순서 변경"
+                        style={{
+                          cursor: locked ? 'default' : 'grab',
+                          padding: '2px 4px',
+                          flexShrink: 0,
+                          touchAction: 'none',
+                        }}
+                        onPointerDown={(event) => {
+                          if (locked || event.button !== 0) return;
+                          event.preventDefault();
+                          const row = trackRows.current.get(track.id)!;
+                          row.getAnimations().forEach((animation) => animation.cancel());
+                          movingTrack.current = {
+                            id: track.id,
+                            ids: tracks.map((item) => item.id),
+                            startY: event.clientY,
+                            top: row.offsetTop,
+                            scrollTop: viewport.current?.scrollTop ?? 0,
+                          };
+                          setLiftedTrack({ id: track.id, delta: 0 });
+                          viewport.current?.setPointerCapture(event.pointerId);
+                        }}
+                        onKeyDown={(event) => {
+                          if (locked || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+                          event.preventDefault();
+                          const target = orderedTracks[index + (event.key === 'ArrowUp' ? -1 : 1)];
+                          if (target) onReorder(reorderTrack(track.id, target.id));
+                        }}
+                      >
+                        ⠿
+                      </button>
                       <span>{String(index + 1).padStart(2, '0')}</span>
                       <input
                         aria-label={`${track.name} 트랙 이름`}

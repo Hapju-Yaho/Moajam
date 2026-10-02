@@ -157,6 +157,7 @@ export function RecommendationsScreen({
   const { width } = useWindowDimensions();
   const {
     recommendations: songs,
+    adoptedSongs,
     addRecommendation,
     isAdopted,
     selectRecommendation,
@@ -165,6 +166,7 @@ export function RecommendationsScreen({
   } = useMockAppState();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'최신순' | '인기순'>('최신순');
+  const [includeAdopted, setIncludeAdopted] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [referenceUrl, setReferenceUrl] = useState('');
   const [title, setTitle] = useState('');
@@ -266,6 +268,7 @@ export function RecommendationsScreen({
   const filtered = useMemo(
     () =>
       songs
+        .filter((song) => includeAdopted || !adoptedSongs.some((adopted) => adopted.id === song.id))
         .filter((song) =>
           `${song.title} ${song.artist}`.toLowerCase().includes(query.toLowerCase()),
         )
@@ -274,7 +277,7 @@ export function RecommendationsScreen({
             ? b.likes - a.likes
             : Date.parse(b.recommendedAt) - Date.parse(a.recommendedAt),
         ),
-    [filter, query, songs],
+    [filter, query, songs, adoptedSongs, includeAdopted],
   );
 
   const content = (
@@ -295,6 +298,14 @@ export function RecommendationsScreen({
             <ChipText active={filter === item}>{item}</ChipText>
           </Chip>
         ))}
+        <Chip
+          active={includeAdopted}
+          accessibilityRole="button"
+          accessibilityState={{ selected: includeAdopted }}
+          onPress={() => setIncludeAdopted((value) => !value)}
+        >
+          <ChipText active={includeAdopted}>채택된 곡 포함</ChipText>
+        </Chip>
       </Inline>
       <View style={{ gap: 14 }}>
         <Between>
@@ -303,10 +314,18 @@ export function RecommendationsScreen({
         </Between>
         {filtered.length === 0 ? (
           <View style={{ padding: 24, gap: 8 }}>
-            <Body>{songs.length ? '검색한 곡이 없어요.' : '아직 추천한 곡이 없어요.'}</Body>
+            <Body>
+              {songs.length
+                ? query.trim()
+                  ? '검색한 곡이 없어요.'
+                  : '표시할 추천곡이 없어요.'
+                : '아직 추천한 곡이 없어요.'}
+            </Body>
             <Muted>
               {songs.length
-                ? '다른 곡명이나 아티스트로 검색해보세요.'
+                ? includeAdopted
+                  ? '다른 곡명이나 아티스트로 검색해보세요.'
+                  : '다른 검색어를 입력하거나 채택된 곡 포함을 켜보세요.'
                 : '곡 추천하기로 첫 후보를 등록해보세요.'}
             </Muted>
           </View>
@@ -315,68 +334,65 @@ export function RecommendationsScreen({
           {filtered.map((song) => {
             const isLiked = song.likedByMe ?? false;
             return (
-              <Recommendation
-                key={song.id}
-                onPress={() => {
-                  selectRecommendation(song.id);
-                  navigate('recommendation', { id: song.id });
-                }}
-                style={[
-                  { gap: 14, overflow: 'hidden' },
-                  width < 900 ? { width: '100%' } : { width: '48.8%' },
-                ]}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                  {song.thumbnailUrl ? (
-                    <ArtworkImage source={{ uri: song.thumbnailUrl }} resizeMode="cover" />
-                  ) : (
-                    <Artwork tint={song.tint}>
-                      <ArtworkText>♪</ArtworkText>
-                    </Artwork>
-                  )}
-                  <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-                    <FlexBetween>
-                      <Body style={{ flex: 1, fontWeight: '500' }}>{song.title}</Body>
-                      {isAdopted(song.id) ? (
-                        <Pill tone="green">
-                          <PillText tone="green">이미 채택된 곡</PillText>
-                        </Pill>
-                      ) : null}
-                    </FlexBetween>
-                    <Muted>
-                      {song.artist} · {song.year}
-                    </Muted>
-                    <Muted numberOfLines={1}>{song.reason}</Muted>
+              <View key={song.id} style={{ width: width < 900 ? '100%' : '48.8%', gap: 6 }}>
+                <Recommendation
+                  onPress={() => {
+                    selectRecommendation(song.id);
+                    navigate('recommendation', { id: song.id });
+                  }}
+                  style={[{ gap: 14, overflow: 'hidden' }, { width: '100%' }]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                    {song.thumbnailUrl ? (
+                      <ArtworkImage source={{ uri: song.thumbnailUrl }} resizeMode="cover" />
+                    ) : (
+                      <Artwork tint={song.tint}>
+                        <ArtworkText>♪</ArtworkText>
+                      </Artwork>
+                    )}
+                    <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                      <FlexBetween>
+                        <Body style={{ flex: 1, fontWeight: '500' }}>{song.title}</Body>
+                        {isAdopted(song.id) ? (
+                          <Pill tone="green">
+                            <PillText tone="green">이미 채택된 곡</PillText>
+                          </Pill>
+                        ) : null}
+                      </FlexBetween>
+                      <Muted>
+                        {song.artist} · {song.year}
+                      </Muted>
+                      <Muted numberOfLines={1}>{song.reason}</Muted>
+                    </View>
                   </View>
-                </View>
-                <LatestComment style={{ gap: 3 }}>
-                  <Label>{song.deferred ? '보류된 추천' : '최근 의견'}</Label>
-                  <Muted numberOfLines={2}>
-                    {song.deferred
-                      ? song.deferredReason || '다음 선곡 때 다시 논의해요.'
-                      : ((
-                          workspace?.documents?.[`recommendation/${song.id}/comments`] as
-                            { text: string }[] | undefined
-                        )?.at(0)?.text ?? '첫 의견을 남겨보세요.')}
-                  </Muted>
-                </LatestComment>
-                <Between>
-                  <Row gap={12}>
-                    <Text
-                      onPress={(event) => {
-                        event.stopPropagation();
-                        toggleReaction(song.id, 'like');
-                      }}
-                      style={{ color: isLiked ? theme.colors.danger : theme.colors.textMuted }}
-                    >
-                      ♥ {song.likes}
-                    </Text>
-                    <Muted>🎸 {song.votes}</Muted>
-                    <Muted>▢ {song.comments}</Muted>
-                  </Row>
-                  <Muted>댓글 {song.comments}개 →</Muted>
-                </Between>
-              </Recommendation>
+                  <LatestComment style={{ gap: 3 }}>
+                    <Label>{song.deferred ? '보류된 추천' : '최근 의견'}</Label>
+                    <Muted numberOfLines={2}>
+                      {song.deferred
+                        ? song.deferredReason || '다음 선곡 때 다시 논의해요.'
+                        : ((
+                            workspace?.documents?.[`recommendation/${song.id}/comments`] as
+                              { text: string }[] | undefined
+                          )?.at(0)?.text ?? '첫 의견을 남겨보세요.')}
+                    </Muted>
+                  </LatestComment>
+                  <Between>
+                    <Row gap={12}>
+                      <Text
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          toggleReaction(song.id, 'like');
+                        }}
+                        style={{ color: isLiked ? theme.colors.danger : theme.colors.textMuted }}
+                      >
+                        ♥ {song.likes}
+                      </Text>
+                      <Muted>▢ {song.comments}</Muted>
+                    </Row>
+                    <Muted>댓글 {song.comments}개 →</Muted>
+                  </Between>
+                </Recommendation>
+              </View>
             );
           })}
         </View>

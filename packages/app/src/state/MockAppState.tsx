@@ -262,6 +262,17 @@ export function useMockAppState() {
               : value,
         },
       })),
+    deleteSong: (id: string) => {
+      if (!canManage) return;
+      update((band) => ({
+        ...band,
+        adoptedSongs: band.adoptedSongs.filter((song) => song.id !== id),
+        rehearsals: band.rehearsals.map((event) => ({
+          ...event,
+          songIds: event.songIds?.filter((songId) => songId !== id),
+        })),
+      }));
+    },
     updateSong: (id: string, changes: Partial<WorkspaceSong>) => {
       if (!canManage) return;
       update((band) => ({
@@ -339,6 +350,17 @@ export function useMockAppState() {
       return true;
     },
     adoptedSongs,
+    reorderAdoptedSongs: (ids: string[]) => {
+      update((band) => {
+        const rank = new Map(ids.map((id, index) => [id, index]));
+        return {
+          ...band,
+          adoptedSongs: [...band.adoptedSongs].sort(
+            (a, b) => (rank.get(a.id) ?? ids.length) - (rank.get(b.id) ?? ids.length),
+          ),
+        };
+      });
+    },
     members,
     canManage,
     rehearsals: workspace?.rehearsals ?? [],
