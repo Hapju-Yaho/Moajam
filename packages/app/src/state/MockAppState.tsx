@@ -262,6 +262,17 @@ export function useMockAppState() {
               : value,
         },
       })),
+    deleteSong: (id: string) => {
+      if (!canManage) return;
+      update((band) => ({
+        ...band,
+        adoptedSongs: band.adoptedSongs.filter((song) => song.id !== id),
+        rehearsals: band.rehearsals.map((event) => ({
+          ...event,
+          songIds: event.songIds?.filter((songId) => songId !== id),
+        })),
+      }));
+    },
     updateSong: (id: string, changes: Partial<WorkspaceSong>) => {
       if (!canManage) return;
       update((band) => ({

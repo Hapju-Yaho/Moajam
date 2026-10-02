@@ -1,3 +1,4 @@
+import { SongActions } from '../components/SongActions';
 import { Pressable } from 'react-native';
 import { useState } from 'react';
 import { AppShell } from '../components/AppShell';
@@ -99,9 +100,10 @@ export function SongWorkspaceScreen({
           </ActionButton>
           <Meta accessibilityLiveRegion="polite">{syncStatus}</Meta>
         </FlexBetween>
-        <FlexRow wrap>
-          <PageHeading>{song.title}</PageHeading>
-        </FlexRow>
+        <FlexBetween style={{ gap: 16 }}>
+          <PageHeading style={{ flex: 1, minWidth: 0 }}>{song.title}</PageHeading>
+          <SongActions song={song} onDeleted={() => navigate('songs', { workspaceId })} />
+        </FlexBetween>
         <Copy>
           {song.artist} · Key {arrangement.key || '미정'} · BPM {arrangement.bpm || '미정'}
         </Copy>

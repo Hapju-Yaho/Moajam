@@ -819,6 +819,12 @@ export function PracticeStudio({
             ]);
             setArmed(id);
           }}
+          onReorder={(ids) =>
+            setTracks((current) => [
+              ...ids.flatMap((id) => current.find((track) => track.id === id) ?? []),
+              ...current.filter((track) => !ids.includes(track.id)),
+            ])
+          }
           onPatch={patchTrack}
           onPatchClip={patchClip}
           onClipDuration={hydrateDuration}

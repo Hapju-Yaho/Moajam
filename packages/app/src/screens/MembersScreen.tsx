@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { usePreferences } from '../state/preferences';
 import { useIdentity } from '../state/Identity';
-import { Modal, Pressable, useWindowDimensions, View } from 'react-native';
+import { Image, Modal, Pressable, useWindowDimensions, View } from 'react-native';
 import { api, serverConfigured } from '../lib/remote';
 import { InvitationPanel } from '../components/InvitationPanel';
 import { AppShell } from '../components/AppShell';
@@ -29,6 +30,7 @@ import { Avatar, AvatarText, Input } from '../styles/layout';
 
 export function MembersScreen({ navigate }: ScreenProps) {
   const currentUserId = useIdentity();
+  const profile = usePreferences();
   const { width } = useWindowDimensions();
   const { members, removeMember, updateMember, workspace, workspaceId, canManage, actionError } =
     useMockAppState();
@@ -85,12 +87,22 @@ export function MembersScreen({ navigate }: ScreenProps) {
                   <FlexBetween>
                     <FlexRow>
                       <Avatar color={member.color} size={44}>
-                        <AvatarText>{member.initials}</AvatarText>
+                        {(member.id === currentUserId ? profile.photo : member.photo) ? (
+                          <Image
+                            source={{
+                              uri: member.id === currentUserId ? profile.photo : member.photo,
+                            }}
+                            accessibilityLabel={`${member.name} 프로필`}
+                            style={{ width: 44, height: 44, borderRadius: 22 }}
+                          />
+                        ) : (
+                          <AvatarText>{member.initials}</AvatarText>
+                        )}
                       </Avatar>
                       <View>
                         <Copy style={{ fontWeight: '600' }}>
                           {member.name}
-                          {index === 0 ? ' (나)' : ''}
+                          {member.id === currentUserId ? ' (나)' : ''}
                         </Copy>
                         <Meta>
                           {index === 0 ? '오늘 활동' : index < 3 ? '2시간 전 활동' : '어제 활동'}

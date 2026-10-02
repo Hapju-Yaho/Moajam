@@ -142,7 +142,16 @@ function Preview({ asset }: { asset: Asset }) {
       </div>
       {error && (
         <span role="alert">
-          {error} <button onClick={() => setAttempt((value) => value + 1)}>다시 시도</button>
+          {error}{' '}
+          <button
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setAttempt((value) => value + 1);
+            }}
+          >
+            다시 시도
+          </button>
         </span>
       )}
     </div>
@@ -233,17 +242,32 @@ export function ClipLibrary({
       >
         <summary
           className="clip-library-toggle"
-          style={{ display: 'inline-block', cursor: 'pointer', fontWeight: 600, padding: '4px 0' }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+            fontWeight: 600,
+            padding: '4px 0',
+            listStyle: 'none',
+          }}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) event.preventDefault();
+          }}
         >
-          클립 보관함
+          <span style={{ cursor: 'pointer' }}>클립 보관함</span>
+          <button
+            className="clip-library-refresh"
+            style={{ position: 'static', flexShrink: 0 }}
+            disabled={busy || loading}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setAttempt((value) => value + 1);
+            }}
+          >
+            <span aria-hidden="true">↻</span> 새로고침
+          </button>
         </summary>
-        <button
-          style={{ position: 'absolute', top: 1, left: 128 }}
-          disabled={busy || loading}
-          onClick={() => setAttempt((value) => value + 1)}
-        >
-          <span aria-hidden="true">↻</span> 새로고침
-        </button>
         <div data-clip-library style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {loading && <Meta>클립 불러오는 중…</Meta>}
           {error && <div role="alert">{error}</div>}

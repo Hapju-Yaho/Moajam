@@ -43,3 +43,7 @@ details[open] > .clip-library-toggle::before {
 .clip-library-toggle::-webkit-details-marker {
   display: none;
 }
+
+details:not([open]) .clip-library-refresh {
+  display: none;
+}

@@ -376,6 +376,94 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     );
     assert.equal(renamedAsset.name, 'Renamed clip.wav');
     await call(`/assets/${asset.assetId}/name`, 'PATCH', { name: '  ' }, a.token, 400);
+    await call(`/assets/${asset.assetId}/visibility`, 'PATCH', { visibility: 'PRIVATE' }, a.token);
+    const practicePath = `/workspaces/${band.id}/practice/test`;
+    const legacyKey = `practice/${band.id}/test`;
+    const legacySession = {
+      tracks: [
+        {
+          id: 'track',
+          name: 'Shared track',
+          volume: 0.8,
+          clips: [
+            {
+              id: 'clip',
+              name: 'Shared clip',
+              offset: 2,
+              duration: 4,
+              sourceStart: 1,
+              blob: { __moajamAssetId: asset.assetId },
+            },
+          ],
+        },
+      ],
+      notes: [],
+      bpm: 132,
+      signature: '3/4',
+      metronome: true,
+      clickVolume: 0.3,
+    };
+    await call(
+      '/me/documents/' + encodeURIComponent(legacyKey),
+      'PUT',
+      { revision: 0, value: legacySession },
+      a.token,
+    );
+    const migrated = await call(practicePath, 'GET', undefined, b.token);
+    assert.equal(migrated.value.data.bpm, 132);
+    assert.equal(migrated.value.data.signature, '3/4');
+    assert.deepEqual(migrated.value.data.tracks, legacySession.tracks);
+    assert.equal('metronome' in migrated.value.data, false);
+    assert.equal('clickVolume' in migrated.value.data, false);
+    assert.deepEqual(await call(practicePath, 'GET', undefined, a.token), migrated);
+    const changedSession = { ...migrated.value.data, bpm: 144, signature: '6/8' };
+    const changed = await call(
+      practicePath,
+      'PUT',
+      { revision: migrated.revision, value: { data: changedSession } },
+      b.token,
+    );
+    assert.deepEqual(
+      (await call(practicePath, 'GET', undefined, a.token)).value.data,
+      changedSession,
+    );
+    await call(`/assets/${asset.assetId}/visibility`, 'PATCH', { visibility: 'PRIVATE' }, a.token);
+    await call(
+      practicePath,
+      'PUT',
+      { revision: changed.revision, value: { data: changedSession } },
+      b.token,
+      400,
+    );
+    await call(
+      `/assets/${asset.assetId}/visibility`,
+      'PATCH',
+      { visibility: 'WORKSPACE' },
+      a.token,
+    );
+
+    await call(
+      practicePath,
+      'PUT',
+      { revision: migrated.revision, value: { data: migrated.value.data } },
+      a.token,
+      409,
+    );
+    const outsider = await call('/auth/temporary', 'POST', {}, undefined, 201);
+    await call(practicePath, 'GET', undefined, outsider.token, 403);
+    await call(
+      practicePath,
+      'PUT',
+      { revision: changed.revision, value: { data: changedSession } },
+      outsider.token,
+      403,
+    );
+    await call(`/assets/${asset.assetId}/download`, 'GET', undefined, outsider.token, 403);
+    assert.deepEqual(
+      (await call('/me/documents/' + encodeURIComponent(legacyKey), 'GET', undefined, a.token))
+        .value,
+      legacySession,
+    );
     const download = await call(`/assets/${asset.assetId}/download`, 'GET', undefined, b.token);
     assert.equal(await (await fetch(download.url)).text(), 'test audio payload');
     const segment = await fetch(download.url, { headers: { Range: 'bytes=5-9' } });

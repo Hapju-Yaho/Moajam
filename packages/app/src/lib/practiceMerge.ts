@@ -94,15 +94,17 @@ export function mergePractice(
   // Clip IDs are global so moving a clip between tracks cannot duplicate it.
   const flatten = (doc: PracticeDocument) => ({
     ...doc,
+    trackOrder: doc.tracks.map((track) => track.id),
     tracks: doc.tracks.map((track) => withClips(track, [])),
     clips: doc.tracks.flatMap((track) =>
       trackClips(track).map((clip) => ({ ...clip, trackId: track.id })),
     ),
   });
   const result = merge(flatten(base), flatten(local), flatten(remote)) as PracticeDocument & {
+    trackOrder: string[];
     clips: (ReturnType<typeof trackClips>[number] & { trackId: string })[];
   };
-  const { clips, ...document } = result;
+  const { clips, trackOrder, ...document } = result;
   for (const clip of clips)
     if (!document.tracks.some((track) => track.id === clip.trackId)) {
       const parent =
@@ -116,18 +118,24 @@ export function mergePractice(
   return {
     document: {
       ...document,
-      tracks: document.tracks.map((track) =>
-        withClips(
-          track,
-          clips
-            .filter((clip) => clip.trackId === track.id)
-            .map((item) => {
-              const clip = { ...item };
-              delete (clip as { trackId?: string }).trackId;
-              return clip;
-            }),
+      tracks: [...document.tracks]
+        .sort((a, b) => {
+          const left = trackOrder.indexOf(a.id),
+            right = trackOrder.indexOf(b.id);
+          return (left < 0 ? Infinity : left) - (right < 0 ? Infinity : right);
+        })
+        .map((track) =>
+          withClips(
+            track,
+            clips
+              .filter((clip) => clip.trackId === track.id)
+              .map((item) => {
+                const clip = { ...item };
+                delete (clip as { trackId?: string }).trackId;
+                return clip;
+              }),
+          ),
         ),
-      ),
     } as PracticeDocument,
     conflict,
   };

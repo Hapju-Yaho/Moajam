@@ -1,3 +1,4 @@
+import { SongActions } from '../components/SongActions';
 import { theme } from '@moajam/ui';
 import { useState } from 'react';
 import { useIdentity } from '../state/Identity';
@@ -35,7 +36,6 @@ export function RecommendationDetailScreen({ navigate, entityId }: ScreenProps) 
     canManage,
     toggleReaction,
     deferRecommendation,
-    deleteRecommendation,
     editRecommendation,
   } = useMockAppState();
   const song = recommendations.find((item) => item.id === (entityId ?? selectedRecommendationId));
@@ -103,45 +103,75 @@ export function RecommendationDetailScreen({ navigate, entityId }: ScreenProps) 
               </View>
             </FlexRow>
             <Copy style={{ fontSize: 16, lineHeight: 25 }}>“{song.reason}”</Copy>
-            {canManage || song.authorId === currentUserId ? (
+            <FlexRow gap={8}>
               <ActionButton
-                secondary
-                onPress={() => {
-                  setEditing(!editing);
-                  setDraft({
-                    title: song.title,
-                    artist: song.artist,
-                    reason: song.reason,
-                    referenceUrl: song.referenceUrl ?? '',
-                  });
-                  setEditError('');
-                }}
+                compact
+                secondary={!liked}
+                onPress={() => toggleReaction(song.id, 'like')}
               >
-                추천 내용 수정
+                ♥ {song.likes} 좋아요
               </ActionButton>
-            ) : null}
+              <View style={{ flex: 1 }} />
+              {canManage || song.authorId === currentUserId ? (
+                <FlexRow gap={8}>
+                  <ActionButton
+                    compact
+                    secondary
+                    onPress={() => {
+                      setEditing(!editing);
+                      setDraft({
+                        title: song.title,
+                        artist: song.artist,
+                        reason: song.reason,
+                        referenceUrl: song.referenceUrl ?? '',
+                      });
+                      setEditError('');
+                    }}
+                  >
+                    추천 내용 수정
+                  </ActionButton>
+                  <SongActions song={song} recommendation onDeleted={() => navigate('songs')} />
+                </FlexRow>
+              ) : null}
+            </FlexRow>
             {editing ? (
               <Surface>
-                <Input
-                  accessibilityLabel="추천곡 제목"
-                  value={draft.title}
-                  onChangeText={(title) => setDraft({ ...draft, title })}
-                />
-                <Input
-                  accessibilityLabel="추천곡 아티스트"
-                  value={draft.artist}
-                  onChangeText={(artist) => setDraft({ ...draft, artist })}
-                />
-                <Input
-                  accessibilityLabel="추천 이유"
-                  value={draft.reason}
-                  onChangeText={(reason) => setDraft({ ...draft, reason })}
-                />
-                <Input
-                  accessibilityLabel="추천곡 링크"
-                  value={draft.referenceUrl}
-                  onChangeText={(referenceUrl) => setDraft({ ...draft, referenceUrl })}
-                />
+                <FlexRow>
+                  <Meta style={{ width: 96 }}>곡 제목</Meta>
+                  <Input
+                    style={{ flex: 1, minWidth: 0 }}
+                    accessibilityLabel="추천곡 제목"
+                    value={draft.title}
+                    onChangeText={(title) => setDraft({ ...draft, title })}
+                  />
+                </FlexRow>
+                <FlexRow>
+                  <Meta style={{ width: 96 }}>아티스트</Meta>
+                  <Input
+                    style={{ flex: 1, minWidth: 0 }}
+                    accessibilityLabel="추천곡 아티스트"
+                    value={draft.artist}
+                    onChangeText={(artist) => setDraft({ ...draft, artist })}
+                  />
+                </FlexRow>
+                <FlexRow>
+                  <Meta style={{ width: 96 }}>추천이유</Meta>
+                  <Input
+                    style={{ flex: 1, minWidth: 0 }}
+                    accessibilityLabel="추천 이유"
+                    value={draft.reason}
+                    onChangeText={(reason) => setDraft({ ...draft, reason })}
+                  />
+                </FlexRow>
+                <FlexRow>
+                  <Meta style={{ width: 96 }}>레퍼런스 링크</Meta>
+                  <Input
+                    style={{ flex: 1, minWidth: 0 }}
+                    accessibilityLabel="추천곡 링크"
+                    value={draft.referenceUrl}
+                    onChangeText={(referenceUrl) => setDraft({ ...draft, referenceUrl })}
+                  />
+                </FlexRow>
                 <ActionButton
                   onPress={() => {
                     if (
@@ -165,9 +195,6 @@ export function RecommendationDetailScreen({ navigate, entityId }: ScreenProps) 
               </Surface>
             ) : null}
             <FlexRow wrap>
-              <ActionButton secondary={!liked} onPress={() => toggleReaction(song.id, 'like')}>
-                ♥ {song.likes} 좋아요
-              </ActionButton>
               <ActionButton secondary={!voted} onPress={() => toggleReaction(song.id, 'vote')}>
                 🎸 {song.votes} 채택 추천
               </ActionButton>
@@ -221,18 +248,6 @@ export function RecommendationDetailScreen({ navigate, entityId }: ScreenProps) 
                 </ActionButton>
                 {song.deferred ? <Meta>보류됨 · {song.deferredReason || '사유 없음'}</Meta> : null}
               </>
-            ) : null}
-            {(canManage || song.authorId === currentUserId) && !adopted ? (
-              <ActionButton
-                secondary
-                danger
-                onPress={() => {
-                  deleteRecommendation(song.id);
-                  navigate('recommendations');
-                }}
-              >
-                추천 삭제
-              </ActionButton>
             ) : null}
           </Surface>
         </Stack>
