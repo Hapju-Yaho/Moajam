@@ -1007,7 +1007,7 @@ export function GuitarTabEditor({
         >
           연결 해제
         </button>
-        <small>첫 음표 → 다음 음표 연결 · 두 음표 선택도 가능 · H / P / J / T</small>
+        <small>첫 음표 → 다음 음표 연결 · 두 음표 선택도 가능</small>
       </div>
       <div className="guitar-inputbar">
         <label>
@@ -1219,7 +1219,7 @@ export function GuitarTabEditor({
       <div className="score-range-status" role="status">
         {multiple
           ? `${rangeNotes.length}개 박 선택 · ${rangeNotes.reduce((sum, item) => sum + item.beats, 0)}박 길이 · 모든 줄 포함`
-          : '드래그로 여러 박 선택 · Ctrl+C 복사 · Ctrl+V 선택 위치에 삽입'}
+          : '악보의 칸을 선택해 음표를 입력하세요. 드래그하면 여러 박을 선택할 수 있어요.'}
         <button onClick={deselect} style={{ visibility: multiple ? 'visible' : 'hidden' }}>
           선택 해제
         </button>
@@ -1382,30 +1382,6 @@ export function GuitarTabEditor({
           {message}
         </p>
       )}
-      <div className="score-key-help">
-        <span>
-          드래그 / <kbd>Shift ← →</kbd> 구간 선택 · 모든 줄 포함
-        </span>
-        <span>
-          <kbd>Ctrl C</kbd> 복사 <kbd>Ctrl V</kbd> 삽입 <kbd>Esc</kbd> 선택 해제
-        </span>
-        <span>
-          <kbd>0–9</kbd> 프렛 · 두 자리 연속 입력
-        </span>
-        <span>
-          <kbd>← →</kbd> 박 이동 <kbd>↑ ↓</kbd> 줄 이동
-        </span>
-        <span>
-          <kbd>[</kbd> 길게 <kbd>]</kbd> 짧게 <kbd>R</kbd> 쉼표 <kbd>Space</kbd> 재생
-        </span>
-        <span>
-          <kbd>S</kbd> 스타카토(박 전체) <kbd>X</kbd> 데드노트(선택 음) <kbd>O</kbd> 고스트노트(선택
-          음)
-        </span>
-        <span>
-          <kbd>Ctrl Z</kbd> 실행 취소
-        </span>
-      </div>
     </div>
   );
 }

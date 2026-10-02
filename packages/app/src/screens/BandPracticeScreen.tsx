@@ -78,6 +78,21 @@ export function BandPracticeScreen({ navigate, entityId, feedback }: ScreenProps
           </Meta>
         )}
       </Surface>
+      {song && (
+        <Surface>
+          <FlexBetween>
+            <Heading>밴드 공용 악보</Heading>
+            <ActionButton
+              onPress={() => navigate('band-score-editor', { id: song.id, workspaceId })}
+            >
+              악보 편집
+            </ActionButton>
+          </FlexBetween>
+          <Meta>
+            이 곡의 악보를 멤버들과 함께 편집하고 재생하세요. 개인 악보도 복사해 가져올 수 있어요.
+          </Meta>
+        </Surface>
+      )}
       {song && <SongPractice key={song.id} song={song} feedback={feedback} />}
     </AppShell>
   );

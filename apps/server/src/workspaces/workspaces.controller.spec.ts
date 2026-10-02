@@ -69,6 +69,138 @@ function fixture(memberCount: number, role = 'OWNER', storageFails = false) {
   };
 }
 const user = { id: 'user' } as AuthenticatedUser;
+
+describe('band scores', () => {
+  const score = { title: '공용 악보', bpm: 120, parts: ['Bass'], notes: [], sync: {} };
+  function scoreFixture() {
+    let document: { revision: number; value: unknown; updatedBy: string } | null = null;
+    const tx = {
+      workspaceMember: {
+        findUnique: async ({
+          where,
+        }: {
+          where: { workspaceId_userId: { workspaceId: string; userId: string } };
+        }) =>
+          where.workspaceId_userId.workspaceId === 'band' &&
+          ['user', 'member'].includes(where.workspaceId_userId.userId)
+            ? { role: 'MEMBER' }
+            : null,
+      },
+      mediaAsset: {
+        count: async ({
+          where,
+        }: {
+          where: { id: { in: string[] }; workspaceId: string; visibility: string };
+        }) => {
+          assert.equal(where.workspaceId, 'band');
+          assert.equal(where.visibility, 'WORKSPACE');
+          return where.id.in.filter((id) => id === 'shared-audio').length;
+        },
+      },
+      workspaceDocument: {
+        findUnique: async ({ where }: { where: { workspaceId_key: { key: string } } }) =>
+          where.workspaceId_key.key === 'songs' ? { value: { data: [{ id: 'song' }] } } : document,
+        findUniqueOrThrow: async () => document,
+        create: async ({ data }: { data: { value: unknown; updatedBy: string } }) => {
+          if (document) throw { code: 'P2002' };
+          document = { revision: 1, value: data.value, updatedBy: data.updatedBy };
+          return document;
+        },
+        updateMany: async ({
+          where,
+          data,
+        }: {
+          where: { revision: number };
+          data: { value: unknown; updatedBy: string };
+        }) => {
+          if (!document || where.revision !== document.revision) return { count: 0 };
+          document = {
+            revision: document.revision + 1,
+            value: data.value,
+            updatedBy: data.updatedBy,
+          };
+          return { count: 1 };
+        },
+      },
+    };
+    const db = {
+      ...tx,
+      $transaction: async (action: (client: typeof tx) => Promise<unknown>) => action(tx),
+    };
+    return new WorkspacesController(
+      db as unknown as PrismaService,
+      {} as StorageService,
+      {} as SeparationService,
+    );
+  }
+  it('lets ordinary members save and read one shared score', async () => {
+    const controller = scoreFixture();
+    assert.equal(await controller.score(user, 'band', 'song'), null);
+    await controller.saveScore(user, 'band', 'song', { revision: 0, value: { data: score } });
+    const member = { id: 'member' } as AuthenticatedUser;
+    const saved = await controller.score(member, 'band', 'song');
+    assert.equal(saved?.revision, 1);
+    const updated = await controller.saveScore(member, 'band', 'song', {
+      revision: 1,
+      value: { data: { ...score, title: '멤버 수정' } },
+    });
+    assert.equal(updated.revision, 2);
+    assert.equal(updated.updatedBy, 'member');
+  });
+  it('rejects both stale edits and concurrent first saves without changing the winner', async () => {
+    const controller = scoreFixture();
+    await controller.saveScore(user, 'band', 'song', { revision: 0, value: { data: score } });
+    await assert.rejects(
+      controller.saveScore(user, 'band', 'song', { revision: 0, value: { data: score } }),
+      /다른 멤버/,
+    );
+    await controller.saveScore(user, 'band', 'song', {
+      revision: 1,
+      value: { data: { ...score, title: 'winner' } },
+    });
+    await assert.rejects(
+      controller.saveScore(user, 'band', 'song', { revision: 1, value: { data: score } }),
+      /다른 멤버/,
+    );
+    assert.equal((await controller.score(user, 'band', 'song'))?.revision, 2);
+  });
+  it('denies outsiders, another band and nonexistent songs', async () => {
+    const controller = scoreFixture();
+    const outsider = { id: 'outsider' } as AuthenticatedUser;
+    await assert.rejects(controller.score(outsider, 'band', 'song'), /권한/);
+    await assert.rejects(
+      controller.saveScore(outsider, 'band', 'song', { revision: 0, value: { data: score } }),
+      /권한/,
+    );
+    await assert.rejects(controller.score(user, 'other-band', 'song'), /권한/);
+    await assert.rejects(
+      controller.saveScore(user, 'band', 'missing', { revision: 0, value: { data: score } }),
+      /곡을 찾을/,
+    );
+  });
+  it('rejects malformed scores and private or foreign attachments', async () => {
+    const controller = scoreFixture();
+    await assert.rejects(
+      controller.saveScore(user, 'band', 'song', {
+        revision: 0,
+        value: { data: { ...score, bpm: -1 } },
+      }),
+      /악보 데이터/,
+    );
+    await assert.rejects(
+      controller.saveScore(user, 'band', 'song', {
+        revision: 0,
+        value: { data: { ...score, referenceAudio: { __moajamAssetId: 'private-audio' } } },
+      }),
+      /공유된 파일/,
+    );
+    const saved = await controller.saveScore(user, 'band', 'song', {
+      revision: 0,
+      value: { data: { ...score, referenceAudio: { __moajamAssetId: 'shared-audio' } } },
+    });
+    assert.equal(saved.revision, 1);
+  });
+});
 describe('leaving a workspace', () => {
   it('requires explicit deletion confirmation for the last member', async () => {
     const { controller, calls } = fixture(1);

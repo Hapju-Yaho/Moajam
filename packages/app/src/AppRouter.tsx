@@ -13,6 +13,7 @@ import { RecommendationDetailScreen } from './screens/RecommendationDetailScreen
 import { BandPracticeScreen } from './screens/BandPracticeScreen';
 import { RehearsalsScreen } from './screens/RehearsalsScreen';
 import { ScoreEditorScreen } from './screens/ScoreEditorScreen';
+import { BandScoreEditorScreen } from './screens/BandScoreEditorScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SongsScreen } from './screens/SongsScreen';
 import { SongWorkspaceScreen } from './screens/SongWorkspaceScreen';
@@ -71,6 +72,7 @@ function ScopedScreen({
       'rehearsals',
       'members',
       'practice',
+      'band-score-editor',
     ].includes(route)
   )
     return <PersonalScreen route="personal-home" navigate={navigate} />;
@@ -103,6 +105,8 @@ function ScopedScreen({
       return <InstrumentExtractorScreen navigate={navigate} />;
     case 'score-editor':
       return <ScoreEditorScreen navigate={navigate} entityId={entityId} />;
+    case 'band-score-editor':
+      return <BandScoreEditorScreen navigate={navigate} entityId={entityId} />;
     case 'settings':
       return <SettingsScreen navigate={navigate} />;
     case 'help':

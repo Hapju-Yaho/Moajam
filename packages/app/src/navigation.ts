@@ -13,6 +13,7 @@ export type AppRoute =
   | 'members'
   | 'instrument'
   | 'score-editor'
+  | 'band-score-editor'
   | 'settings'
   | 'help';
 
@@ -71,6 +72,7 @@ export function buildAppPath(
       ? `/me/practice?${new URLSearchParams({ workspaceId: bandId, songId: id })}`
       : '/me/practice';
   const paths: Partial<Record<AppRoute, string>> = {
+    'band-score-editor': id ? `${base}/songs/${encodeURIComponent(id)}/score` : `${base}/practice`,
     home: base,
     recommendations: `${base}/songs`,
     songs: `${base}/songs`,

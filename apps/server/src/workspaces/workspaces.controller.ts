@@ -34,6 +34,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { canWriteDocument, isWorkspaceDocumentKey } from './document-policy.js';
 import { StorageService } from '../media/storage.service.js';
 import { SeparationService } from '../media/separation.service.js';
+import { isBandScore } from './score-policy.js';
 
 class CreateWorkspaceDto {
   @IsOptional() @IsString() @MaxLength(2000) description?: string;
@@ -364,6 +365,85 @@ export class WorkspacesController {
       },
       { isolationLevel: 'Serializable', timeout: 60000 },
     );
+  }
+  private async scoreKey(workspaceId: string, songId: string) {
+    if (!/^[\w-]{1,160}$/.test(songId)) throw new BadRequestException('곡 정보를 확인해주세요.');
+    const songs = await this.db.workspaceDocument.findUnique({
+      where: { workspaceId_key: { workspaceId, key: 'songs' } },
+    });
+    const data = (songs?.value as { data?: { id: string }[] } | null)?.data;
+    if (!Array.isArray(data) || !data.some((song) => song.id === songId))
+      throw new NotFoundException('밴드에서 이 곡을 찾을 수 없습니다.');
+    return `song/${songId}/score`;
+  }
+  @Get('workspaces/:workspaceId/scores/:songId')
+  async score(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('workspaceId') workspaceId: string,
+    @Param('songId') songId: string,
+  ) {
+    await this.membership(workspaceId, user.id);
+    const key = await this.scoreKey(workspaceId, songId);
+    return this.db.workspaceDocument.findUnique({
+      where: { workspaceId_key: { workspaceId, key } },
+    });
+  }
+  @Put('workspaces/:workspaceId/scores/:songId')
+  async saveScore(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('workspaceId') workspaceId: string,
+    @Param('songId') songId: string,
+    @Body() dto: DocumentDto,
+  ) {
+    await this.membership(workspaceId, user.id);
+    const key = await this.scoreKey(workspaceId, songId);
+    if (!isBandScore(dto.value.data)) throw new BadRequestException('악보 데이터를 확인해주세요.');
+    const value = dto.value as Prisma.InputJsonValue;
+    const ids = this.practiceAssets(dto.value.data);
+    const conflict =
+      '다른 멤버가 악보를 수정했어요. 내 작업을 파일로 저장한 뒤 최신 악보를 불러와주세요.';
+    try {
+      return await this.db.$transaction(
+        async (tx) => {
+          // Recheck membership inside the transaction, including ordinary members.
+          if (
+            !(await tx.workspaceMember.findUnique({
+              where: { workspaceId_userId: { workspaceId, userId: user.id } },
+            }))
+          )
+            throw new ForbiddenException('이 밴드에 대한 권한이 없습니다.');
+          if (
+            (await tx.mediaAsset.count({
+              where: {
+                id: { in: ids },
+                workspaceId,
+                visibility: 'WORKSPACE',
+                ready: true,
+                deletedAt: null,
+              },
+            })) !== ids.length
+          )
+            throw new BadRequestException('이 밴드에 공유된 파일만 연결할 수 있습니다.');
+          if (dto.revision === 0)
+            return tx.workspaceDocument.create({
+              data: { workspaceId, key, value, updatedBy: user.id },
+            });
+          const changed = await tx.workspaceDocument.updateMany({
+            where: { workspaceId, key, revision: dto.revision },
+            data: { value, revision: { increment: 1 }, updatedBy: user.id },
+          });
+          if (!changed.count) throw new ConflictException(conflict);
+          return tx.workspaceDocument.findUniqueOrThrow({
+            where: { workspaceId_key: { workspaceId, key } },
+          });
+        },
+        { isolationLevel: 'Serializable' },
+      );
+    } catch (error) {
+      if (['P2002', 'P2034'].includes((error as { code?: string }).code ?? ''))
+        throw new ConflictException(conflict);
+      throw error;
+    }
   }
   private practiceKey(songId: string) {
     if (!/^[\w-]{1,160}$/.test(songId)) throw new BadRequestException('곡 정보를 확인해주세요.');

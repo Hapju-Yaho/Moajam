@@ -185,8 +185,7 @@
 .guitar-toolbar,
 .guitar-inputbar,
 .guitar-location,
-.score-note-inspector,
-.score-key-help {
+.score-note-inspector {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -422,21 +421,6 @@
 .score-note-inspector input {
   width: 100px;
 }
-.score-key-help {
-  font-size: 10px;
-  color: #7a8a80;
-  gap: 14px;
-  border: 0;
-  padding: 10px 14px;
-}
-.score-key-help kbd {
-  font-family: inherit;
-  color: #476051;
-  background: #fff;
-  border: 1px solid #d6dfd8;
-  padding: 2px 4px;
-  border-radius: 3px;
-}
 .score-message {
   margin: 0;
   padding: 10px 15px;
@@ -463,9 +447,6 @@
   }
   .score-page {
     padding: 18px 8px;
-  }
-  .score-key-help {
-    gap: 8px;
   }
   .guitar-toolbar {
     gap: 5px;

@@ -3,6 +3,12 @@ import { readPersonal, writePersonal, assertPersonalUnchanged } from './personal
 const assets = new WeakMap<Blob, { user: string; scope?: string; id: Promise<string> }>();
 const bandRevisions = new Map<string, number>();
 function bandSession(key: string) {
+  const score = /^band-score\/([0-9a-f]{8}-[0-9a-f-]{27})\/([\w-]+)$/i.exec(key);
+  if (score)
+    return {
+      workspaceId: score[1],
+      path: `/workspaces/${score[1]}/scores/${encodeURIComponent(score[2])}`,
+    };
   const match = /^practice\/([0-9a-f]{8}-[0-9a-f-]{27})\/([\w-]+)$/i.exec(key);
   return match
     ? {
@@ -14,7 +20,7 @@ function bandSession(key: string) {
 type BandDocument = { revision: number; value: { data: unknown } };
 const queues = new Map<string, Promise<unknown>>();
 type AssetRef = { __moajamAssetId: string };
-async function encode(
+export async function encode(
   value: unknown,
   key: string,
   user: string,
@@ -55,7 +61,7 @@ async function encode(
   }
   return value;
 }
-async function decode(value: unknown, user: string, key: string): Promise<unknown> {
+export async function decode(value: unknown, user: string, key: string): Promise<unknown> {
   if (Array.isArray(value)) return Promise.all(value.map((item) => decode(item, user, key)));
   if (value && typeof value === 'object') {
     if ('__moajamAssetId' in value) {

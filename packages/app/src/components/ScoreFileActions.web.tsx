@@ -14,12 +14,14 @@ export function ScoreFileActions({
   disabled,
   onLoad,
   onBusyChange,
+  shared = false,
 }: {
   document: ScoreDocument;
   part: string;
   disabled: boolean;
   onLoad: (document: ScoreDocument) => void;
   onBusyChange: (busy: boolean) => void;
+  shared?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -163,8 +165,9 @@ export function ScoreFileActions({
             {pending.referenceAudio ? ' · 함께 재생할 음원 포함' : ''}
           </p>
           <p>
-            적용하면 현재 악보와 연결된 녹음이 바뀌고 자동 저장돼요. 필요한 작업은 먼저 ‘파일로
-            저장’으로 보관해주세요.
+            적용하면 현재 악보와 연결된 녹음이 바뀝니다.{' '}
+            {shared ? '확인 후 밴드에 저장해주세요.' : '개인 악보에 자동 저장돼요.'} 필요한 작업은
+            먼저 ‘파일로 저장’으로 보관해주세요.
           </p>
           <div className="score-backing-row">
             <button

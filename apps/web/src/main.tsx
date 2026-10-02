@@ -71,6 +71,7 @@ const routes: Array<[string, AppRoute]> = [
   ['/workspaces/:workspaceId/members', 'members'],
   ['/me/instrument-extractor', 'instrument'],
   ['/me/score-editor', 'score-editor'],
+  ['/workspaces/:workspaceId/songs/:songId/score', 'band-score-editor'],
   ['/settings', 'settings'],
   ['/help', 'help'],
 ];

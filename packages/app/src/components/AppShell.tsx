@@ -191,11 +191,13 @@ const pageTitles: Record<AppRoute, string> = {
   members: '멤버',
   instrument: '내 악기 추출',
   'score-editor': '악보 편집',
+  'band-score-editor': '밴드 악보 편집',
   settings: '설정',
   help: '도움말',
 };
 
 const activeGroup = (current: AppRoute, target: AppRoute) => {
+  if (target === 'practice') return current === target || current === 'band-score-editor';
   if (target === 'recommendations') return current === target || current === 'recommendation';
   if (target === 'songs')
     return ['songs', 'song', 'recommendations', 'recommendation'].includes(current);

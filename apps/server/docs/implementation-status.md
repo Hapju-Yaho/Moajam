@@ -57,6 +57,28 @@ SQLite HTTP 통합 테스트로 임시 로그인·계정 복구·개인 데이�
 
 ## JSON 문서에 들어 있는 기능
 
+밴드 연습실 전용 경로:
+
+| Method | 경로                                          | 현재 동작 / 차이                                                     |
+| ------ | --------------------------------------------- | -------------------------------------------------------------------- |
+| GET    | `/workspaces/{workspaceId}/practice/{songId}` | 밴드 공용 연습 트랙 조회                                             |
+| PUT    | `/workspaces/{workspaceId}/practice/{songId}` | 밴드 멤버가 revision으로 트랙 저장                                   |
+| GET    | `/workspaces/{workspaceId}/scores/{songId}`   | 밴드 멤버만 곡별 공용 악보 조회, 없으면 null                         |
+| PUT    | `/workspaces/{workspaceId}/scores/{songId}`   | 모든 밴드 멤버 편집, 해당 곡 확인, 공유 파일 검증, revision 충돌 409 |
+
+악보는 `song/{songId}/score`에 저장하며 개인 악보와 분리한다. 전용 경로를 사용하므로 일반 문서 쓰기나 `/sync`로 악보 권한·첨부 검증을 우회할 수 없다.
+
+기존 목록에서 누락되어 있던 경로:
+
+| Method | 경로                        | 현재 동작 / 차이                                     |
+| ------ | --------------------------- | ---------------------------------------------------- |
+| POST   | `/notifications/read-all`   | 본인 알림 일괄 읽음 처리                             |
+| PATCH  | `/workspaces/{workspaceId}` | Owner가 밴드 이름·소개·사진 변경                     |
+| DELETE | `/notifications`            | 현재 소속 밴드의 본인 알림 일괄 삭제, 밴드 필터 지원 |
+| PATCH  | `/assets/{id}/name`         | 파일 소유자 이름 변경                                |
+| POST   | `/auth/refresh`             | refreshToken으로 세션 갱신                           |
+| POST   | `/auth/renew`               | 인증된 사용자의 세션 갱신                            |
+
 추천·곡·합주 목록, 추천 댓글, 곡 의견·편곡·할 일·링크, 합주 메모·참석자·할 일,
 곡별 합주 회고는 현재 화면에서는 `/sync`에 모아 저장하고 `/documents`로 읽는다. 기존 단일 `/documents/{key}` 쓰기도 유지한다.
 UI가 동작하더라도 목표 `/recommendations`, `/songs`, `/rehearsals` 경로가 이미 있다는 뜻은 아니다.

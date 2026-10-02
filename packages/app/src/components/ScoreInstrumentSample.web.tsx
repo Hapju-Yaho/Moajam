@@ -23,12 +23,14 @@ export function ScoreInstrumentSample({
   onChange,
   onBusyChange,
   defaultInstrument,
+  shared = false,
 }: {
   sample: InstrumentSample | null;
   disabled: boolean;
   onChange: (sample: InstrumentSample | null) => void;
   onBusyChange: (busy: boolean) => void;
   defaultInstrument: SoundfontInstrumentId;
+  shared?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -611,8 +613,11 @@ export function ScoreInstrumentSample({
       {sample && (
         <p>
           긴 음 반복 유지를 끄면 녹음이 끝날 때 소리도 잦아듭니다. 켜면 소리 일부를 반복하므로 연결
-          부분이 들릴 수 있어요. 녹음은 악보와 함께 비공개로 자동 저장되며 MusicXML에는 포함되지
-          않아요.
+          부분이 들릴 수 있어요.{' '}
+          {shared
+            ? '녹음은 밴드에 저장할 때 멤버들에게 공유되며'
+            : '녹음은 악보와 함께 비공개로 자동 저장되며'}{' '}
+          MusicXML에는 포함되지 않아요.
         </p>
       )}
       {sample?.enabled && sample.rootMidi === null && (
