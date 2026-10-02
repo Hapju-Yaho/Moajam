@@ -131,10 +131,13 @@ export function Notifications({
                 navigate(
                   item.kind === 'RECOMMENDATION'
                     ? 'recommendation'
-                    : item.kind === 'REHEARSAL'
+                    : item.kind === 'REHEARSAL' || item.kind === 'REHEARSAL_CANCELLED'
                       ? 'rehearsals'
                       : 'home',
-                  { workspaceId: item.workspaceId, id: item.entityId },
+                  {
+                    workspaceId: item.workspaceId,
+                    id: item.kind === 'REHEARSAL_CANCELLED' ? undefined : item.entityId,
+                  },
                 );
               if (item.readAt) {
                 open();

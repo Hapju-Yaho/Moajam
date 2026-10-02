@@ -1,0 +1,49 @@
+.clip-archive-seek::-webkit-slider-runnable-track {
+  height: 8px;
+  background: transparent;
+}
+.clip-archive-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -4px;
+  border-radius: 50%;
+  border: 2px solid white;
+  background: #1d4ed8;
+  box-shadow: 0 0 0 1px #1d4ed8;
+}
+.clip-archive-seek::-moz-range-track {
+  height: 8px;
+  background: transparent;
+}
+.clip-archive-seek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid white;
+  background: #1d4ed8;
+  box-shadow: 0 0 0 1px #1d4ed8;
+}
+.clip-archive-seek:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 4px;
+}
+
+.clip-library-toggle {
+  list-style: none;
+}
+.clip-library-toggle::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 8px;
+}
+details[open] > .clip-library-toggle::before {
+  content: '▾';
+}
+.clip-library-toggle::-webkit-details-marker {
+  display: none;
+}
+
+details:not([open]) .clip-library-refresh {
+  display: none;
+}

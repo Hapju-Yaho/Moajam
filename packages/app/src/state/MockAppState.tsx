@@ -16,13 +16,11 @@ import {
   type Workspace,
   type WorkspaceSong,
   type Rehearsal,
-  type Preparation,
 } from '../mocks/workspaces';
 
 import {
   personalSongs,
   personalRehearsals,
-  setSongPreparation,
   normalizeWorkspace,
   summarizeSong,
 } from './workspaceModel';
@@ -264,6 +262,17 @@ export function useMockAppState() {
               : value,
         },
       })),
+    deleteSong: (id: string) => {
+      if (!canManage) return;
+      update((band) => ({
+        ...band,
+        adoptedSongs: band.adoptedSongs.filter((song) => song.id !== id),
+        rehearsals: band.rehearsals.map((event) => ({
+          ...event,
+          songIds: event.songIds?.filter((songId) => songId !== id),
+        })),
+      }));
+    },
     updateSong: (id: string, changes: Partial<WorkspaceSong>) => {
       if (!canManage) return;
       update((band) => ({
@@ -341,6 +350,17 @@ export function useMockAppState() {
       return true;
     },
     adoptedSongs,
+    reorderAdoptedSongs: (ids: string[]) => {
+      update((band) => {
+        const rank = new Map(ids.map((id, index) => [id, index]));
+        return {
+          ...band,
+          adoptedSongs: [...band.adoptedSongs].sort(
+            (a, b) => (rank.get(a.id) ?? ids.length) - (rank.get(b.id) ?? ids.length),
+          ),
+        };
+      });
+    },
     members,
     canManage,
     rehearsals: workspace?.rehearsals ?? [],
@@ -389,8 +409,6 @@ export function useMockAppState() {
       });
     },
     isAdopted: (id: string) => adoptedSongs.some((song) => song.id === id),
-    updatePreparation: (bandId: string, songId: string, status: Preparation) =>
-      update((band) => setSongPreparation(band, songId, status, currentUserId), bandId),
     saveRehearsal: (event: Rehearsal, bandId = workspaceId) => {
       const target = store.workspaces.find((band) => band.id === bandId);
       if (
@@ -457,9 +475,16 @@ export function useMockAppState() {
         ),
       );
     },
-    createWorkspace: async (name: string) => {
+    updateWorkspaceProfile: async (name: string, description: string, photo: string) => {
+      if (!canManage) throw new Error('밴드 관리자만 설정을 수정할 수 있어요.');
       if (serverConfigured) {
-        const created = await createRemoteWorkspace(name);
+        await api(`/workspaces/${workspaceId}`, 'PATCH', { name, description, photo });
+        await store.reloadRemote();
+      } else update((band) => ({ ...band, name: name.trim(), description, photo }));
+    },
+    createWorkspace: async (name: string, description = '', photo = '') => {
+      if (serverConfigured) {
+        const created = await createRemoteWorkspace(name, description, photo);
         await store.reloadRemote();
         selectWorkspace(created.id);
         return created.id;
@@ -470,7 +495,8 @@ export function useMockAppState() {
         {
           id,
           name: name.trim(),
-          description: '함께 만들어갈 새로운 음악 공간',
+          description,
+          photo,
           color: '#43896b',
           members: [{ ...initialMembers[0] }],
           recommendations: [],

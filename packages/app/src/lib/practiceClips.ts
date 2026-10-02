@@ -119,3 +119,20 @@ export function moveClipToNewTrack(
   );
   return moveClip([...tracks, target], clipId, newId, offset);
 }
+
+// Decoding is hydration, not an edit. Never replace a saved or trimmed duration.
+export function hydrateClipDuration(tracks: TimelineTrack[], id: string, duration: number) {
+  if (!Number.isFinite(duration) || duration <= 0) return tracks;
+  let changed = false;
+  const next = tracks.map((track) => {
+    const clips = trackClips(track);
+    const clip = clips.find((item) => item.id === id);
+    if (!clip || clip.trimmed || clip.duration > 0) return track;
+    changed = true;
+    return withClips(
+      track,
+      clips.map((item) => (item.id === id ? { ...item, duration } : item)),
+    );
+  });
+  return changed ? next : tracks;
+}

@@ -1,5 +1,6 @@
+import { scheduleErrors } from '../lib/scheduleValidation';
 import { theme } from '@moajam/ui';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useIdentity } from '../state/Identity';
 import {
   KeyboardAvoidingView,
@@ -10,7 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { RehearsalCalendar } from '../components/RehearsalCalendar';
+import { ScheduleDashboard } from '../components/ScheduleDashboard';
 import { AppShell } from '../components/AppShell';
 import { ScheduleDateTime } from '../components/ScheduleDateTime';
 import {
@@ -166,12 +167,11 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
     cancelRehearsal,
     adoptedSongs,
   } = useMockAppState();
-  const initialSchedule = entityId
-    ? rehearsals.find((event) => event.id === entityId)
-    : rehearsals
-        .filter((event) => !event.cancelled && new Date(`${event.date}T${event.end}`) >= new Date())
-        .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`))[0];
+  const initialSchedule = rehearsals.find((event) => event.id === entityId);
   const [selectedId, setSelectedId] = useState(initialSchedule?.id);
+  useEffect(() => {
+    setSelectedId(entityId);
+  }, [entityId, workspaceId]);
   const schedule = rehearsals.find((event) => event.id === selectedId);
   const [formError, setFormError] = useState('');
   const blankSchedule: SessionDraft = {
@@ -201,12 +201,6 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
   const [taskDraft, setTaskDraft] = useState('');
   const completed = checks.filter((item) => item.done).length;
 
-  const openNewSession = () => {
-    setDraft(blankSchedule);
-    setFormError('');
-    setDraftMembers(members.map((member) => member.id));
-    setModalMode('new');
-  };
   const openEditSchedule = () => {
     if (!schedule) return;
     setFormError('');
@@ -217,19 +211,9 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
   const updateDraft = (key: keyof SessionDraft, value: string) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const saveSchedule = () => {
-    if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(draft.date) ||
-      Number.isNaN(new Date(`${draft.date}T00:00:00`).getTime()) ||
-      dateKey(new Date(`${draft.date}T00:00:00`)) !== draft.date ||
-      !/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.start) ||
-      !/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.end) ||
-      draft.end <= draft.start ||
-      !draft.place.trim() ||
-      !draft.title.trim()
-    ) {
-      setFormError(
-        '날짜(YYYY-MM-DD), 시작·종료 시간(HH:MM), 이름과 장소를 확인해주세요. 종료 시간은 시작 시간 이후여야 해요.',
-      );
+    const errors = scheduleErrors(draft);
+    if (errors.length) {
+      setFormError(errors.join('\n'));
       return;
     }
     const id = modalMode === 'edit' && schedule ? schedule.id : `session-${Date.now()}`;
@@ -237,7 +221,6 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
     setSelectedId(id);
     setDocument(`session/${id}/members`, draftMembers, []);
     setModalMode(null);
-    navigate('rehearsals', { id, workspaceId });
   };
   const addChecklistItem = () => {
     if (!checkDraft.trim()) return;
@@ -260,12 +243,11 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
             일정, 현장 체크리스트, 녹음과 다음 액션을 하나의 기록으로 남겨요.
           </PageDescription>
         </PageTop>
-        <ActionButton disabled={!canManage} onPress={openNewSession}>
-          + 새 합주 세션
-        </ActionButton>
       </FlexBetween>
 
-      <RehearsalCalendar
+      <ScheduleDashboard
+        showNotifications={false}
+        allowPersonal={false}
         events={rehearsals.map((event) => ({
           ...event,
           workspaceId,
@@ -275,7 +257,8 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
         navigate={navigate}
         workspaceId={workspaceId}
         initialDate={schedule?.date}
-        onSelectEvent={(event) => navigate('rehearsals', { id: event.id, workspaceId })}
+        onSelectEvent={(event) => setSelectedId(event.id)}
+        onSelectDate={() => setSelectedId(undefined)}
       />
       {schedule ? (
         <>
@@ -321,7 +304,7 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
                   compact
                   onPress={() => {
                     cancelRehearsal(schedule.id);
-                    navigate('rehearsals', { workspaceId });
+                    setSelectedId(undefined);
                   }}
                 >
                   일정 삭제
@@ -485,15 +468,7 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
             </Stack>
           </ResponsiveGrid>
         </>
-      ) : (
-        <Surface>
-          <Heading>{entityId ? '합주를 찾을 수 없어요' : '선택된 합주가 없어요'}</Heading>
-          <Meta>밴드의 합주 일정은 개인 공간의 캘린더에도 함께 표시됩니다.</Meta>
-          <ActionButton disabled={!canManage} onPress={openNewSession}>
-            + 합주 일정 만들기
-          </ActionButton>
-        </Surface>
-      )}
+      ) : null}
       <Heading>지난 합주</Heading>
       {rehearsals
         .filter((event) => !event.cancelled && new Date(`${event.date}T${event.end}`) < new Date())
@@ -517,11 +492,7 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
                   <Meta>{session.info}</Meta>
                 </View>
               </FlexRow>
-              <ActionButton
-                secondary
-                compact
-                onPress={() => navigate('rehearsals', { id: session.fullDate, workspaceId })}
-              >
+              <ActionButton secondary compact onPress={() => setSelectedId(session.fullDate)}>
                 기록 보기
               </ActionButton>
             </FlexBetween>
@@ -562,7 +533,7 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
           placeholder="합주실 이름 또는 주소"
         />
         <FormField
-          label="이번 합주 목표"
+          label="이번 합주 목표 (선택)"
           value={draft.goal}
           onChangeText={(value) => updateDraft('goal', value)}
           placeholder="이번 합주에서 꼭 맞춰볼 내용을 적어주세요."

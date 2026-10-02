@@ -15,7 +15,17 @@ import {
   ConflictException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { IsIn, IsInt, IsObject, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import {
+  IsOptional,
+  Matches,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../common/database/prisma.service.js';
 import { CurrentUser } from '../common/auth/current-user.decorator.js';
@@ -26,6 +36,12 @@ import { StorageService } from '../media/storage.service.js';
 import { SeparationService } from '../media/separation.service.js';
 
 class CreateWorkspaceDto {
+  @IsOptional() @IsString() @MaxLength(2000) description?: string;
+  @IsOptional()
+  @IsString()
+  @MaxLength(700000)
+  @Matches(/^(data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)?$/)
+  photo?: string;
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(80) name!: string;
 }
 class ProfileDto {
@@ -212,6 +228,7 @@ export class WorkspacesController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateWorkspaceDto,
   ) {
+    if (!dto.name.trim()) throw new BadRequestException('밴드 이름을 입력해주세요.');
     return this.db.$transaction(async (tx) => {
       await tx.profile.upsert({
         where: { id: user.id },
@@ -222,10 +239,35 @@ export class WorkspacesController {
         data: {
           name: dto.name.trim(),
           createdById: user.id,
+          documents: {
+            create: {
+              key: 'band/profile',
+              value: { data: { description: dto.description ?? '', photo: dto.photo ?? '' } },
+              updatedBy: user.id,
+            },
+          },
           members: { create: { userId: user.id, role: 'OWNER' } },
         },
         include: { members: { include: { user: true } } },
       });
+    });
+  }
+  @Patch('workspaces/:workspaceId') async updateBand(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('workspaceId') workspaceId: string,
+    @Body() dto: CreateWorkspaceDto,
+  ) {
+    await this.membership(workspaceId, user.id, true);
+    if (!dto.name.trim()) throw new BadRequestException('밴드 이름을 입력해주세요.');
+    return this.db.$transaction(async (tx) => {
+      await tx.workspace.update({ where: { id: workspaceId }, data: { name: dto.name.trim() } });
+      const value = { data: { description: dto.description ?? '', photo: dto.photo ?? '' } };
+      await tx.workspaceDocument.upsert({
+        where: { workspaceId_key: { workspaceId, key: 'band/profile' } },
+        create: { workspaceId, key: 'band/profile', value, updatedBy: user.id },
+        update: { value, updatedBy: user.id, revision: { increment: 1 } },
+      });
+      return { id: workspaceId };
     });
   }
   @Patch('workspaces/:workspaceId/members/:userId') async member(
@@ -322,6 +364,144 @@ export class WorkspacesController {
       },
       { isolationLevel: 'Serializable', timeout: 60000 },
     );
+  }
+  private practiceKey(songId: string) {
+    if (!/^[\w-]{1,160}$/.test(songId)) throw new BadRequestException('곡 정보를 확인해주세요.');
+    return `song/${songId}/soundtrack`;
+  }
+  private practiceAssets(value: unknown): string[] {
+    const ids = new Set<string>();
+    const walk = (node: unknown) => {
+      if (!node || typeof node !== 'object') return;
+      if ('__moajamAssetId' in node) {
+        if (typeof node.__moajamAssetId !== 'string')
+          throw new BadRequestException('파일 참조를 확인해주세요.');
+        ids.add(node.__moajamAssetId);
+      }
+      Object.values(node).forEach(walk);
+    };
+    walk(value);
+    return [...ids];
+  }
+  @Get('workspaces/:workspaceId/practice/:songId')
+  async practice(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('workspaceId') workspaceId: string,
+    @Param('songId') songId: string,
+  ) {
+    await this.membership(workspaceId, user.id);
+    const key = this.practiceKey(songId);
+    const where = { workspaceId_key: { workspaceId, key } };
+    const existing = await this.db.workspaceDocument.findUnique({ where });
+    if (existing) return existing;
+    // Recover the newest previously saved band-song session. Original personal records are retained.
+    const members = await this.db.workspaceMember.findMany({
+      where: { workspaceId },
+      select: { userId: true },
+    });
+    const legacy = await this.db.personalDocument.findFirst({
+      where: {
+        key: `practice/${workspaceId}/${songId}`,
+        ownerId: { in: members.map((member) => member.userId) },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { ownerId: 'asc' }],
+    });
+    if (!legacy) return null;
+    const value: Record<string, Prisma.InputJsonValue> = {
+      ...(legacy.value as Record<string, Prisma.InputJsonValue>),
+      notes: [],
+    };
+    delete value.metronome;
+    delete value.clickVolume;
+    const ids = this.practiceAssets(value);
+    try {
+      return await this.db.$transaction(async (tx) => {
+        const available = await tx.mediaAsset.count({
+          where: {
+            id: { in: ids },
+            ownerId: legacy.ownerId,
+            ready: true,
+            deletedAt: null,
+            OR: [{ workspaceId: null }, { workspaceId }],
+          },
+        });
+        if (available !== ids.length)
+          throw new BadRequestException('기존 연습실 파일을 확인해주세요.');
+        await tx.mediaAsset.updateMany({
+          where: { id: { in: ids }, ownerId: legacy.ownerId },
+          data: { workspaceId, visibility: 'WORKSPACE' },
+        });
+        return tx.workspaceDocument.create({
+          data: { workspaceId, key, value: { data: value }, updatedBy: user.id },
+        });
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2002')
+        return this.db.workspaceDocument.findUniqueOrThrow({ where });
+      throw error;
+    }
+  }
+  @Put('workspaces/:workspaceId/practice/:songId')
+  async savePractice(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('workspaceId') workspaceId: string,
+    @Param('songId') songId: string,
+    @Body() dto: DocumentDto,
+  ) {
+    await this.membership(workspaceId, user.id);
+    const key = this.practiceKey(songId);
+    const input = dto.value.data;
+    if (
+      !input ||
+      typeof input !== 'object' ||
+      Array.isArray(input) ||
+      !Array.isArray((input as Record<string, unknown>).tracks) ||
+      JSON.stringify(input).length > 950000
+    )
+      throw new BadRequestException('연습실 데이터를 확인해주세요.');
+    const value: Record<string, Prisma.InputJsonValue> = {
+      ...(input as Record<string, Prisma.InputJsonValue>),
+    };
+    delete value.metronome;
+    delete value.clickVolume;
+    const ids = this.practiceAssets(value);
+    try {
+      return await this.db.$transaction(async (tx) => {
+        if (
+          (await tx.mediaAsset.count({
+            where: {
+              id: { in: ids },
+              workspaceId,
+              visibility: 'WORKSPACE',
+              ready: true,
+              deletedAt: null,
+            },
+          })) !== ids.length
+        )
+          throw new BadRequestException('이 밴드에 공유된 파일만 연결할 수 있습니다.');
+        if (dto.revision === 0)
+          return tx.workspaceDocument.create({
+            data: { workspaceId, key, value: { data: value }, updatedBy: user.id },
+          });
+        const changed = await tx.workspaceDocument.updateMany({
+          where: { workspaceId, key, revision: dto.revision },
+          data: { value: { data: value }, revision: { increment: 1 }, updatedBy: user.id },
+        });
+        if (!changed.count)
+          throw new ConflictException(
+            '서버에 변경사항이 존재합니다. 새로고침 후 공유하기를 눌러주세요.',
+          );
+        return tx.workspaceDocument.findUniqueOrThrow({
+          where: { workspaceId_key: { workspaceId, key } },
+        });
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2002')
+        throw new ConflictException(
+          '서버에 변경사항이 존재합니다. 새로고침 후 공유하기를 눌러주세요.',
+        );
+      throw error;
+    }
   }
   @Get('workspaces/:workspaceId/documents') async documents(
     @CurrentUser() user: AuthenticatedUser,

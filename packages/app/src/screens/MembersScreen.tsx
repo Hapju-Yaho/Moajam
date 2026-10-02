@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { usePreferences } from '../state/preferences';
 import { useIdentity } from '../state/Identity';
-import { Modal, Pressable, useWindowDimensions, View } from 'react-native';
+import { Image, Modal, Pressable, useWindowDimensions, View } from 'react-native';
 import { api, serverConfigured } from '../lib/remote';
 import { InvitationPanel } from '../components/InvitationPanel';
 import { AppShell } from '../components/AppShell';
@@ -29,17 +30,10 @@ import { Avatar, AvatarText, Input } from '../styles/layout';
 
 export function MembersScreen({ navigate }: ScreenProps) {
   const currentUserId = useIdentity();
+  const profile = usePreferences();
   const { width } = useWindowDimensions();
-  const {
-    members,
-    removeMember,
-    updateMember,
-    workspace,
-    workspaceId,
-    canManage,
-    adoptedSongs,
-    actionError,
-  } = useMockAppState();
+  const { members, removeMember, updateMember, workspace, workspaceId, canManage, actionError } =
+    useMockAppState();
   const [invite, setInvite] = useState(false);
   const [menuMemberId, setMenuMemberId] = useState<string | null>(null);
   const [editingMember, setEditingMember] = useState<MockMember | null>(null);
@@ -47,7 +41,7 @@ export function MembersScreen({ navigate }: ScreenProps) {
   const [draftRole, setDraftRole] = useState('MEMBER');
   const [reminderSent, setReminderSent] = useState(false);
   const [reminderMessage, setReminderMessage] = useState(
-    '다음 합주 전 준비 상태와 체크리스트를 확인해주세요.',
+    '다음 합주 일정과 체크리스트를 확인해주세요.',
   );
   const [reminderStatus, setReminderStatus] = useState('');
   const [query, setQuery] = useState('');
@@ -71,7 +65,7 @@ export function MembersScreen({ navigate }: ScreenProps) {
       >
         <PageTop>
           <PageHeading>멤버</PageHeading>
-          <PageDescription>파트, 권한과 이번 주 준비 상태를 함께 관리합니다.</PageDescription>
+          <PageDescription>밴드 멤버의 파트와 권한을 관리합니다.</PageDescription>
         </PageTop>
         <ActionButton onPress={() => setInvite(!invite)}>+ 멤버 초대</ActionButton>
       </FlexBetween>
@@ -93,12 +87,22 @@ export function MembersScreen({ navigate }: ScreenProps) {
                   <FlexBetween>
                     <FlexRow>
                       <Avatar color={member.color} size={44}>
-                        <AvatarText>{member.initials}</AvatarText>
+                        {(member.id === currentUserId ? profile.photo : member.photo) ? (
+                          <Image
+                            source={{
+                              uri: member.id === currentUserId ? profile.photo : member.photo,
+                            }}
+                            accessibilityLabel={`${member.name} 프로필`}
+                            style={{ width: 44, height: 44, borderRadius: 22 }}
+                          />
+                        ) : (
+                          <AvatarText>{member.initials}</AvatarText>
+                        )}
                       </Avatar>
                       <View>
                         <Copy style={{ fontWeight: '600' }}>
                           {member.name}
-                          {index === 0 ? ' (나)' : ''}
+                          {member.id === currentUserId ? ' (나)' : ''}
                         </Copy>
                         <Meta>
                           {index === 0 ? '오늘 활동' : index < 3 ? '2시간 전 활동' : '어제 활동'}
@@ -196,22 +200,7 @@ export function MembersScreen({ navigate }: ScreenProps) {
             })}
           </Surface>
           <Surface>
-            <Heading>내 연습 준비</Heading>
-            <PageHeading style={{ fontSize: 25 }}>
-              {adoptedSongs.filter((song) => song.myStatus === 'READY').length} /{' '}
-              {adoptedSongs.length}곡 준비 완료
-            </PageHeading>
-            <Progress>
-              <ProgressValue
-                value={
-                  adoptedSongs.length
-                    ? (adoptedSongs.filter((song) => song.myStatus === 'READY').length /
-                        adoptedSongs.length) *
-                      100
-                    : 0
-                }
-              />
-            </Progress>
+            <Heading>밴드 알림</Heading>
             <Meta>밴드 멤버에게 앱 안의 알림을 보낼 수 있어요.</Meta>
             <ActionButton secondary onPress={() => setReminderSent(true)}>
               리마인드 보내기

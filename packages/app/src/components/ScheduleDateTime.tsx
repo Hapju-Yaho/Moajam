@@ -1,3 +1,4 @@
+import { isRedCalendarDate } from '../lib/koreanHolidays';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { dateKey } from '../mocks/workspaces';
@@ -102,7 +103,7 @@ export function ScheduleDateTime({
                 style={{
                   width: `${100 / 7}%`,
                   textAlign: 'center',
-                  color: day === '일' ? '#be5665' : '#72819a',
+                  color: day === '일' ? '#be5665' : day === '토' ? '#416bd1' : '#72819a',
                 }}
               >
                 {day}
@@ -141,12 +142,16 @@ export function ScheduleDateTime({
                       borderRadius: 18,
                       alignItems: 'center',
                       justifyContent: 'center',
-                      backgroundColor: chosen ? '#416bd1' : today ? '#edf3ff' : 'transparent',
+                      backgroundColor: chosen ? '#edf3ff' : today ? '#edf3ff' : 'transparent',
                     }}
                   >
                     <Copy
                       style={{
-                        color: chosen ? 'white' : i % 7 === 0 ? '#be5665' : '#27374e',
+                        color: isRedCalendarDate(key)
+                          ? '#c83c4c'
+                          : new Date(`${key}T12:00:00`).getDay() === 6 || chosen
+                            ? '#416bd1'
+                            : '#27374e',
                         fontWeight: chosen || today ? '600' : '400',
                       }}
                     >

@@ -44,7 +44,7 @@ export function SongOverview({ song }: { song: WorkspaceSong }) {
                 setError('');
               }}
             >
-              곡 정보 편집
+              곡 정보 수정
             </ActionButton>
           )}
         </FlexBetween>
@@ -158,11 +158,7 @@ export function SongOverview({ song }: { song: WorkspaceSong }) {
             >
               <FlexBetween>
                 <Copy>{member.name}</Copy>
-                <Meta>
-                  {part
-                    ? `${part.part || '파트 미정'} · ${part.status === 'READY' ? '준비 완료' : part.status === 'PRACTICING' ? '연습 중' : '준비 전'}`
-                    : '미참여'}
-                </Meta>
+                <Meta>{part ? part.part || '파트 미정' : '미참여'}</Meta>
               </FlexBetween>
               {parts && canManage && (
                 <FlexRow wrap>

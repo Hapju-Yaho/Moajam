@@ -1,3 +1,4 @@
+import { SongActions } from '../components/SongActions';
 import { Pressable } from 'react-native';
 import { useState } from 'react';
 import { AppShell } from '../components/AppShell';
@@ -99,20 +100,10 @@ export function SongWorkspaceScreen({
           </ActionButton>
           <Meta accessibilityLiveRegion="polite">{syncStatus}</Meta>
         </FlexBetween>
-        <FlexRow wrap>
-          <PageHeading>{song.title}</PageHeading>
-          <Pill>
-            <PillText>
-              {song.archived
-                ? '보관 중'
-                : !song.total
-                  ? '파트 배정 필요'
-                  : song.status === 'READY'
-                    ? '합주 준비 완료'
-                    : '함께 연습 중'}
-            </PillText>
-          </Pill>
-        </FlexRow>
+        <FlexBetween style={{ gap: 16 }}>
+          <PageHeading style={{ flex: 1, minWidth: 0 }}>{song.title}</PageHeading>
+          <SongActions song={song} onDeleted={() => navigate('songs', { workspaceId })} />
+        </FlexBetween>
         <Copy>
           {song.artist} · Key {arrangement.key || '미정'} · BPM {arrangement.bpm || '미정'}
         </Copy>

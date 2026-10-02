@@ -1,3 +1,4 @@
+import { SortableSongList } from '../components/SortableSongList';
 import { RecommendationsScreen } from './RecommendationsScreen';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { AppShell } from '../components/AppShell';
@@ -8,8 +9,6 @@ import {
   Heading,
   Meta,
   PageHeading,
-  Pill,
-  PillText,
   SongCover,
   Stack,
   Surface,
@@ -19,14 +18,17 @@ import { useMockAppState, type AdoptedSong } from '../state/MockAppState';
 import { Avatar, AvatarText } from '../styles/layout';
 
 export function SongsScreen({ navigate }: ScreenProps) {
-  const { adoptedSongs } = useMockAppState();
+  const { adoptedSongs, reorderAdoptedSongs, workspaceId } = useMockAppState();
   return (
     <AppShell activeRoute="songs" onNavigate={navigate}>
       <PageHeading>참여 곡</PageHeading>
       <Stack gap={16}>
-        {adoptedSongs.map((song) => (
-          <SongTile key={song.id} song={song} navigate={navigate} />
-        ))}
+        <SortableSongList
+          key={workspaceId}
+          songs={adoptedSongs}
+          onReorder={reorderAdoptedSongs}
+          renderSong={(song) => <SongTile song={song} navigate={navigate} />}
+        />
         {!adoptedSongs.length && (
           <Surface>
             <Heading>아직 채택한 곡이 없어요</Heading>
@@ -34,6 +36,14 @@ export function SongsScreen({ navigate }: ScreenProps) {
           </Surface>
         )}
       </Stack>
+      <View
+        style={{
+          alignSelf: 'stretch',
+          height: 1,
+          backgroundColor: '#cbd5e1',
+          marginVertical: 12,
+        }}
+      />
       <RecommendationsScreen navigate={navigate} embedded />
     </AppShell>
   );
@@ -59,7 +69,12 @@ function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps
         onPress={() => navigate('song', { id: song.id })}
       >
         <FlexRow gap={16}>
-          <SongCover id={song.id} thumbnailUrl={song.thumbnailUrl} size={width < 650 ? 72 : 104} />
+          <SongCover
+            id={song.id}
+            thumbnailUrl={song.thumbnailUrl}
+            referenceUrl={song.referenceUrl}
+            size={width < 650 ? 72 : 104}
+          />
           <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
             <FlexBetween>
               <View style={{ flex: 1, minWidth: 0 }}>
@@ -68,17 +83,6 @@ function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps
                   {song.artist} · {song.year}
                 </Meta>
               </View>
-              <Pill tone={song.status === 'READY' ? 'green' : 'amber'}>
-                <PillText tone={song.status === 'READY' ? 'green' : 'amber'}>
-                  {song.archived
-                    ? '보관 중'
-                    : !song.total
-                      ? '파트 미배정'
-                      : song.status === 'READY'
-                        ? '준비 완료'
-                        : '연습 중'}
-                </PillText>
-              </Pill>
             </FlexBetween>
             <FlexBetween>
               <FlexRow>
