@@ -11,3 +11,10 @@
   to = "https://www.youtube.com/oembed"
   status = 200
   force = true
+
+# Let the app handle direct links and refreshes on client-side routes.
+# Keep this after API proxy rules; existing static files still take precedence.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
