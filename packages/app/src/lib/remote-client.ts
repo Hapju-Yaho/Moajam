@@ -385,7 +385,29 @@ export async function api<T>(
   if (result && typeof result === 'object')
     for (const key of ['url', 'signedUrl'])
       if (typeof result[key] === 'string') result[key] = reachableUrl(result[key]);
-  return result;
+  return resolveProfilePhotos(result) as T;
+}
+
+function resolveProfilePhotos(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(resolveProfilePhotos);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, field]) => [
+      key,
+      (key === 'photo' || key === 'avatarUrl') &&
+      typeof field === 'string' &&
+      /^\/v1\/profile-photos\/[a-f0-9-]{36}$/.test(field)
+        ? options.apiUrl.replace(/\/$/, '') + field.slice(3)
+        : resolveProfilePhotos(field),
+    ]),
+  );
+}
+
+export interface UploadRequest {
+  assetId: string;
+  signedUrl: string;
+  uploadFormat?: 'raw' | 'multipart';
+  headers?: Record<string, string>;
 }
 
 export async function uploadRemoteFile(
@@ -415,16 +437,25 @@ export async function uploadRemoteFile(
     'application/octet-stream'
   ).split(';')[0];
   if (blob.size > 104857600) throw new Error('100MB 이하 파일을 선택해주세요.');
-  const upload = await api<{ assetId: string; signedUrl: string }>(
+  const upload = await api<UploadRequest>(
     '/assets/uploads',
     'POST',
     { name, mime, size: blob.size, scope, ...(workspaceId ? { workspaceId } : {}) },
     user,
   );
-  const form = new FormData();
-  form.append('cacheControl', '3600');
-  form.append('', blob.type === mime ? blob : new Blob([blob], { type: mime }), name);
-  const response = await fetch(upload.signedUrl, { method: 'PUT', body: form });
+  const file = blob.type === mime ? blob : new Blob([blob], { type: mime });
+  let body: Blob | FormData = file;
+  if (upload.uploadFormat !== 'raw') {
+    const form = new FormData();
+    form.append('cacheControl', '3600');
+    form.append('', file, name);
+    body = form;
+  }
+  const response = await fetch(upload.signedUrl, {
+    method: 'PUT',
+    body,
+    headers: upload.headers,
+  });
   if (!response.ok) throw new Error('파일을 업로드하지 못했습니다. 다시 시도해주세요.');
   await api(`/assets/${upload.assetId}/complete`, 'POST', undefined, user);
   return upload.assetId;

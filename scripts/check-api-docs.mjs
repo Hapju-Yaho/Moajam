@@ -82,6 +82,7 @@ for (const file of [
   'media/media.controller.ts',
   'config/client-config.controller.ts',
   'personal/personal.controller.ts',
+  'personal/profile-photo.controller.ts',
   'workspaces/workspace-sync.controller.ts',
   'media/local-files.controller.ts',
   'media/youtube.controller.ts',

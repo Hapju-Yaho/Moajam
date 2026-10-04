@@ -33,6 +33,7 @@ SQLite HTTP 통합 테스트로 임시 로그인·계정 복구·개인 데이�
 | POST   | `/assets/uploads`                            | name/mime/size/scope/workspaceId로 서명 URL                       |
 | POST   | `/assets/{id}/complete`                      | 크기/MIME 확인 후 ready=true                                      |
 | GET    | `/assets`                                    | scope/workspaceId, 본인·공유 파일                                 |
+| GET    | `/profile-photos/{id}`                        | 현재 프로필 이미지의 고정 주소, R2 등 비공개 저장소 서명 URL로 연결 |
 | GET    | `/assets/{id}/download`                      | 권한 확인 후 5분 URL                                              |
 | PATCH  | `/assets/{id}/visibility`                    | 소유자 PRIVATE/WORKSPACE 변경                                     |
 | DELETE | `/assets/{id}`                               | 소유자 soft delete, 영구 정리 없음                                |

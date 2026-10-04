@@ -54,8 +54,47 @@ export function validateEnvironment(config: Record<string, unknown>) {
     throw new Error(
       'Kakao authentication requires KAKAO_REST_API_KEY, KAKAO_CLIENT_SECRET, AUTH_JWT_SECRET and KAKAO_ALLOWED_REDIRECT_URIS',
     );
+  const storageProvider =
+    String(config.STORAGE_PROVIDER ?? '').trim() ||
+    (String(config.DATABASE_URL ?? '').trim() ? 'supabase' : 'local');
+  if (!['local', 'supabase', 'r2'].includes(storageProvider))
+    throw new Error('STORAGE_PROVIDER must be local, supabase or r2');
+  const r2 = Object.fromEntries(
+    ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'].map((key) => [
+      key,
+      String(config[key] ?? '').trim(),
+    ]),
+  );
+  if (storageProvider === 'r2') {
+    const missing = Object.keys(r2).filter((key) => !r2[key]);
+    if (missing.length) throw new Error(`R2 storage requires ${missing.join(', ')}`);
+    let endpoint: URL;
+    try {
+      endpoint = new URL(r2.R2_ENDPOINT);
+    } catch {
+      throw new Error('R2_ENDPOINT must be the HTTPS S3 API endpoint');
+    }
+    if (
+      endpoint.protocol !== 'https:' ||
+      endpoint.username ||
+      endpoint.password ||
+      endpoint.search ||
+      endpoint.hash ||
+      endpoint.pathname !== '/' ||
+      !/^[a-f0-9]{32}(?:\.(?:eu|fedramp|us))?\.r2\.cloudflarestorage\.com$/.test(endpoint.hostname)
+    )
+      throw new Error(
+        'R2_ENDPOINT must be the account HTTPS S3 API endpoint, without a bucket path',
+      );
+    if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(r2.R2_BUCKET))
+      throw new Error(
+        'R2_BUCKET must be a valid bucket name (3-63 lowercase letters, digits or hyphens)',
+      );
+  }
   return {
     ...config,
+    ...r2,
+    STORAGE_PROVIDER: storageProvider,
     NODE_ENV: nodeEnvironment,
     PORT: port,
     AUTH_MODE: authMode,

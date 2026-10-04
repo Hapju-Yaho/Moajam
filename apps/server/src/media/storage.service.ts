@@ -1,4 +1,5 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException, type OnModuleDestroy } from '@nestjs/common';
+import { S3Client } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
 import { createClient } from '@supabase/supabase-js';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -6,20 +7,25 @@ import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DATA_DIRECTORY } from '../config/database-url.js';
 import { ForbiddenException } from '@nestjs/common';
-type Result<T> = PromiseLike<{ data: T | null; error: unknown }>;
-interface Bucket {
-  createSignedUploadUrl(key: string): Result<{ signedUrl: string }>;
-  createSignedUrl(key: string, seconds: number): Result<{ signedUrl: string }>;
-  info(key: string): Result<{ metadata?: { size?: number; mimetype?: string } }>;
-  upload(key: string, data: Buffer, options: { contentType: string }): Result<unknown>;
-  remove(keys: string[]): Result<unknown>;
-}
+import { R2Bucket } from './r2-bucket.js';
+import type { Bucket } from './storage-types.js';
 @Injectable()
-export class StorageService {
+export class StorageService implements OnModuleDestroy {
   private readonly signingKey = randomBytes(32);
+  private r2Client?: S3Client;
+  private r2Bucket?: R2Bucket;
   constructor(private readonly config: ConfigService) {}
+  get provider() {
+    return (
+      this.config.get<string>('STORAGE_PROVIDER') ||
+      (this.config.get('DATABASE_MODE') === 'sqlite' ? 'local' : 'supabase')
+    );
+  }
   get local() {
-    return this.config.get('DATABASE_MODE') === 'sqlite';
+    return this.provider === 'local';
+  }
+  onModuleDestroy() {
+    this.r2Client?.destroy();
   }
   private path(key: string) {
     if (!/^[a-f0-9-]{36}\/[a-f0-9-]{36}$/.test(key)) throw new ForbiddenException();
@@ -61,6 +67,27 @@ export class StorageService {
     await writeFile(`${path}.json`, JSON.stringify({ size: data.length, mimetype: mime }));
   }
   bucket(): Bucket {
+    if (this.provider === 'r2') {
+      if (!this.r2Bucket) {
+        const endpoint = this.config.get<string>('R2_ENDPOINT');
+        const accessKeyId = this.config.get<string>('R2_ACCESS_KEY_ID');
+        const secretAccessKey = this.config.get<string>('R2_SECRET_ACCESS_KEY');
+        const name = this.config.get<string>('R2_BUCKET');
+        if (!endpoint || !accessKeyId || !secretAccessKey || !name)
+          throw new ServiceUnavailableException('R2 파일 저장소 설정이 필요합니다.');
+        this.r2Client = new S3Client({
+          region: 'auto',
+          endpoint,
+          forcePathStyle: true,
+          credentials: { accessKeyId, secretAccessKey },
+          // Do not sign an SDK-generated checksum for an empty presigning body.
+          requestChecksumCalculation: 'WHEN_REQUIRED',
+          responseChecksumValidation: 'WHEN_REQUIRED',
+        });
+        this.r2Bucket = new R2Bucket(this.r2Client, name);
+      }
+      return this.r2Bucket;
+    }
     if (this.local)
       return {
         createSignedUploadUrl: async (key: string) => ({
@@ -112,9 +139,16 @@ export class StorageService {
       };
     const secret = this.config.get<string>('SUPABASE_SECRET_KEY');
     if (!secret) throw new ServiceUnavailableException('파일 저장소가 연결되지 않았습니다.');
-    return createClient(this.config.getOrThrow<string>('SUPABASE_URL'), secret, {
+    const bucket = createClient(this.config.getOrThrow<string>('SUPABASE_URL'), secret, {
       auth: { persistSession: false, autoRefreshToken: false },
     }).storage.from(this.config.get<string>('MEDIA_BUCKET') ?? 'moajam-private');
+    return {
+      createSignedUploadUrl: (key) => bucket.createSignedUploadUrl(key),
+      createSignedUrl: (key, seconds) => bucket.createSignedUrl(key, seconds),
+      info: (key) => bucket.info(key),
+      upload: (key, data, options) => bucket.upload(key, data, options),
+      remove: (keys) => bucket.remove(keys),
+    };
   }
   async signed(key: string) {
     const { data, error } = await this.bucket().createSignedUrl(key, 300);

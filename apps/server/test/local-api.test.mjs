@@ -17,6 +17,7 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     NODE_ENV: 'test',
     AUTH_MODE: 'temporary',
     DATABASE_URL: '',
+    STORAGE_PROVIDER: 'local',
     DIRECT_URL: '',
     MOAJAM_TEST_DATA_DIRECTORY: directory,
     ENABLE_MEDIA_WORKER: 'false',
@@ -493,6 +494,7 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     app = await createApplication();
     await app.listen(0, '127.0.0.1');
     base = (await app.getUrl()) + '/v1';
+    app.get(ConfigService).set('PUBLIC_API_URL', base);
     assert.equal((await call(scorePath, 'GET', undefined, a.token)).value.title, 'My score');
     assert.equal((await call('/me/onboarding', 'GET', undefined, a.token)).completed, true);
     assert.equal((await call('/workspaces', 'GET', undefined, b.token)).length, 1);
@@ -585,10 +587,48 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     assert.equal(complete.completed, true);
     assert.equal(complete.displayName, 'New name');
     assert.deepEqual(complete.parts, ['VOCAL', 'GUITAR']);
-    assert.equal(complete.photo, photo);
+    assert.match(complete.photo, /^\/v1\/profile-photos\/[a-f0-9-]{36}$/);
+    const storedPhoto = await app
+      .get(PrismaService)
+      .profile.findUnique({ where: { id: kakao.user.id } });
+    assert.equal(storedPhoto.avatarUrl, complete.photo);
+    const image = await fetch(base.replace(/\/v1$/, '') + complete.photo);
+    assert.equal(image.status, 200);
+    assert.equal(image.headers.get('content-type'), 'image/png');
+    assert.deepEqual(
+      Buffer.from(await image.arrayBuffer()),
+      Buffer.from(photo.split(',')[1], 'base64'),
+    );
     const preferences = await call('/me/preferences', 'GET', undefined, kakao.accessToken);
-    assert.equal(preferences.value.photo, photo);
+    assert.equal(preferences.value.photo, complete.photo);
     assert.equal(preferences.value.name, 'New name');
+    const fileCount = await app.get(PrismaService).mediaAsset.count();
+    await call(
+      '/me/preferences',
+      'PUT',
+      {
+        revision: preferences.revision - 1,
+        value: { ...preferences.value, photo },
+      },
+      kakao.accessToken,
+      409,
+    );
+    assert.equal(
+      await app.get(PrismaService).mediaAsset.count(),
+      fileCount,
+      'conflict cleans up newly uploaded photo',
+    );
+    assert.equal(
+      (await call('/me/onboarding', 'GET', undefined, kakao.accessToken)).photo,
+      complete.photo,
+    );
+    await call(
+      '/assets/uploads',
+      'POST',
+      { name: 'bypass.png', mime: 'image/png', size: 10, scope: 'profile-photo' },
+      kakao.accessToken,
+      400,
+    );
     await call(
       '/me/preferences',
       'PUT',
@@ -605,10 +645,41 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     assert.equal(resaved.completedAt, complete.completedAt);
     assert.equal(resaved.photo, '');
     assert.equal(
+      (await fetch(base.replace(/\/v1$/, '') + complete.photo, { redirect: 'manual' })).status,
+      404,
+    );
+    assert.equal(
       (await call('/me/preferences', 'GET', undefined, kakao.accessToken)).value.bio,
       'Keep my bio',
     );
+    // Existing installations stored data URLs in both tables. Migrate once without changing other settings.
+    const db = app.get(PrismaService);
+    await db.profile.update({ where: { id: kakao.user.id }, data: { avatarUrl: photo } });
+    const legacyPrefs = await db.personalDocument.findUnique({
+      where: { ownerId_key: { ownerId: kakao.user.id, key: 'preferences' } },
+    });
+    await db.personalDocument.update({
+      where: { ownerId_key: { ownerId: kakao.user.id, key: 'preferences' } },
+      data: { value: { ...legacyPrefs.value, photo } },
+    });
+    const { ProfilePhotoService } = await import('../dist/personal/profile-photo.service.js');
+    assert.deepEqual(await app.get(ProfilePhotoService).migrateLegacy(), { found: 1, migrated: 1 });
+    assert.deepEqual(await app.get(ProfilePhotoService).migrateLegacy(), { found: 0, migrated: 0 });
+    const migratedProfile = await call('/me/onboarding', 'GET', undefined, kakao.accessToken);
+    assert.match(migratedProfile.photo, /^\/v1\/profile-photos\//);
+    const migratedPrefs = await call('/me/preferences', 'GET', undefined, kakao.accessToken);
+    assert.equal(migratedPrefs.value.photo, migratedProfile.photo);
+    assert.equal(migratedPrefs.value.bio, 'Keep my bio');
+    assert.equal(migratedPrefs.revision, legacyPrefs.revision + 1);
+    assert.equal((await fetch(base.replace(/\/v1$/, '') + migratedProfile.photo)).status, 200);
     const other = await call('/auth/kakao', 'POST', { code: 'another-user', redirectUri });
+    await call(
+      '/me/onboarding',
+      'PUT',
+      { ...draft, photo: complete.photo },
+      other.accessToken,
+      400,
+    );
     assert.equal(
       (await call('/me/onboarding', 'GET', undefined, other.accessToken)).completed,
       false,

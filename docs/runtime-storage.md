@@ -29,12 +29,15 @@ npm run dev:web
 
 ## Supabase를 사용할 때
 
+아래는 Supabase DB와 Supabase Storage를 함께 사용하는 구성이다. **Supabase DB + Cloudflare R2**를 사용하려면 [R2 연결 안내](./cloudflare-r2.md)의 저장소 환경변수와 CORS 설정을 적용한다.
+
 `apps/server/.env.local`에 실제 PostgreSQL 연결 문자열을 설정하고 서버를 재시작한다.
 
 ```dotenv
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/postgres?sslmode=require
 DIRECT_URL=postgresql://USER:PASSWORD@DIRECT_HOST:5432/postgres?sslmode=require
 SUPABASE_URL=https://PROJECT.supabase.co
+STORAGE_PROVIDER=supabase
 SUPABASE_SECRET_KEY=...
 MEDIA_BUCKET=moajam-private
 ```

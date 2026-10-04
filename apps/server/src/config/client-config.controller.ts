@@ -16,6 +16,7 @@ export class ClientConfigController {
       temporaryLoginEnabled: this.config.get('AUTH_MODE') === 'temporary',
       kakaoLoginEnabled: this.config.get<boolean>('KAKAO_LOGIN_ENABLED'),
       mediaWorkerEnabled: this.config.get<string>('ENABLE_MEDIA_WORKER') === 'true',
+      storageProvider: this.config.get<string>('STORAGE_PROVIDER'),
     };
   }
 }

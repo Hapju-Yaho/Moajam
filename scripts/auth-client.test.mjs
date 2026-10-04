@@ -5,13 +5,15 @@ import { URL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import ts from 'typescript';
-const { Response } = globalThis;
+const { Response, Blob, FormData } = globalThis;
 
 async function fixture({
   mode = 'temporary',
   preview = false,
   store = new Map(),
   failure = false,
+  uploadFormat,
+  uploadFailure = false,
 } = {}) {
   const calls = [];
   let denied = false;
@@ -19,9 +21,22 @@ async function fixture({
   const key = randomUUID();
   globalThis[key] = {
     fetch: async (url, init = {}) => {
+      if (url === 'https://files.example/upload') {
+        calls.push({ url, body: init.body, headers: init.headers, method: init.method });
+        return new Response('', { status: uploadFailure ? 403 : 200 });
+      }
       const body = init.body ? JSON.parse(init.body) : undefined;
       calls.push({ url, body, headers: init.headers });
       if (failure) throw new Error('offline');
+      if (url.endsWith('/assets/uploads'))
+        return Response.json({
+          assetId: 'uploaded-file',
+          signedUrl: 'https://files.example/upload',
+          uploadFormat,
+          ...(uploadFormat === 'raw'
+            ? { headers: { 'Content-Type': body.mime, 'If-None-Match': '*' } }
+            : {}),
+        });
       if (url.endsWith('/config'))
         return Response.json({
           authMode: mode,
@@ -55,6 +70,14 @@ async function fixture({
           user: { id: 'k', provider: 'kakao' },
         });
       if (url.endsWith('/me/documents/empty')) return new Response('', { status: 200 });
+      if (url.endsWith('/profile-photo-test'))
+        return Response.json({
+          photo: '/v1/profile-photos/11111111-1111-4111-8111-111111111111',
+          members: [
+            { user: { avatarUrl: '/v1/profile-photos/11111111-1111-4111-8111-111111111111' } },
+          ],
+          unrelated: '/v1/profile-photos/11111111-1111-4111-8111-111111111111',
+        });
       if (url.endsWith('/me/documents/null')) return Response.json(null);
       if (url.endsWith('/auth/logout')) return Response.json({ ok: true });
       return denied
@@ -99,6 +122,61 @@ async function fixture({
     },
   };
 }
+
+test('profile photo paths use the current web proxy or mobile API, including nested band members', async () => {
+  for (const base of ['/api/v1', 'http://10.0.2.2:3000/v1', 'https://api.example/v1']) {
+    const f = await fixture();
+    f.client.configureRemote({ ...f.options, apiUrl: base });
+    await f.client.currentIdentity();
+    const result = await f.client.api('/profile-photo-test');
+    assert.equal(result.photo, base + '/profile-photos/11111111-1111-4111-8111-111111111111');
+    assert.equal(result.members[0].user.avatarUrl, result.photo);
+    assert.equal(result.unrelated, '/v1/profile-photos/11111111-1111-4111-8111-111111111111');
+  }
+});
+
+test('R2 sends original bytes with signed MIME headers and only completes successful uploads', async () => {
+  for (const [mime, name] of [
+    ['image/png', 'photo.png'],
+    ['audio/webm;codecs=opus', 'recording.webm'],
+    ['', 'recording.m4a'],
+  ]) {
+    const f = await fixture({ uploadFormat: 'raw' });
+    const blob = new Blob([new Uint8Array([0, 10, 200, 255])], { type: mime });
+    assert.equal(await f.client.uploadRemoteFile(blob, name, 'practice'), 'uploaded-file');
+    const uploaded = f.calls.find((c) => c.url === 'https://files.example/upload');
+    assert.equal(uploaded.method, 'PUT');
+    assert.ok(uploaded.body instanceof Blob);
+    assert.deepEqual(await uploaded.body.arrayBuffer(), await blob.arrayBuffer());
+    assert.equal(uploaded.headers['Content-Type'], mime.split(';')[0] || 'audio/mp4');
+    assert.equal(uploaded.headers['If-None-Match'], '*');
+    assert.ok(f.calls.at(-1).url.endsWith('/assets/uploaded-file/complete'));
+  }
+  const f = await fixture({ uploadFormat: 'raw', uploadFailure: true });
+  await assert.rejects(
+    f.client.uploadRemoteFile(new Blob(['audio'], { type: 'audio/wav' }), 'audio.wav', 'practice'),
+    /업로드/,
+  );
+  assert.equal(
+    f.calls.some((c) => c.url.endsWith('/complete')),
+    false,
+  );
+});
+
+test('local and Supabase uploads keep multipart compatibility including older server responses', async () => {
+  for (const uploadFormat of [undefined, 'multipart']) {
+    const f = await fixture({ uploadFormat });
+    await f.client.uploadRemoteFile(
+      new Blob(['audio'], { type: 'audio/wav' }),
+      'audio.wav',
+      'practice',
+    );
+    const uploaded = f.calls.find((c) => c.url === 'https://files.example/upload');
+    assert.ok(uploaded.body instanceof FormData);
+    assert.equal(await uploaded.body.get('').text(), 'audio');
+    assert.equal(uploaded.headers, undefined);
+  }
+});
 
 test('automatic temporary login deduplicates startup; logout pauses entry and resume survives reload', async () => {
   const f = await fixture();

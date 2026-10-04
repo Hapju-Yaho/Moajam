@@ -10,6 +10,8 @@ import { StorageService } from './media/storage.service.js';
 import { SeparationService } from './media/separation.service.js';
 import { ClientConfigController } from './config/client-config.controller.js';
 import { PersonalController } from './personal/personal.controller.js';
+import { ProfilePhotoController } from './personal/profile-photo.controller.js';
+import { ProfilePhotoService } from './personal/profile-photo.service.js';
 import { WorkspaceSyncController } from './workspaces/workspace-sync.controller.js';
 import { LocalFilesController } from './media/local-files.controller.js';
 import { YouTubeController } from './media/youtube.controller.js';
@@ -31,10 +33,11 @@ import { YouTubeController } from './media/youtube.controller.js';
     MediaController,
     ClientConfigController,
     PersonalController,
+    ProfilePhotoController,
     WorkspaceSyncController,
     LocalFilesController,
     YouTubeController,
   ],
-  providers: [StorageService, SeparationService],
+  providers: [StorageService, SeparationService, ProfilePhotoService],
 })
 export class AppModule {}

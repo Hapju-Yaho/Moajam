@@ -19,7 +19,8 @@ export class OnboardingDto {
   @MaxLength(80)
   displayName!: string;
   @ApiProperty({
-    description: '선택 항목. 빈 문자열 또는 500KB 이하 PNG/JPEG/WebP base64 data URL',
+    description:
+      '빈 문자열, 기존 프로필 이미지 주소 또는 새 PNG/JPEG/WebP data URL(500KB 이하). DB에는 이미지 조회 경로만 저장.',
     example: '',
     maxLength: 700000,
   })
@@ -42,15 +43,29 @@ export class OnboardingDto {
 }
 export class OnboardingStateDto {
   @ApiProperty() displayName!: string;
-  @ApiProperty({ description: '선택한 프로필 사진 data URL, 미설정 시 빈 문자열' }) photo!: string;
+  @ApiProperty({ description: '프로필 사진 조회 경로, 미설정 시 빈 문자열' }) photo!: string;
   @ApiProperty({ enum: profileParts, isArray: true, minItems: 0 }) parts!: string[];
   @ApiProperty({ description: '첫 설정을 완료했는지 여부' }) completed!: boolean;
   @ApiProperty({ type: String, format: 'date-time', nullable: true }) completedAt!: string | null;
+}
+export function profilePhotoPath(value: string) {
+  try {
+    const url = new URL(value, 'https://moajam.invalid');
+    if (!['http:', 'https:'].includes(url.protocol) || url.search || url.hash) return null;
+    const match =
+      /^\/(?:api\/)?v1\/profile-photos\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.exec(
+        url.pathname,
+      );
+    return match ? `/v1/profile-photos/${match[1]}` : null;
+  } catch {
+    return null;
+  }
 }
 export function validatePhoto(value: unknown) {
   if (value === '') return;
   if (typeof value !== 'string' || value.length > 700000)
     throw new BadRequestException('프로필 사진을 확인해주세요.');
+  if (profilePhotoPath(value)) return;
   const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
   if (!match) throw new BadRequestException('PNG, JPEG, WebP 사진을 선택해주세요.');
   const bytes = Buffer.from(match[2], 'base64');

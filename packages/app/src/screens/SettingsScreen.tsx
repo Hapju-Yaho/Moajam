@@ -34,7 +34,8 @@ export function SettingsScreen({ navigate }: ScreenProps) {
     }
     setSaving(true);
     try {
-      await persistPreferences({ ...draft, name: draft.name.trim() });
+      const saved = await persistPreferences({ ...draft, name: draft.name.trim() });
+      setDraft((current) => (current === draft ? saved : current));
       setMessage('설정을 저장했습니다.');
     } catch (error) {
       setMessage(

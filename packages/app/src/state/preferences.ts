@@ -63,9 +63,13 @@ export async function loadRemotePreferences(
 }
 export async function persistPreferences(next: Preferences) {
   const owner = scope;
-  if (serverConfigured) await writePersonal('preferences', next, owner);
+  if (serverConfigured) {
+    await writePersonal('preferences', next, owner);
+    next = { ...next, ...(await readPersonal<Preferences>('preferences', owner)) };
+  }
   if (owner !== scope) throw new Error('계정이 변경되었습니다.');
   updatePreferences(next);
+  return next;
 }
 export function updatePreferences(next: Partial<Preferences>) {
   const updated = { ...value, ...next };

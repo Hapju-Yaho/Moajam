@@ -75,6 +75,8 @@ export class MediaController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UploadDto,
   ) {
+    if (dto.scope === 'profile-photo')
+      throw new BadRequestException('프로필 사진은 프로필 설정에서 저장해주세요.');
     if (
       !/^(audio\/(mpeg|wav|x-wav|webm|ogg|mp4|aac|flac)|image\/(png|jpeg|webp)|application\/(pdf|xml|vnd.recordare.musicxml\+xml)|text\/xml)$/.test(
         dto.mime,
@@ -89,12 +91,19 @@ export class MediaController {
     )
       throw new ForbiddenException();
     const objectKey = `${user.id}/${randomUUID()}`;
-    const { data, error } = await this.storage.bucket().createSignedUploadUrl(objectKey);
+    const { data, error } = await this.storage.bucket().createSignedUploadUrl(objectKey, {
+      contentType: dto.mime,
+    });
     if (error || !data) throw new ServiceUnavailableException('업로드를 준비하지 못했습니다.');
     const asset = await this.db.mediaAsset.create({
       data: { ...dto, ownerId: user.id, objectKey },
     });
-    return { assetId: asset.id, signedUrl: data.signedUrl };
+    return {
+      assetId: asset.id,
+      signedUrl: data.signedUrl,
+      uploadFormat: data.uploadFormat ?? 'multipart',
+      ...(data.headers ? { headers: data.headers } : {}),
+    };
   }
   @Post('assets/:id/complete') async complete(
     @CurrentUser() user: AuthenticatedUser,

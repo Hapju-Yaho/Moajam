@@ -13,6 +13,7 @@ import { PrismaService } from '../common/database/prisma.service.js';
 import { CurrentUser } from '../common/auth/current-user.decorator.js';
 import type { AuthenticatedUser } from '../common/auth/auth.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import { ProfilePhotoService, type PreparedPhoto } from './profile-photo.service.js';
 import {
   OnboardingDto,
   OnboardingStateDto,
@@ -88,7 +89,10 @@ function validatePreferences(value: Record<string, unknown>) {
 @ApiBearerAuth()
 @Controller('me')
 export class PersonalController {
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    private readonly photos: ProfilePhotoService,
+  ) {}
   @Get('onboarding')
   @ApiOperation({ summary: '내 첫 로그인 설정과 완료 여부 조회' })
   @ApiOkResponse({ type: OnboardingStateDto })
@@ -113,34 +117,40 @@ export class PersonalController {
     if (!dto?.displayName.trim()) throw new BadRequestException('이름을 입력해주세요.');
     validatePhoto(dto.photo);
     const displayName = dto.displayName.trim();
-    const profile = await this.db.$transaction(async (tx) => {
-      const previous = await tx.profile.findUnique({ where: { id: user.id } });
-      const data = {
-        displayName,
-        avatarUrl: dto.photo || null,
-        parts: dto.parts,
-        onboardingCompletedAt: previous?.onboardingCompletedAt ?? new Date(),
-      };
-      const saved = await tx.profile.upsert({
-        where: { id: user.id },
-        create: { id: user.id, ...data },
-        update: data,
+    const photo = await this.photos.prepare(user.id, dto.photo);
+    const profile = await this.db
+      .$transaction(async (tx) => {
+        const previous = await tx.profile.findUnique({ where: { id: user.id } });
+        const data = {
+          displayName,
+          avatarUrl: photo.value || null,
+          parts: dto.parts,
+          onboardingCompletedAt: previous?.onboardingCompletedAt ?? new Date(),
+        };
+        const saved = await tx.profile.upsert({
+          where: { id: user.id },
+          create: { id: user.id, ...data },
+          update: data,
+        });
+        const where = { ownerId_key: { ownerId: user.id, key: 'preferences' } };
+        const preferences = await tx.personalDocument.findUnique({ where });
+        const value = {
+          ...((preferences?.value as Record<string, Prisma.InputJsonValue>) ?? {}),
+          name: displayName,
+          photo: photo.value,
+          parts: dto.parts,
+        };
+        await tx.personalDocument.upsert({
+          where,
+          create: { ownerId: user.id, key: 'preferences', value },
+          update: { value, revision: { increment: 1 } },
+        });
+        return saved;
+      })
+      .catch(async (error) => {
+        await this.photos.discard(photo);
+        throw error;
       });
-      const where = { ownerId_key: { ownerId: user.id, key: 'preferences' } };
-      const preferences = await tx.personalDocument.findUnique({ where });
-      const value = {
-        ...((preferences?.value as Record<string, Prisma.InputJsonValue>) ?? {}),
-        name: displayName,
-        photo: dto.photo,
-        parts: dto.parts,
-      };
-      await tx.personalDocument.upsert({
-        where,
-        create: { ownerId: user.id, key: 'preferences', value },
-        update: { value, revision: { increment: 1 } },
-      });
-      return saved;
-    });
     return {
       displayName: profile.displayName,
       photo: profile.avatarUrl ?? '',
@@ -186,6 +196,14 @@ export class PersonalController {
       })) !== assets.size
     )
       throw new BadRequestException('본인의 준비된 파일만 개인 기록에 연결할 수 있습니다.');
+    let photo: PreparedPhoto | undefined;
+    if (key === 'preferences') {
+      const value = dto.value as Record<string, Prisma.InputJsonValue>;
+      if (typeof value.photo === 'string') {
+        photo = await this.photos.prepare(user.id, value.photo);
+        dto = { ...dto, value: { ...value, photo: photo.value } };
+      }
+    }
     try {
       return await this.db.$transaction(async (tx) => {
         const where = { ownerId_key: { ownerId: user.id, key } };
@@ -224,6 +242,7 @@ export class PersonalController {
         return document;
       });
     } catch (error) {
+      if (photo) await this.photos.discard(photo);
       if ((error as { code?: string }).code === 'P2002')
         throw new ConflictException('다른 기기에서 먼저 저장했습니다. 기록을 다시 불러와주세요.');
       throw error;

@@ -43,7 +43,12 @@ ENABLE_MEDIA_WORKER=false
 | AUTH_MODE                     | 기본 kakao. temporary는 명시적인 개발용 임시 인증                           |
 | DATABASE_URL                  | 비어 있으면 data/moajam.db SQLite. 설정하면 외부 PostgreSQL 연결 문자열     |
 | DIRECT_URL                    | 외부 DB migration용 연결 문자열. 생략하면 DATABASE_URL                      |
-| SUPABASE_URL                  | 외부 파일 Storage 사용 시 https://PROJECT.supabase.co                       |
+| STORAGE_PROVIDER              | local / supabase / r2. 빈 값은 SQLite일 때 local, 외부 DB일 때 supabase     |
+| R2_ENDPOINT                   | R2 계정 S3 API의 HTTPS endpoint. 버킷 경로 제외                             |
+| R2_ACCESS_KEY_ID              | R2 전용 S3 Access Key ID                                                    |
+| R2_SECRET_ACCESS_KEY          | R2 전용 S3 Secret Access Key. 서버에만 저장                                 |
+| R2_BUCKET                     | R2 비공개 버킷 이름                                                         |
+| SUPABASE_URL                  | supabase 저장소 사용 시 https://PROJECT.supabase.co                         |
 | SUPABASE_SECRET_KEY           | 외부 Storage의 서버 전용 secret/service-role 키                             |
 | MEDIA_BUCKET                  | 외부 비공개 버킷. 기본 moajam-private                                       |
 | CORS_ORIGINS                  | 허용할 프론트 origin을 쉼표로 구분                                          |
@@ -54,6 +59,8 @@ ENABLE_MEDIA_WORKER=false
 `SUPABASE_PUBLISHABLE_KEY`는 카카오 로그인에 필요 없다. DB 선택과 인증 선택은 독립적이다. SQLite에서도 카카오 로그인이 동작한다. 개발에서 키가 비어 있으면 로그인 화면은 표시되고 로그인 시 설정 오류가 안내된다. 운영에서는 필수 인증 설정 누락과 temporary 모드를 거부한다.
 
 카카오 개발자 콘솔 등록 방법, 서명 키 생성, 요청/응답은 [인증 안내](./authentication.md)를 따른다.
+
+Supabase DB와 R2 파일 저장소를 함께 쓰는 설정은 [Cloudflare R2 연결 안내](./cloudflare-r2.md)를 따른다. 이미지·녹음은 R2, 계정·문서·파일 권한 정보는 DB에 저장한다.
 
 ## 실행
 
