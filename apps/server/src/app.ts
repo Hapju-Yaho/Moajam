@@ -48,6 +48,7 @@ export async function createApplication() {
   app.enableCors({
     credentials: true,
     origin: corsOrigins?.length ? corsOrigins : false,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
   const swaggerConfig = new DocumentBuilder()

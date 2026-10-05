@@ -23,6 +23,7 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     ENABLE_MEDIA_WORKER: 'false',
     SUPABASE_URL: '',
     SUPABASE_PUBLISHABLE_KEY: '',
+    CORS_ORIGINS: 'https://moajam.netlify.app',
   });
   const sql = execFileSync(
     process.execPath,
@@ -59,6 +60,40 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     return text ? JSON.parse(text) : null;
   };
   try {
+    for (const [method, path] of [
+      ['PUT', '/me'],
+      ['PATCH', '/workspaces/cors-check'],
+      ['DELETE', '/notifications'],
+    ]) {
+      const response = await fetch(base + path, {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'https://moajam.netlify.app',
+          'Access-Control-Request-Method': method,
+          'Access-Control-Request-Headers': 'authorization,content-type',
+        },
+      });
+      assert.equal(response.status, 204);
+      assert.equal(
+        response.headers.get('access-control-allow-origin'),
+        'https://moajam.netlify.app',
+      );
+      assert.ok(
+        response.headers
+          .get('access-control-allow-methods')
+          .split(',')
+          .map((value) => value.trim())
+          .includes(method),
+        `${method} must pass preflight`,
+      );
+      const headers = response.headers.get('access-control-allow-headers').toLowerCase();
+      assert.ok(headers.includes('authorization') && headers.includes('content-type'));
+    }
+    const untrustedOrigin = await fetch(base + '/me', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://untrusted.example', 'Access-Control-Request-Method': 'PUT' },
+    });
+    assert.equal(untrustedOrigin.headers.get('access-control-allow-origin'), null);
     assert.equal((await call('/config')).authMode, 'temporary');
     await call('/workspaces', 'GET', undefined, undefined, 401);
     const a = await call('/auth/temporary', 'POST', {}, undefined, 201);
