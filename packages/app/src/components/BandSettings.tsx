@@ -46,7 +46,8 @@ export function BandSettings({ onClose }: { onClose?: () => void }) {
           setBusy(true);
           setMessage('');
           void updateWorkspaceProfile(name.trim(), description, photo)
-            .then(() => {
+            .then((savedPhoto) => {
+              setPhoto(savedPhoto);
               setMessage('밴드 설정을 저장했습니다.');
               onClose?.();
             })

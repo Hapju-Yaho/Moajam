@@ -75,8 +75,8 @@ export class MediaController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UploadDto,
   ) {
-    if (dto.scope === 'profile-photo')
-      throw new BadRequestException('프로필 사진은 프로필 설정에서 저장해주세요.');
+    if (['profile-photo', 'band-photo'].includes(dto.scope))
+      throw new BadRequestException('프로필·밴드 사진은 해당 설정에서 저장해주세요.');
     if (
       !/^(audio\/(mpeg|wav|x-wav|webm|ogg|mp4|aac|flac)|image\/(png|jpeg|webp)|application\/(pdf|xml|vnd.recordare.musicxml\+xml)|text\/xml)$/.test(
         dto.mime,

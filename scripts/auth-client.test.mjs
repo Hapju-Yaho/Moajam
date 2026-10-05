@@ -73,6 +73,7 @@ async function fixture({
       if (url.endsWith('/profile-photo-test'))
         return Response.json({
           photo: '/v1/profile-photos/11111111-1111-4111-8111-111111111111',
+          band: { data: { photo: '/v1/band-photos/22222222-2222-4222-8222-222222222222' } },
           members: [
             { user: { avatarUrl: '/v1/profile-photos/11111111-1111-4111-8111-111111111111' } },
           ],
@@ -129,6 +130,10 @@ test('profile photo paths use the current web proxy or mobile API, including nes
     f.client.configureRemote({ ...f.options, apiUrl: base });
     await f.client.currentIdentity();
     const result = await f.client.api('/profile-photo-test');
+    assert.equal(
+      result.band.data.photo,
+      base + '/band-photos/22222222-2222-4222-8222-222222222222',
+    );
     assert.equal(result.photo, base + '/profile-photos/11111111-1111-4111-8111-111111111111');
     assert.equal(result.members[0].user.avatarUrl, result.photo);
     assert.equal(result.unrelated, '/v1/profile-photos/11111111-1111-4111-8111-111111111111');

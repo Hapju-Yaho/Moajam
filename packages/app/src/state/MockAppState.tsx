@@ -478,9 +478,15 @@ export function useMockAppState() {
     updateWorkspaceProfile: async (name: string, description: string, photo: string) => {
       if (!canManage) throw new Error('밴드 관리자만 설정을 수정할 수 있어요.');
       if (serverConfigured) {
-        await api(`/workspaces/${workspaceId}`, 'PATCH', { name, description, photo });
+        const saved = await api<{ photo: string }>(`/workspaces/${workspaceId}`, 'PATCH', {
+          name,
+          description,
+          photo,
+        });
         await store.reloadRemote();
+        return saved.photo;
       } else update((band) => ({ ...band, name: name.trim(), description, photo }));
+      return photo;
     },
     createWorkspace: async (name: string, description = '', photo = '') => {
       if (serverConfigured) {

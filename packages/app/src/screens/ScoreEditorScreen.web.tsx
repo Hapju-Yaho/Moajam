@@ -19,9 +19,9 @@ import {
   scoreToMusicXml,
   cleanScoreConnections,
   scorePlaybackFrom,
+  scorePlaybackPosition,
   renameScorePart,
   removeScorePart,
-  MIN_SCORE_BEATS,
   SCORE_DIVISIONS,
   noteTones,
   type Score,
@@ -49,6 +49,11 @@ import { defaultSoundfontInstrument, isSoundfontInstrument } from '../lib/soundf
 import { prepareSoundfontInstrument } from '../lib/soundfont.web';
 import { createBandScoreStore, type StoredScore } from '../lib/bandScoreStore.web';
 import { validateScoreDocument } from '../lib/scoreFile';
+import { createScorePlaybackClock } from '../lib/scorePlaybackClock';
+import {
+  ScoreYouTubeBacking,
+  type ScoreYouTubeHandle,
+} from '../components/ScoreYouTubeBacking.web';
 export function ScoreEditorScreen({
   navigate,
   entityId,
@@ -114,9 +119,10 @@ export function ScoreEditorScreen({
     void auditionContext.current?.close();
     auditionContext.current = null;
   }, []);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const alive = useRef(true);
   const audio = useRef<HTMLAudioElement | null>(null);
+  const youtube = useRef<ScoreYouTubeHandle | null>(null);
+  const [youtubeReady, setYoutubeReady] = useState(false);
   const [audioUrl, setAudioUrl] = useState('');
   const [referenceAudio, setReferenceAudio] = useState<Blob | null>(null);
   const [instrumentSample, setInstrumentSample] = useState<InstrumentSample | null>(null);
@@ -183,6 +189,8 @@ export function ScoreEditorScreen({
   const referenceVolume = score.referenceAudioVolume ?? 0.8;
   const referenceOffset = score.referenceAudioOffset ?? 0;
   const referenceEnabled = score.referenceAudioEnabled ?? true;
+  const youtubeSource = score.referenceAudioSource === 'youtube';
+  const hasReference = youtubeSource ? !!score.referenceYoutubeId : !!referenceAudio;
   const latestVolumes = useRef({ score: volume, reference: referenceVolume });
   latestVolumes.current = { score: volume, reference: referenceVolume };
   const changeReferenceVolume = (value: number) => {
@@ -206,6 +214,7 @@ export function ScoreEditorScreen({
       setScore((current) => ({
         ...current,
         referenceAudioName: file.name,
+        referenceAudioSource: 'file',
         referenceAudioEnabled: true,
         referenceAudioOffset: 0,
         sync: {},
@@ -298,7 +307,6 @@ export function ScoreEditorScreen({
     return () => {
       active = false;
       alive.current = false;
-      timers.current.forEach(clearTimeout);
       if (playbackTimer.current !== null) clearInterval(playbackTimer.current);
       void context.current?.close();
       context.current = null;
@@ -402,8 +410,6 @@ export function ScoreEditorScreen({
     if (playbackTimer.current !== null) clearInterval(playbackTimer.current);
     playbackTimer.current = null;
     setPlaybackBeat(null);
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
     void context.current?.close();
     context.current = null;
     output.current = null;
@@ -412,8 +418,9 @@ export function ScoreEditorScreen({
     setCursor(null);
     setAudioMessage('');
     audio.current?.pause();
+    youtube.current?.pause();
   };
-  const play = async (from = 0) => {
+  const play = async (from = 0, loopEnd?: number) => {
     stopAudition();
     if (context.current) {
       stop();
@@ -421,13 +428,25 @@ export function ScoreEditorScreen({
     }
     if (!loaded || audioLoading || sampleLoading || soundfontBusy || fileBusy || !visible.length)
       return;
-    const { startBeat, endBeat, events } = scorePlaybackFrom(score, part, from);
+    if (youtubeSource && referenceEnabled && score.referenceYoutubeId && !youtubeReady) {
+      setAudioMessage(
+        '유튜브 영상이 준비된 뒤 재생해주세요. 연결되지 않으면 영상 다시 연결을 눌러주세요.',
+      );
+      return;
+    }
+    const { startBeat, endBeat, events, segments, toWritten } = scorePlaybackFrom(
+      score,
+      part,
+      from,
+      loopEnd,
+    );
     if (startBeat >= endBeat) return;
     const ctx = new AudioContext();
     context.current = ctx;
     setPlaying(true);
     setAudioMessage('');
     audio.current?.pause();
+    youtube.current?.pause();
     try {
       await ctx.resume();
       if (context.current !== ctx) return;
@@ -442,7 +461,7 @@ export function ScoreEditorScreen({
           );
       if (context.current !== ctx) return;
       let backing: AudioBuffer | null = null;
-      if (referenceAudio && referenceEnabled) {
+      if (!youtubeSource && referenceAudio && referenceEnabled) {
         setAudioMessage('함께 재생할 음원 준비 중…');
         backing =
           decodedAudio.current?.file === referenceAudio
@@ -458,55 +477,76 @@ export function ScoreEditorScreen({
       const startAt = ctx.currentTime + 0.04;
       if (backing) {
         referenceOutput.current = createScoreOutput(ctx, latestVolumes.current.reference);
-        scheduleScoreBacking(
-          ctx,
-          referenceOutput.current.input,
-          backing,
-          startAt,
-          startBeat,
-          endBeat,
-          score.bpm,
-          referenceOffset,
-        );
         setAudioPosition(
           Math.max(0, Math.min(backing.duration, referenceOffset + (startBeat * 60) / score.bpm)),
         );
       }
-      setPlaybackBeat(startBeat);
-      playbackTimer.current = setInterval(() => {
-        const beat = Math.min(
-          endBeat - MIN_SCORE_BEATS,
-          startBeat + Math.max(0, ((ctx.currentTime - startAt) * score.bpm) / 60),
+      const backingOutput = referenceOutput.current;
+      const updateClock = createScorePlaybackClock(
+        startAt,
+        ((endBeat - startBeat) * 60) / score.bpm,
+        loopEnd !== undefined,
+        (cycleAt) => {
+          for (const segment of segments) {
+            const when = cycleAt + (segment.offset * 60) / score.bpm;
+            scheduleScorePassage(
+              ctx,
+              destination.input,
+              score,
+              part,
+              when,
+              segment.startBeat,
+              segment.endBeat,
+              sample,
+            );
+            if (backing && backingOutput)
+              scheduleScoreBacking(
+                ctx,
+                backingOutput.input,
+                backing,
+                when,
+                segment.startBeat,
+                segment.endBeat,
+                score.bpm,
+                referenceOffset,
+              );
+          }
+        },
+      );
+      updateClock(ctx.currentTime);
+      const withYoutube = youtubeSource && referenceEnabled && !!score.referenceYoutubeId;
+      if (withYoutube)
+        youtube.current?.sync(
+          referenceOffset + (startBeat * 60) / score.bpm,
+          ctx.currentTime,
+          true,
         );
-        setPlaybackBeat(Math.floor(beat * SCORE_DIVISIONS) / SCORE_DIVISIONS);
+      setPlaybackBeat(toWritten(startBeat));
+      setCursor(events[0]?.note.id ?? null);
+      playbackTimer.current = setInterval(() => {
+        if (context.current !== ctx) return;
+        const clock = updateClock(ctx.currentTime);
+        if (clock.ended) {
+          stop();
+          return;
+        }
+        const elapsedBeats = (clock.elapsed * score.bpm) / 60;
+        const beat = scorePlaybackPosition(segments, elapsedBeats);
+        setPlaybackBeat(Math.floor(toWritten(beat) * SCORE_DIVISIONS) / SCORE_DIVISIONS);
+        const active = events.find(
+          (event) => elapsedBeats >= event.offset && elapsedBeats < event.offset + event.beats,
+        );
+        setCursor(active?.note.id ?? null);
+        if (withYoutube) {
+          const seconds = referenceOffset + (beat * 60) / score.bpm;
+          youtube.current?.sync(seconds, ctx.currentTime);
+          setAudioPosition(Math.max(0, seconds));
+        }
         if (backing)
           setAudioPosition(
-            Math.max(
-              0,
-              Math.min(
-                backing.duration,
-                referenceOffset +
-                  (startBeat * 60) / score.bpm +
-                  Math.max(0, ctx.currentTime - startAt),
-              ),
-            ),
+            Math.max(0, Math.min(backing.duration, referenceOffset + (beat * 60) / score.bpm)),
           );
-        if (ctx.currentTime >= startAt + ((endBeat - startBeat) * 60) / score.bpm) stop();
       }, 40);
-      scheduleScorePassage(
-        ctx,
-        destination.input,
-        score,
-        part,
-        startAt,
-        startBeat,
-        endBeat,
-        sample,
-      );
-      for (const { note: item, offset } of events) {
-        const elapsed = (offset * 60) / score.bpm;
-        timers.current.push(setTimeout(() => setCursor(item.id), (elapsed + 0.04) * 1000));
-      }
     } catch (error) {
       if (context.current === ctx) {
         stop();
@@ -743,7 +783,11 @@ export function ScoreEditorScreen({
           onLoad={loadDocument}
           onBusyChange={setFileBusy}
         />
-        <div inert={fileBusy || bandSaving} style={{ display: 'contents' }}>
+        <div
+          className="score-editor-host"
+          inert={fileBusy || bandSaving}
+          style={{ display: 'contents' }}
+        >
           <FlexRow wrap>
             {score.parts.map((name) => (
               <Pill
@@ -791,60 +835,120 @@ export function ScoreEditorScreen({
             onChange={setInstrumentSample}
             onBusyChange={setSampleLoading}
           />
-          <section className="score-backing" aria-label="음원과 함께 재생">
+          <section
+            className={`score-backing${youtubeSource && score.referenceYoutubeId ? ' score-backing--youtube' : ''}`}
+            aria-label="음원과 함께 재생"
+          >
             <div className="score-backing-row">
               <strong>함께 재생할 음원</strong>
-              <button
-                type="button"
-                disabled={!loaded || playing || audioLoading}
-                onClick={() => audioFileInput.current?.click()}
-              >
-                {audioLoading ? '음원 준비 중…' : referenceAudio ? '음원 교체' : '＋ 음원 추가'}
-              </button>
-              <input
-                ref={audioFileInput}
-                type="file"
-                hidden
-                accept="audio/*,.mp3,.wav,.m4a,.flac,.ogg"
-                aria-label="함께 재생할 음원 파일"
-                disabled={!loaded || playing || audioLoading}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = '';
-                  if (file) void loadAudio(file);
-                }}
-              />
-              <span className="score-backing-name">
-                {referenceAudio
-                  ? score.referenceAudioName || '연결된 음원'
-                  : 'MP3, WAV 등 · 최대 100MB'}
-              </span>
-              {referenceAudio && (
-                <button
-                  disabled={playing || audioLoading}
-                  onClick={() => {
-                    audioLoadRequest.current++;
-                    decodedAudio.current = null;
+              <label>
+                반주 종류
+                <select
+                  aria-label="함께 재생할 음원 종류"
+                  value={youtubeSource ? 'youtube' : 'file'}
+                  disabled={!loaded || playing || audioLoading}
+                  onChange={(event) => {
                     audio.current?.pause();
-                    setReferenceAudio(null);
-                    setAudioUrl('');
+                    youtube.current?.pause();
                     setAudioPosition(0);
                     setAudioMessage('');
-                    setScore((current) => ({
-                      ...current,
-                      referenceAudioName: undefined,
+                    edit({
+                      ...score,
+                      referenceAudioSource: event.target.value as 'file' | 'youtube',
                       referenceAudioOffset: 0,
-                      referenceAudioVolume: undefined,
-                      referenceAudioEnabled: undefined,
                       sync: {},
-                    }));
+                    });
                   }}
                 >
-                  음원 연결 해제
-                </button>
+                  <option value="file">음원 파일</option>
+                  <option value="youtube">유튜브 영상</option>
+                </select>
+              </label>
+              {!youtubeSource && (
+                <>
+                  <button
+                    type="button"
+                    disabled={!loaded || playing || audioLoading}
+                    onClick={() => audioFileInput.current?.click()}
+                  >
+                    {audioLoading ? '음원 준비 중…' : referenceAudio ? '음원 교체' : '＋ 음원 추가'}
+                  </button>
+                  <input
+                    ref={audioFileInput}
+                    type="file"
+                    hidden
+                    accept="audio/*,.mp3,.wav,.m4a,.flac,.ogg"
+                    aria-label="함께 재생할 음원 파일"
+                    disabled={!loaded || playing || audioLoading}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = '';
+                      if (file) void loadAudio(file);
+                    }}
+                  />
+                  <span className="score-backing-name">
+                    {referenceAudio
+                      ? score.referenceAudioName || '연결된 음원'
+                      : 'MP3, WAV 등 · 최대 100MB'}
+                  </span>
+                  {referenceAudio && (
+                    <button
+                      disabled={playing || audioLoading}
+                      onClick={() => {
+                        audioLoadRequest.current++;
+                        decodedAudio.current = null;
+                        audio.current?.pause();
+                        setReferenceAudio(null);
+                        setAudioUrl('');
+                        setAudioPosition(0);
+                        setAudioMessage('');
+                        setScore((current) => ({
+                          ...current,
+                          referenceAudioName: undefined,
+                          referenceAudioOffset: 0,
+                          referenceAudioVolume: undefined,
+                          referenceAudioEnabled: undefined,
+                          sync: {},
+                        }));
+                      }}
+                    >
+                      음원 연결 해제
+                    </button>
+                  )}
+                </>
               )}
             </div>
-            {referenceAudio && (
+            {youtubeSource && (
+              <ScoreYouTubeBacking
+                ref={youtube}
+                videoId={score.referenceYoutubeId}
+                suggestedUrl={song?.referenceUrl}
+                disabled={!loaded || playing || audioLoading || fileBusy}
+                volume={referenceVolume}
+                onReadyChange={setYoutubeReady}
+                onFailure={(message) => {
+                  if (context.current) stop();
+                  setAudioMessage(message);
+                }}
+                onAlign={(seconds) =>
+                  edit({ ...score, referenceAudioOffset: Number(seconds.toFixed(2)) })
+                }
+                onChange={(videoId) => {
+                  youtube.current?.pause();
+                  setAudioMessage('');
+                  setAudioPosition(0);
+                  edit({
+                    ...score,
+                    referenceYoutubeId: videoId,
+                    referenceAudioSource: 'youtube',
+                    referenceAudioEnabled: true,
+                    referenceAudioOffset: 0,
+                    sync: {},
+                  });
+                }}
+              />
+            )}
+            {hasReference && (
               <>
                 <div className="score-backing-row">
                   <label>
@@ -948,13 +1052,6 @@ export function ScoreEditorScreen({
           <details className="score-advanced">
             <summary>악보 설정 · 파트 관리 · MusicXML 가져오기 / 내보내기</summary>
             <Surface>
-              <Input
-                accessibilityLabel="악보 제목"
-                value={score.title}
-                editable={loaded && !playing}
-                onChangeText={(title) => edit({ ...score, title }, 'title')}
-                onBlur={finishEdit}
-              />
               <FlexRow wrap>
                 {!!arrangement.bpm && song && (
                   <ActionButton
@@ -1144,7 +1241,7 @@ export function ScoreEditorScreen({
             <Surface>
               <Heading>기준 음원과 싱크</Heading>
               <Meta>상단에서 추가한 음원을 미리 듣고 악보의 시작 위치를 맞출 수 있어요.</Meta>
-              {audioUrl ? (
+              {audioUrl && !youtubeSource ? (
                 <audio
                   ref={audio}
                   controls={!playing}
@@ -1165,18 +1262,29 @@ export function ScoreEditorScreen({
                 />
               ) : null}
               <Meta>
-                {audioPosition.toFixed(2)}초 · 음표를 선택해 현재 음원 위치와 연결하세요. 기준
-                음원도
-                {bandScore ? '밴드에 저장할 때 멤버들에게 공유됩니다.' : '비공개로 저장됩니다.'}
+                {audioPosition.toFixed(2)}초 · 음표를 선택해 현재 음원 위치와 연결하세요.
+                {youtubeSource
+                  ? ' 유튜브 영상은 주소와 시작 위치만 악보에 저장됩니다.'
+                  : bandScore
+                    ? ' 기준 음원도 밴드에 저장할 때 멤버들에게 공유됩니다.'
+                    : ' 기준 음원도 비공개로 저장됩니다.'}
               </Meta>
               <ActionButton
                 secondary
-                disabled={!selected || !audioUrl || playing || audioLoading}
+                disabled={
+                  !selected ||
+                  !hasReference ||
+                  (youtubeSource && !youtubeReady) ||
+                  playing ||
+                  audioLoading
+                }
                 onPress={() => {
                   const index = visible.findIndex((item) => item.id === selected);
                   if (index >= 0 && selected) {
                     const beat = visible.slice(0, index).reduce((sum, note) => sum + note.beats, 0);
-                    const time = audio.current?.currentTime ?? audioPosition;
+                    const time = youtubeSource
+                      ? (youtube.current?.currentTime() ?? audioPosition)
+                      : (audio.current?.currentTime ?? audioPosition);
                     edit({
                       ...score,
                       sync: { ...score.sync, [selected]: time },

@@ -31,6 +31,7 @@ export function ScoreFileActions({
   const [showTab, setShowTab] = useState(true);
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const root = useRef<HTMLElement>(null);
   const generation = useRef(0);
   useEffect(
     () => () => {
@@ -91,10 +92,15 @@ export function ScoreFileActions({
       setMessage('PDF를 만들고 있어요…');
       const { createScorePdf } = await import('../lib/scorePdf.web');
       if (!active()) return;
+      const staff = root.current
+        ?.closest('.score-editor-viewport')
+        ?.querySelector('.score-systems');
+      const layoutWidth = Number(staff?.getAttribute('data-layout-width')) || 800;
       const file = await createScorePdf(
         document.score,
         scope === 'all' ? document.score.parts : [part],
         showTab,
+        layoutWidth,
       );
       if (!active()) return;
       deliver(
@@ -105,7 +111,12 @@ export function ScoreFileActions({
     });
   const locked = disabled || busy;
   return (
-    <section className="score-backing" aria-label="악보 파일 저장과 불러오기" aria-busy={busy}>
+    <section
+      ref={root}
+      className="score-backing"
+      aria-label="악보 파일 저장과 불러오기"
+      aria-busy={busy}
+    >
       <div className="score-backing-row">
         <strong>악보 파일</strong>
         <button type="button" disabled={locked} onClick={() => void save()}>

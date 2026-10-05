@@ -6,7 +6,14 @@
   <pre id="result">검사 중…</pre>
   <script type="module">
     import {
+      scoreRhythmFeels,
       scoreToMusicXml,
+      scoreMeasures,
+      scorePlaybackFrom,
+      setScoreTimeSignature,
+      setScoreDuration,
+      setScoreSlur,
+      setScoreSlideOut,
       setScoreFret,
       noteTones,
       appendScoreNoteAt,
@@ -21,6 +28,7 @@
       scheduleScoreBacking,
       scheduleScorePassage,
     } from '../packages/app/src/lib/scoreAudio.web.ts';
+    import { createScorePlaybackClock } from '../packages/app/src/lib/scorePlaybackClock.ts';
     const results = [];
     const check = (condition, text) => {
       if (!condition) throw new Error(text);
@@ -109,6 +117,52 @@
         return (await context.startRendering()).getChannelData(0);
       };
       const tiedOutput = await renderConnection('tie');
+      for (const kind of ['oscillator', 'sample', 'soundfont']) {
+        const context = new OfflineAudioContext(1, 72000, 48000);
+        const buffer = context.createBuffer(1, 48000, 48000);
+        buffer
+          .getChannelData(0)
+          .set(
+            Float32Array.from(
+              { length: 48000 },
+              (_, i) => 0.25 * Math.sin((2 * Math.PI * 440 * i) / 48000),
+            ),
+          );
+        const sample = { buffer, rootMidi: 69, sustain: true, loopStart: 0.2, loopEnd: 0.8 };
+        const instrument =
+          kind === 'oscillator'
+            ? undefined
+            : kind === 'sample'
+              ? sample
+              : { kind: 'soundfont', samples: new Map([[69, sample]]) };
+        const ghostScore = {
+          title: '',
+          bpm: 120,
+          parts: ['Guitar'],
+          sync: {},
+          notes: [linkNote('held', 69), { ...linkNote('continued', 69), ghost: true }],
+        };
+        scheduleScorePassage(
+          context,
+          context.destination,
+          ghostScore,
+          'Guitar',
+          0,
+          0,
+          2,
+          instrument,
+        );
+        const output = (await context.startRendering()).getChannelData(0);
+        const energy = (from, to) =>
+          output.slice(from * 48000, to * 48000).reduce((sum, value) => sum + value * value, 0) /
+          ((to - from) * 48000);
+        check(
+          energy(0.49, 0.51) > energy(0.3, 0.32) * 0.85 &&
+            energy(0.6, 0.62) > energy(0.3, 0.32) * 0.85 &&
+            output.slice(48000).every((value) => value === 0),
+          `${kind}: 같은 음 고스트 노트 경계에서 소리·음량 유지 후 정확히 종료`,
+        );
+      }
       const rms = (samples, start, end) =>
         Math.sqrt(
           samples.slice(start * 48000, end * 48000).reduce((sum, v) => sum + v * v, 0) /
@@ -151,6 +205,108 @@
         crossings(partialSlide, 0, 0.05) > 600 && crossings(partialSlide, 0, 0.05) < 860,
         '슬라이드 중간부터 재생할 때 현재 음높이 유지',
       );
+      const glissandoOutput = await renderConnection('glissando');
+      check(
+        crossings(glissandoOutput, 0.4, 0.45) > 550 && crossings(glissandoOutput, 0.4, 0.45) < 800,
+        '지판 슬라이드도 목표 음으로 연속 이동',
+      );
+      const slideScore = setScoreSlideOut(
+        setScoreSlideOut(
+          setScoreConnection(
+            {
+              title: '슬라이드 왕복',
+              bpm: 120,
+              parts: ['Guitar'],
+              sync: {},
+              notes: [linkNote('a', 64), linkNote('b', 71), linkNote('c', 69, 6)],
+            },
+            ['a'],
+            'glissando',
+          ),
+          ['b'],
+          'up',
+        ),
+        ['c'],
+        'down',
+      );
+      const slideRestored = scoreFromMusicXml(scoreToMusicXml(slideScore));
+      const slideNotes = slideRestored.notes.filter((n) => !n.rest);
+      check(
+        slideNotes[0].connection?.type === 'glissando' &&
+          slideNotes[1].slideOut === 'up' &&
+          slideNotes[2].slideOut === 'down' &&
+          slideNotes[2].beats === 6,
+        '지판 슬라이드와 마디를 넘는 마무리 슬라이드 MusicXML 왕복',
+      );
+      const ghostSlur = setScoreSlur(
+        {
+          title: '',
+          bpm: 120,
+          parts: ['Guitar'],
+          sync: {},
+          notes: [linkNote('a', 69), linkNote('b', 69)],
+        },
+        ['a'],
+      );
+      check(
+        noteTones(scoreFromMusicXml(scoreToMusicXml(ghostSlur)).notes[1])[0].ghost,
+        'L로 자동 적용한 고스트 노트 MusicXML 왕복',
+      );
+      for (const kind of ['oscillator', 'sample', 'soundfont']) {
+        for (const direction of ['up', 'down']) {
+          for (const [from, to] of [
+            [0, 1],
+            [0.8, 1],
+            [0, 0.9],
+          ]) {
+            const context = new OfflineAudioContext(1, 36000, 48000);
+            const buffer = context.createBuffer(1, 48000, 48000);
+            buffer
+              .getChannelData(0)
+              .set(
+                Float32Array.from(
+                  { length: 48000 },
+                  (_, i) => 0.25 * Math.sin((2 * Math.PI * 440 * i) / 48000),
+                ),
+              );
+            const sample = { buffer, rootMidi: 69, sustain: true, loopStart: 0.2, loopEnd: 0.8 };
+            const instrument =
+              kind === 'oscillator'
+                ? undefined
+                : kind === 'sample'
+                  ? sample
+                  : { kind: 'soundfont', samples: new Map([[69, sample]]) };
+            const ending = setScoreSlideOut(
+              { title: '', bpm: 120, parts: ['Guitar'], sync: {}, notes: [linkNote('end', 69)] },
+              ['end'],
+              direction,
+            );
+            scheduleScorePassage(
+              context,
+              context.destination,
+              ending,
+              'Guitar',
+              0,
+              from,
+              to,
+              instrument,
+            );
+            const audio = (await context.startRendering()).getChannelData(0);
+            const offset = from / 2;
+            const frequency = crossings(audio, 0.405 - offset, 0.445 - offset);
+            check(
+              direction === 'up'
+                ? frequency > 530 && frequency < 640
+                : frequency > 300 && frequency < 380,
+              `${kind} ${direction} ${from}~${to}: 슬라이드 아웃 음높이와 구간 재생`,
+            );
+            check(
+              audio.slice(Math.ceil((to - from) * 24000) + 1).every((v) => v === 0),
+              `${kind} ${direction} ${from}~${to}: 마무리 슬라이드 박자 끝에서 종료`,
+            );
+          }
+        }
+      }
       check(
         (await renderConnection('tie', 1)).slice(24000).every((v) => v === 0),
         '붙임줄 중간부터 재생할 때 남은 길이만 재생',
@@ -160,6 +316,114 @@
       const externalHarmony = `<harmony><root><root-step>A</root-step></root><kind>minor</kind></harmony>${externalNote(8)}<harmony><root><root-step>G</root-step></root><kind>dominant</kind><bass><bass-step>B</bass-step></bass></harmony>${externalNote(8)}`;
       const external = `<score-partwise><part-list><score-part id="P1"><part-name>Guitar</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>4</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>${externalHarmony}</measure><measure number="2">${externalNote(4)}</measure><measure number="3">${externalNote(16)}</measure></part></score-partwise>`;
       const externalScore = scoreFromMusicXml(external);
+      const pickup = scoreFromMusicXml(
+        external.replace('<measure number="2">', '<measure number="2" implicit="yes">'),
+      );
+      check(pickup.measureLengths.Guitar[1] === 1, '부족한 길이를 명시한 마디의 경계 보존');
+      const tripletScore = {
+        title: '셋잇단음표',
+        bpm: 120,
+        parts: ['Guitar'],
+        sync: {},
+        barlines: { 0: 'double' },
+        notes: Array.from({ length: 12 }, (_, i) => ({
+          ...linkNote(`triplet-${i}`, 69),
+          beats: 1 / 3,
+          tuplet: 3,
+        })),
+      };
+      const tripletRestored = scoreFromMusicXml(scoreToMusicXml(tripletScore));
+      check(
+        tripletRestored.notes.length === 12 &&
+          tripletRestored.notes.every((n) => n.tuplet === 3 && n.beats === 1 / 3),
+        '셋잇단음표 음표 개수와 실제 길이 MusicXML 왕복 보존',
+      );
+      check(tripletRestored.barlines[0] === 'double', '겹세로선 MusicXML 왕복 보존');
+      check(
+        scoreMeasures(tripletRestored, 'Guitar').length === 1,
+        '셋잇단음표 12개가 정확히 4/4 한 마디',
+      );
+      const tripletAudio = new OfflineAudioContext(1, 120000, 48000);
+      scheduleScorePassage(tripletAudio, tripletAudio.destination, tripletScore, 'Guitar', 0, 0, 4);
+      const tripletSamples = (await tripletAudio.startRendering()).getChannelData(0);
+      check(
+        Array.from({ length: 12 }, (_, i) =>
+          tripletSamples.slice(i * 8000, i * 8000 + 3000).some((v) => v !== 0),
+        ).every(Boolean) && tripletSamples.slice(100000).every((v) => v === 0),
+        '셋잇단음표 실제 소리 12회와 2초 재생 길이',
+      );
+      let edited = {
+        title: '새 악보 설정',
+        bpm: 120,
+        parts: ['Guitar'],
+        sync: {},
+        notes: Array.from({ length: 8 }, (_, i) => linkNote(String(i), 64 + (i % 3))),
+      };
+      edited = setScoreDuration(edited, '0', 2, () => crypto.randomUUID());
+      edited = setScoreTimeSignature(edited, 6, 8);
+      edited = setScoreSlur(edited, ['0', '1', '2']);
+      edited = {
+        ...edited,
+        keySignature: -2,
+        measureWidths: { Guitar: { 0: 180, 1: 70 } },
+        repeats: { 0: { start: true }, 1: { end: true, times: 3 } },
+      };
+      const restoredSettings = scoreFromMusicXml(scoreToMusicXml(edited));
+      check(
+        restoredSettings.title === edited.title &&
+          restoredSettings.keySignature === -2 &&
+          restoredSettings.timeSignature.beats === 6 &&
+          restoredSettings.timeSignature.beatType === 8,
+        '제목·조표·박자표 MusicXML 왕복 보존',
+      );
+      check(
+        restoredSettings.measureWidths.Guitar[0] === 180 &&
+          restoredSettings.measureWidths.Guitar[1] === 70,
+        '마디 너비 비중 MusicXML 왕복 보존',
+      );
+      check(
+        scoreMeasures(restoredSettings, 'Guitar')
+          .map((bar) => bar.reduce((sum, f) => sum + f.beats, 0))
+          .join(',') === '5,4',
+        '넘친 마디도 MusicXML에서 다음 마디로 밀리지 않음',
+      );
+      check(
+        restoredSettings.notes[0].slurTo === restoredSettings.notes[2].id,
+        '여러 음을 묶은 이음줄 MusicXML 왕복 보존',
+      );
+      check(
+        scorePlaybackFrom(restoredSettings, 'Guitar').endBeat === 27,
+        '불일치 마디를 포함한 도돌이표 3회 재생 계획',
+      );
+      const plan = scorePlaybackFrom(
+        { ...edited, bpm: 240, notes: edited.notes.map((note) => ({ ...note, rest: false })) },
+        'Guitar',
+      );
+      const repeatedAudio = new OfflineAudioContext(
+        1,
+        Math.ceil((plan.endBeat - plan.startBeat) * 0.25 * 48000),
+        48000,
+      );
+      for (const segment of plan.segments)
+        scheduleScorePassage(
+          repeatedAudio,
+          repeatedAudio.destination,
+          { ...edited, bpm: 240 },
+          'Guitar',
+          segment.offset * 0.25,
+          segment.startBeat,
+          segment.endBeat,
+        );
+      const renderedRepeat = (await repeatedAudio.startRendering()).getChannelData(0);
+      const repeatEnergy = (start) =>
+        renderedRepeat
+          .slice(Math.floor(start * 48000), Math.floor((start + 0.1) * 48000))
+          .reduce((sum, sample) => sum + sample * sample, 0);
+      check(
+        repeatEnergy(0.02) > 0.01 && repeatEnergy(2.27) > 0.01 && repeatEnergy(4.52) > 0.01,
+        '박자 불일치·도돌이표의 모든 반복에서 실제 소리 출력',
+      );
+
       check(
         externalScore.beatChords.Guitar[0] === 'Am' &&
           externalScore.beatChords.Guitar[2] === 'G7/B',
@@ -179,10 +443,6 @@
         [
           '범위 밖 BPM',
           external.replace('</part>', '<direction><sound tempo="400"/></direction></part>'),
-        ],
-        [
-          '못갖춘마디',
-          external.replace('<measure number="2">', '<measure number="2" implicit="yes">'),
         ],
         [
           '템포 변화',
@@ -229,18 +489,27 @@
         ],
       };
       score = setScoreFret(setScoreFret(score, 'a', 6, 0), 'a', 1, 2);
+      score.notes = score.notes.map((note) => ({
+        ...note,
+        staccato: true,
+        tones: noteTones(note).map((tone) => ({ ...tone, ghost: true })),
+      }));
       const xml = scoreToMusicXml(score);
       const restored = scoreFromMusicXml(xml);
       const mutedScore = {
         ...score,
-        notes: score.notes.map((note) => ({ ...note, dead: true, ghost: false })),
+        notes: score.notes.map((note) => ({
+          ...note,
+          tones: noteTones(note).map((tone) => ({ ...tone, dead: true, ghost: false })),
+          dead: undefined,
+          ghost: undefined,
+        })),
       };
       const mutedXml = scoreToMusicXml(mutedScore);
       const mutedRestored = scoreFromMusicXml(mutedXml);
       check(
         mutedXml.includes('<notehead>x</notehead>') &&
-          mutedRestored.notes[0].dead &&
-          !mutedRestored.notes[0].ghost &&
+          noteTones(mutedRestored.notes[0]).every((tone) => tone.dead && !tone.ghost) &&
           mutedRestored.notes[0].beats === 5.5,
         '뮤트 X 표기와 마디를 넘는 길이 복원',
       );
@@ -304,7 +573,7 @@
         '마디 코드를 음표 코드로 중복해서 가져오지 않음',
       );
       check(
-        restored.notes[0].staccato && restored.notes[0].ghost,
+        restored.notes[0].staccato && noteTones(restored.notes[0]).every((tone) => tone.ghost),
         '스타카토·고스트 코드 붙임줄 보존',
       );
       const tiny = {
@@ -324,7 +593,10 @@
       check(
         tinyRestored.notes
           .slice(0, 3)
-          .every((n) => n.staccato && n.ghost && noteTones(n).length === 2),
+          .every(
+            (n) =>
+              n.staccato && noteTones(n).every((tone) => tone.ghost) && noteTones(n).length === 2,
+          ),
         '짧은 코드의 주법과 프렛 보존',
       );
       const spaced = appendScoreNoteAt(
@@ -352,8 +624,8 @@
           xml
             .replace('<chord/><pitch>', '<chord/><pitch>')
             .replace(
-              '<chord/><pitch><step>D</step><octave>2</octave></pitch><duration>64</duration>',
-              '<chord/><pitch><step>D</step><octave>2</octave></pitch><duration>32</duration>',
+              '<chord/><pitch><step>D</step><octave>2</octave></pitch><duration>192</duration>',
+              '<chord/><pitch><step>D</step><octave>2</octave></pitch><duration>96</duration>',
             ),
         ],
       ]) {
@@ -396,7 +668,19 @@
         scheduleScoreNote(
           context,
           context.destination,
-          { ...score.notes[0], beats: 1, accent: false, ghost: false, staccato: false, ...changes },
+          {
+            ...score.notes[0],
+            beats: 1,
+            accent: false,
+            ghost: false,
+            staccato: false,
+            ...changes,
+            tones: noteTones(score.notes[0]).map((tone) => ({
+              ...tone,
+              ghost: !!changes.ghost,
+              dead: !!changes.dead,
+            })),
+          },
           0,
           120,
           remaining,
@@ -477,6 +761,147 @@
       );
       const cancelled = await renderBacking(0, 4, 0, true);
       check(cancelled[19200] === 0, '함께 예약한 음원 재생 취소');
+      for (const [rhythmFeel, feel] of Object.entries(scoreRhythmFeels)) {
+        const swingScore = {
+          title: 'Swing',
+          bpm: 120,
+          parts: ['Guitar'],
+          sync: {},
+          rhythmFeel,
+          notes: [
+            { ...linkNote('silence', 69, feel.unit), rest: true },
+            linkNote('sound', 69, feel.unit),
+          ],
+        };
+        const roundtrip = scoreFromMusicXml(scoreToMusicXml(swingScore));
+        check(
+          roundtrip.rhythmFeel === rhythmFeel && roundtrip.notes[0].beats === feel.unit,
+          'MusicXML global feel roundtrip: ' + rhythmFeel,
+        );
+        const context = new OfflineAudioContext(1, 48000, 48000);
+        const plan = scorePlaybackFrom(swingScore, 'Guitar');
+        scheduleScorePassage(
+          context,
+          context.destination,
+          swingScore,
+          'Guitar',
+          0,
+          plan.startBeat,
+          plan.endBeat,
+        );
+        const data = (await context.startRendering()).getChannelData(0);
+        const onset = data.findIndex((value) => Math.abs(value) > 0.0001);
+        const expected = Math.round(
+          ((feel.unit * 2 * feel.first) / (feel.first + feel.second)) * 24000,
+        );
+        check(Math.abs(onset - expected) < 100, 'Rendered audio swing onset: ' + rhythmFeel);
+        const selection = scorePlaybackFrom(swingScore, 'Guitar', feel.unit);
+        const selectedContext = new OfflineAudioContext(1, 48000, 48000);
+        scheduleScorePassage(
+          selectedContext,
+          selectedContext.destination,
+          swingScore,
+          'Guitar',
+          0,
+          selection.startBeat,
+          selection.endBeat,
+        );
+        const selectedData = (await selectedContext.startRendering()).getChannelData(0);
+        check(
+          selectedData.findIndex((value) => Math.abs(value) > 0.0001) < 100,
+          'Swing selection starts at selected note: ' + rhythmFeel,
+        );
+      }
+      for (const mode of ['oscillator', 'sample', 'soundfont']) {
+        const renderSyncopation = async (rhythmFeel, from = 0) => {
+          const context = new OfflineAudioContext(1, 48000, 48000);
+          const buffer = context.createBuffer(1, 48000, 48000);
+          buffer.getChannelData(0).fill(0.25);
+          const sample = { buffer, rootMidi: 69, sustain: false, loopStart: 0, loopEnd: 1 };
+          const instrument =
+            mode === 'sample'
+              ? sample
+              : mode === 'soundfont'
+                ? { kind: 'soundfont', samples: new Map([[69, sample]]) }
+                : undefined;
+          const score = {
+            title: 'Syncopation',
+            bpm: 120,
+            parts: ['Guitar'],
+            sync: {},
+            rhythmFeel,
+            notes: [
+              { ...linkNote('rest-a', 69, 0.5), rest: true },
+              linkNote('tone', 69, 1),
+              { ...linkNote('rest-b', 69, 0.5), rest: true },
+            ],
+          };
+          const plan = scorePlaybackFrom(score, 'Guitar', from);
+          scheduleScorePassage(
+            context,
+            context.destination,
+            score,
+            'Guitar',
+            0,
+            plan.startBeat,
+            plan.endBeat,
+            instrument,
+          );
+          const data = (await context.startRendering()).getChannelData(0);
+          return data.findIndex((value) => Math.abs(value) > 0.0001);
+        };
+        const straight = await renderSyncopation('straight');
+        const swung = await renderSyncopation('triplet-eighth');
+        check(
+          Math.abs(straight - 12000) < 100 && Math.abs(swung - 16000) < 100,
+          'Syncopated quarter starts later with swing: ' + mode,
+        );
+        check(
+          (await renderSyncopation('triplet-eighth', 0.5)) < 100,
+          'Selected syncopated quarter starts immediately: ' + mode,
+        );
+      }
+      const loopingScore = {
+        title: '구간 반복',
+        bpm: 120,
+        parts: ['Guitar'],
+        sync: {},
+        notes: [
+          linkNote('outside-before', 72, 0.5),
+          linkNote('loop-tone', 64, 0.5),
+          { ...linkNote('loop-rest', 64, 0.5), rest: true },
+          linkNote('outside-after', 76, 0.5),
+        ],
+      };
+      const loopPlan = scorePlaybackFrom(loopingScore, 'Guitar', 0.5, 1.5);
+      const loopContext = new OfflineAudioContext(1, 48000 * 2, 48000);
+      const loopClock = createScorePlaybackClock(0.05, 0.5, true, (when) => {
+        scheduleScorePassage(
+          loopContext,
+          loopContext.destination,
+          loopingScore,
+          'Guitar',
+          when,
+          loopPlan.startBeat,
+          loopPlan.endBeat,
+        );
+      });
+      for (const now of [0, 0.5, 1]) loopClock(now);
+      const loopData = (await loopContext.startRendering()).getChannelData(0);
+      const peakAt = (from, to) =>
+        loopData
+          .slice(from * 48000, to * 48000)
+          .reduce((peak, value) => Math.max(peak, Math.abs(value)), 0);
+      for (let cycle = 0; cycle < 3; cycle++) {
+        check(
+          peakAt(0.07 + cycle * 0.5, 0.2 + cycle * 0.5) > 0.001,
+          'Selected tone sounds again in loop cycle ' + cycle,
+        );
+        check(
+          peakAt(0.4 + cycle * 0.5, 0.5 + cycle * 0.5) < 0.0001,
+          'Loop keeps selected rest and excludes outside notes in cycle ' + cycle,
+        );
+      }
       document.querySelector('#result').textContent = results.join('\n');
     } catch (error) {
       document.querySelector('#result').textContent =

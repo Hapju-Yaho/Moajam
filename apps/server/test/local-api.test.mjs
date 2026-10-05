@@ -82,10 +82,12 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     const spec = await (await fetch(base.replace('/v1', '') + '/docs-json')).json();
     assert.ok(spec.paths['/v1/auth/temporary']);
     assert.ok(!spec.paths['/v1/local-auth/signin']);
+    const bandPhoto =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6z8AAAAASUVORK5CYII=';
     const band = await call(
       '/workspaces',
       'POST',
-      { name: 'Integration Band', description: 'Band description', photo: '' },
+      { name: 'Integration Band', description: 'Band description', photo: bandPhoto },
       a.token,
       201,
     );
@@ -102,6 +104,34 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
       await call(`/workspaces/${band.id}/documents`, 'GET', undefined, b.token)
     ).find((doc) => doc.key === 'band/profile');
     assert.equal(bandProfile.value.data.description, 'Band description');
+    assert.match(bandProfile.value.data.photo, /^\/v1\/band-photos\/[a-f0-9-]{36}$/);
+    const firstBandImage = await fetch(base.replace(/\/v1$/, '') + bandProfile.value.data.photo);
+    assert.equal(firstBandImage.status, 200);
+    assert.equal(firstBandImage.headers.get('content-type'), 'image/png');
+    assert.deepEqual(
+      Buffer.from(await firstBandImage.arrayBuffer()),
+      Buffer.from(bandPhoto.split(',')[1], 'base64'),
+    );
+    await call(
+      '/workspaces',
+      'POST',
+      { name: 'Other band', photo: bandProfile.value.data.photo },
+      a.token,
+      400,
+    );
+    await call(
+      '/assets/uploads',
+      'POST',
+      {
+        name: 'bypass.png',
+        mime: 'image/png',
+        size: 10,
+        scope: 'band-photo',
+        workspaceId: band.id,
+      },
+      a.token,
+      400,
+    );
     await call(
       `/workspaces/${band.id}`,
       'PATCH',
@@ -115,7 +145,7 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
       {
         name: 'Renamed band',
         description: 'Updated description',
-        photo: 'data:image/png;base64,aA==',
+        photo: bandPhoto,
       },
       a.token,
     );
@@ -127,7 +157,31 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
     const updatedProfile = (
       await call(`/workspaces/${band.id}/documents`, 'GET', undefined, b.token)
     ).find((doc) => doc.key === 'band/profile');
-    assert.equal(updatedProfile.value.data.photo, 'data:image/png;base64,aA==');
+    assert.match(updatedProfile.value.data.photo, /^\/v1\/band-photos\/[a-f0-9-]{36}$/);
+    assert.notEqual(updatedProfile.value.data.photo, bandProfile.value.data.photo);
+    assert.equal(
+      (
+        await fetch(base.replace(/\/v1$/, '') + bandProfile.value.data.photo, {
+          redirect: 'manual',
+        })
+      ).status,
+      404,
+    );
+    const savedBand = await call(
+      `/workspaces/${band.id}`,
+      'PATCH',
+      {
+        name: 'Renamed band',
+        description: 'Updated description',
+        photo: base.replace(/\/v1$/, '') + updatedProfile.value.data.photo,
+      },
+      a.token,
+    );
+    assert.equal(
+      savedBand.photo,
+      updatedProfile.value.data.photo,
+      're-saving the URL retains the uploaded file',
+    );
     assert.equal(updatedProfile.value.data.description, 'Updated description');
     await call(`/workspaces/${band.id}`, 'PATCH', { name: '   ' }, a.token, 400);
     await call(
@@ -135,7 +189,44 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
       'PATCH',
       { name: 'Band', photo: 'javascript:alert(1)' },
       a.token,
-      422,
+      400,
+    );
+    await call(
+      `/workspaces/${band.id}`,
+      'PATCH',
+      { name: 'Band', photo: 'data:image/png;base64,aA==' },
+      a.token,
+      400,
+    );
+    await call(`/workspaces/${band.id}`, 'PATCH', { name: 'Renamed band', photo: '' }, a.token);
+    assert.equal(
+      (await fetch(base.replace(/\/v1$/, '') + savedBand.photo, { redirect: 'manual' })).status,
+      404,
+    );
+    const { PrismaService: BandDatabase } =
+      await import('../dist/common/database/prisma.service.js');
+    const { BandPhotoService } = await import('../dist/workspaces/band-photo.service.js');
+    const bandDb = app.get(BandDatabase);
+    const bandWhere = { workspaceId_key: { workspaceId: band.id, key: 'band/profile' } };
+    const legacyBand = await bandDb.workspaceDocument.update({
+      where: bandWhere,
+      data: {
+        value: {
+          other: 'keep envelope',
+          data: { description: 'Keep description', photo: bandPhoto },
+        },
+      },
+    });
+    assert.deepEqual(await app.get(BandPhotoService).migrateLegacy(), { found: 1, migrated: 1 });
+    assert.deepEqual(await app.get(BandPhotoService).migrateLegacy(), { found: 0, migrated: 0 });
+    const migratedBand = await bandDb.workspaceDocument.findUnique({ where: bandWhere });
+    assert.match(migratedBand.value.data.photo, /^\/v1\/band-photos\//);
+    assert.equal(migratedBand.value.data.description, 'Keep description');
+    assert.equal(migratedBand.value.other, 'keep envelope');
+    assert.equal(migratedBand.revision, legacyBand.revision + 1);
+    assert.equal(
+      (await fetch(base.replace(/\/v1$/, '') + migratedBand.value.data.photo)).status,
+      200,
     );
     const sync = (documents, members = []) => ({ documents, members, removedMemberIds: [] });
     await call(

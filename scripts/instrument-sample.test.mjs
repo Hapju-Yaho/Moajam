@@ -577,6 +577,100 @@ test('basic tone fallback and dead-note percussion remain available', () => {
   assert.notEqual(f.voices[0].buffer, f.sample.buffer);
 });
 
+test('same-pitch ghost notes sustain one voice at the original level, including seeking', () => {
+  for (const sampled of [false, true]) {
+    const f = fixture();
+    const instrument = sampled ? { ...f.sample, sustain: true } : undefined;
+    const source = score([note(), note({ id: 'b', ghost: true }), note({ id: 'c', ghost: true })]);
+    const original = JSON.parse(JSON.stringify(source));
+    scheduleScorePassage(f.context, {}, source, 'Guitar', 0, 0, 3, instrument);
+    const voices = sampled ? f.voices : f.oscillators;
+    assert.equal(voices.length, 1, 'no new attack at either parenthesized note');
+    assert.equal(voices[0].stopped, 1.5);
+    const levels = f.gains[0].gain.events.filter((event) => event[1] > 0).map((event) => event[1]);
+    assert.ok(levels.every((level) => Math.abs(level - (sampled ? 0.8 : 0.12)) < 1e-10));
+    scheduleScorePassage(f.context, {}, source, 'Guitar', 0, 1.5, 2.5, instrument);
+    assert.equal(voices[1].stopped, 0.5, 'range playback respects the selected end');
+    if (sampled) assert.equal(voices[1].started[1], 0.75, 'seek continues the existing sample');
+    assert.deepEqual(source, original, 'playback must not alter the score');
+  }
+});
+
+test('ghost continuation is per string while the other chord voices retrigger', () => {
+  const f = fixture();
+  const source = score([
+    note({
+      tones: [
+        { pitch: 60, string: 2 },
+        { pitch: 64, string: 1 },
+      ],
+    }),
+    note({
+      id: 'b',
+      tones: [
+        { pitch: 60, string: 2, ghost: true },
+        { pitch: 65, string: 1 },
+      ],
+    }),
+  ]);
+  scheduleScorePassage(f.context, {}, source, 'Guitar', 0, 0, 2, { ...f.sample, sustain: true });
+  assert.equal(f.voices.length, 3);
+  assert.deepEqual(
+    f.voices.map((voice) => [voice.started[0], voice.stopped]),
+    [
+      [0, 1],
+      [0, 0.5],
+      [0.5, 1],
+    ],
+  );
+  const levels = f.gains[0].gain.events.filter((event) => event[1] > 0).map((event) => event[1]);
+  assert.ok(
+    levels.every((level) => level === 0.4),
+    'sustained chord tone retains its level',
+  );
+});
+
+test('different pitches or strings, rests, blanks and staccato do not create ghost continuations', () => {
+  for (const variant of ['pitch', 'string', 'rest', 'blank', 'staccato', 'normal']) {
+    const f = fixture();
+    const first = note({ tones: [{ pitch: 60, string: 2 }], staccato: variant === 'staccato' });
+    const next = note({
+      id: 'b',
+      tones: [
+        {
+          pitch: variant === 'pitch' ? 62 : 60,
+          string: variant === 'string' ? 1 : 2,
+          ghost: variant !== 'normal',
+        },
+      ],
+    });
+    const notes = [first];
+    if (variant === 'rest' || variant === 'blank') notes.push(note({ id: 'gap', [variant]: true }));
+    notes.push(next);
+    scheduleScorePassage(f.context, {}, score(notes), 'Guitar', 0, 0, 4, {
+      ...f.sample,
+      sustain: true,
+    });
+    assert.equal(f.voices.length, 2, variant);
+    assert.equal(f.voices[1].started[0], notes.length === 3 ? 1 : 0.5, variant);
+  }
+});
+
+test('ghost chains retain soundfont selection and follow a preceding explicit slide', () => {
+  const f = fixture();
+  const source = score([
+    note({ tones: [{ pitch: 60, string: 1 }], connection: { type: 'slide', targetId: 'b' } }),
+    note({ id: 'b', tones: [{ pitch: 72, string: 1 }] }),
+    note({ id: 'c', tones: [{ pitch: 72, string: 1, ghost: true }] }),
+  ]);
+  const bank = { kind: 'soundfont', samples: new Map([[60, { ...f.sample, sustain: true }]]) };
+  scheduleScorePassage(f.context, {}, source, 'Guitar', 0, 0, 3, bank);
+  assert.equal(f.voices.length, 1);
+  assert.equal(f.voices[0].buffer, f.sample.buffer);
+  assert.equal(f.voices[0].stopped, 1.5);
+  assert.ok(f.voices[0].playbackRate.events.some(([kind, rate]) => kind === 'ramp' && rate === 2));
+});
+
 test('mixed chords keep normal, ghost and dead voices independent with and without samples', () => {
   for (const sampled of [false, true]) {
     const f = fixture();

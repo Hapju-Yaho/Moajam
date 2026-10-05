@@ -1,4 +1,7 @@
 import {
+  isScoreBeat,
+  scoreRhythmFeels,
+  scoreBeat,
   cleanScoreConnections,
   scoreConnectionLabels,
   scoreInstruments,
@@ -76,12 +79,12 @@ export function validateScoreDocument(value: unknown): Score {
     if (!id || ids.has(id) || !parts.includes(part)) throw invalid();
     ids.add(id);
     const beats = number(n.beats, 1 / SCORE_DIVISIONS, 64);
-    if (!Number.isInteger(beats * SCORE_DIVISIONS)) throw invalid();
+    if (!isScoreBeat(beats)) throw invalid();
     const note: ScoreNote = {
       id,
       part,
       pitch: integer(n.pitch, 0, 127),
-      beats,
+      beats: scoreBeat(beats),
       rest: boolean(n.rest),
       accent: boolean(n.accent),
       chord: text(n.chord, 1000),
@@ -92,6 +95,15 @@ export function validateScoreDocument(value: unknown): Score {
     if (n.tones !== undefined) {
       if (!Array.isArray(n.tones) || n.tones.length > 16) throw invalid();
       note.tones = n.tones.map(tone);
+    }
+    if (n.tuplet !== undefined) {
+      if (n.tuplet !== 3) throw invalid();
+      note.tuplet = 3;
+    }
+    if (n.slurTo !== undefined) note.slurTo = text(n.slurTo, 200);
+    if (n.slideOut !== undefined) {
+      if (n.slideOut !== 'up' && n.slideOut !== 'down') throw invalid();
+      note.slideOut = n.slideOut;
     }
     if (n.connection !== undefined) {
       const connection = record(n.connection);
@@ -116,6 +128,45 @@ export function validateScoreDocument(value: unknown): Score {
     ),
   };
   const isPart = (key: string) => parts.includes(key);
+  if (row.timeSignature !== undefined) {
+    const time = record(row.timeSignature);
+    const beatType = integer(time.beatType, 2, 16);
+    if (![2, 4, 8, 16].includes(beatType)) throw invalid();
+    score.timeSignature = { beats: integer(time.beats, 1, 16), beatType };
+  }
+  if (row.keySignature !== undefined) score.keySignature = integer(row.keySignature, -7, 7);
+  if (row.rhythmFeel !== undefined) {
+    if (typeof row.rhythmFeel !== 'string' || !Object.hasOwn(scoreRhythmFeels, row.rhythmFeel))
+      throw invalid();
+    score.rhythmFeel = row.rhythmFeel as Score['rhythmFeel'];
+  }
+  const isBar = (key: string) => /^\d+$/.test(key) && Number(key) < 32000;
+  if (row.measureLengths !== undefined)
+    score.measureLengths = map(row.measureLengths, isPart, (value) =>
+      map(value, isBar, (length) => {
+        const beats = number(length, 1 / SCORE_DIVISIONS, 128000);
+        if (!isScoreBeat(beats)) throw invalid();
+        return beats;
+      }),
+    );
+  if (row.measureWidths !== undefined)
+    score.measureWidths = map(row.measureWidths, isPart, (value) =>
+      map(value, isBar, (width) => integer(width, 10, 500)),
+    );
+  if (row.barlines !== undefined)
+    score.barlines = map(row.barlines, isBar, (value) => {
+      if (value !== 'double') throw invalid();
+      return 'double' as const;
+    });
+  if (row.repeats !== undefined)
+    score.repeats = map(row.repeats, isBar, (value) => {
+      const marker = record(value);
+      return {
+        ...(marker.start === undefined ? {} : { start: boolean(marker.start) }),
+        ...(marker.end === undefined ? {} : { end: boolean(marker.end) }),
+        ...(marker.times === undefined ? {} : { times: integer(marker.times, 2, 8) }),
+      };
+    });
   if (row.playbackInstruments !== undefined)
     score.playbackInstruments = map(row.playbackInstruments, isPart, (value) => {
       if (!isSoundfontInstrument(value)) throw invalid();
@@ -160,6 +211,16 @@ export function validateScoreDocument(value: unknown): Score {
     if (row[key] !== undefined) score[key] = number(row[key], 0, 1);
   if (row.referenceAudioName !== undefined)
     score.referenceAudioName = text(row.referenceAudioName, 1000);
+  if (row.referenceAudioSource !== undefined) {
+    if (row.referenceAudioSource !== 'file' && row.referenceAudioSource !== 'youtube')
+      throw new Error('반주 종류가 올바르지 않아요.');
+    score.referenceAudioSource = row.referenceAudioSource;
+  }
+  if (row.referenceYoutubeId !== undefined) {
+    const id = text(row.referenceYoutubeId, 11);
+    if (!/^[a-zA-Z0-9_-]{11}$/.test(id)) throw new Error('유튜브 영상 정보가 올바르지 않아요.');
+    score.referenceYoutubeId = id;
+  }
   if (row.referenceAudioEnabled !== undefined)
     score.referenceAudioEnabled = boolean(row.referenceAudioEnabled);
   if (row.referenceAudioOffset !== undefined)

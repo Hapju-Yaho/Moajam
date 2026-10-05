@@ -1,4 +1,11 @@
-import { cleanScoreConnections, noteTones, type Score, type ScoreNote } from './score';
+import {
+  scorePerformance,
+  scoreBeat,
+  cleanScoreConnections,
+  noteTones,
+  type Score,
+  type ScoreNote,
+} from './score';
 import { scoreBackingSegment } from './scoreBacking';
 import { samplePlaybackRate } from './samplePitch';
 import {
@@ -48,8 +55,22 @@ export function scheduleScoreNote(
   bpm: number,
   remainingBeats = note.beats,
   instrument?: PreparedPlaybackInstrument,
+  voiceCount = noteTones(note).length,
 ) {
   if (note.rest || note.blank) return;
+  if (note.slideOut && !note.staccato && !noteTones(note).some((tone) => tone.dead)) {
+    scheduleScorePassage(
+      context,
+      destination,
+      { title: '', bpm, parts: [note.part], notes: [note], sync: {} },
+      note.part,
+      start,
+      note.beats - remainingBeats,
+      note.beats,
+      instrument,
+    );
+    return;
+  }
   const tones = noteTones(note);
   const soundBeats = Math.max(
     0,
@@ -87,7 +108,7 @@ export function scheduleScoreNote(
       filter.frequency.value = 900;
       filter.Q.value = 0.65;
       gain.gain.value =
-        (0.45 * (note.accent ? 1.25 : 1)) / (sample ? tones.length : Math.sqrt(tones.length));
+        (0.45 * (note.accent ? 1.25 : 1)) / (sample ? voiceCount : Math.sqrt(voiceCount));
       source.connect(filter).connect(gain).connect(destination);
       source.start(start, elapsed, hitDuration - elapsed);
       source.onended = () => {
@@ -99,7 +120,7 @@ export function scheduleScoreNote(
     }
 
     const level =
-      (0.12 * (tone.ghost ? 0.35 : 1) * (note.accent ? 1.25 : 1)) / Math.sqrt(tones.length);
+      (0.12 * (tone.ghost ? 0.35 : 1) * (note.accent ? 1.25 : 1)) / Math.sqrt(voiceCount);
 
     if (sample) {
       const rate = samplePlaybackRate(tone.pitch, sample.rootMidi);
@@ -113,7 +134,7 @@ export function scheduleScoreNote(
         : Math.min(duration, (sample.buffer.duration - offset) / rate);
       const attack = Math.min(0.004, audible / 4);
       const amplitude =
-        sampleLevel(tone.ghost, note.accent, tones.length) * (sample.playbackGain ?? 1);
+        sampleLevel(tone.ghost, note.accent, voiceCount) * (sample.playbackGain ?? 1);
       gain.gain.setValueAtTime(0, start);
       gain.gain.linearRampToValueAtTime(amplitude, start + attack);
       gain.gain.setValueAtTime(amplitude, start + audible - Math.min(0.025, audible / 4));
@@ -147,6 +168,66 @@ export function scheduleScoreNote(
   }
 }
 
+type PlaybackNote = ScoreNote & { voiceCount: number };
+
+// Build each string's voice independently, so a parenthesized continuation can
+// sustain while other notes in the chord are plucked again. Never change notation.
+function passageVoices(notes: ScoreNote[]) {
+  const voices: { start: number; chain: PlaybackNote[] }[] = [];
+  let previous: typeof voices = [];
+  let at = 0;
+  for (const note of notes) {
+    const tones = noteTones(note)
+      .slice()
+      .sort((a, b) => a.pitch - b.pitch);
+    const current: typeof voices = [];
+    const used = new Set<(typeof voices)[number]>();
+    if (!note.rest && !note.blank)
+      tones.forEach((tone, index) => {
+        const linked = previous[index]?.chain.at(-1)?.connection?.targetId === note.id;
+        const continuation =
+          !linked && tone.ghost && !tone.dead && !note.staccato
+            ? previous.find((voice) => {
+                const last = voice.chain.at(-1)!;
+                const prior = noteTones(last)[0];
+                return (
+                  !used.has(voice) &&
+                  !last.staccato &&
+                  !last.slideOut &&
+                  !prior.dead &&
+                  !last.connection &&
+                  prior.pitch === tone.pitch &&
+                  prior.string === tone.string
+                );
+              })
+            : undefined;
+        const voice = linked ? previous[index] : continuation;
+        const last = voice?.chain.at(-1);
+        const sustaining = tone.ghost && last && noteTones(last)[0].pitch === tone.pitch;
+        const soundingTone = sustaining ? { ...tone, ghost: noteTones(last)[0].ghost } : tone;
+        const sounding: PlaybackNote = {
+          ...note,
+          tones: [soundingTone],
+          ghost: soundingTone.ghost,
+          accent: sustaining ? last.accent : note.accent,
+          voiceCount: sustaining ? last.voiceCount : tones.length,
+        };
+        if (voice) {
+          voice.chain.push(sounding);
+          used.add(voice);
+          current.push(voice);
+        } else {
+          const created = { start: at, chain: [sounding] };
+          voices.push(created);
+          current.push(created);
+        }
+      });
+    previous = current;
+    at = scoreBeat(at + note.beats);
+  }
+  return voices;
+}
+
 // Connected notes share oscillators: ties never re-attack, H/P change pitch without
 // another pluck, and slides glide during the end of the source note.
 export function scheduleScorePassage(
@@ -159,29 +240,27 @@ export function scheduleScorePassage(
   endBeat: number,
   instrument?: PreparedPlaybackInstrument,
 ) {
-  const notes = cleanScoreConnections(score).notes.filter((n) => n.part === part);
+  const notes = cleanScoreConnections(scorePerformance(score, part).score).notes.filter(
+    (n) => n.part === part,
+  );
   const seconds = 60 / score.bpm;
   const hz = (pitch: number) => 440 * Math.pow(2, (pitch - 69) / 12);
-  let at = 0;
-  for (let i = 0; i < notes.length; i++) {
-    const chain = [notes[i]];
-    while (notes[i].connection && notes[i + 1]?.id === notes[i].connection?.targetId)
-      chain.push(notes[++i]);
-    const length = chain.reduce((sum, n) => sum + n.beats, 0);
-    const chainStart = at;
-    at += length;
+  for (const { start: chainStart, chain } of passageVoices(notes)) {
+    const length = chain.reduce((sum, n) => scoreBeat(sum + n.beats), 0);
+    const at = scoreBeat(chainStart + length);
     if (at <= startBeat || chainStart >= endBeat) continue;
     const elapsed = Math.max(0, startBeat - chainStart);
     const when = start + Math.max(0, chainStart - startBeat) * seconds;
-    if (chain.length === 1) {
+    if (chain.length === 1 && !chain[0].slideOut) {
       scheduleScoreNote(
         context,
         destination,
-        chain[0],
+        { ...chain[0], beats: Math.min(chain[0].beats, endBeat - chainStart) },
         when,
         score.bpm,
-        chain[0].beats - elapsed,
+        Math.min(chain[0].beats - elapsed, endBeat - Math.max(startBeat, chainStart)),
         instrument,
+        chain[0].voiceCount,
       );
       continue;
     }
@@ -200,15 +279,30 @@ export function scheduleScorePassage(
         points.push({
           beat,
           frequency: hz(pitch),
-          ramp: index > 0 && chain[index - 1].connection?.type === 'slide',
+          ramp:
+            index > 0 && ['slide', 'glissando'].includes(chain[index - 1].connection?.type ?? ''),
         });
-        if (note.connection?.type === 'slide')
+        if (['slide', 'glissando'].includes(note.connection?.type ?? ''))
           points.push({
             beat: beat + note.beats - Math.min(note.beats / 2, 0.15 / seconds),
             frequency: hz(pitch),
             ramp: false,
           });
-        beat += note.beats;
+        if (note.slideOut) {
+          // Indeterminate guitar slide-out: glide seven semitones in the final
+          // half of the note (at most 200 ms), then end on the written beat.
+          points.push({
+            beat: beat + note.beats - Math.min(note.beats / 2, 0.2 / seconds),
+            frequency: hz(pitch),
+            ramp: false,
+          });
+          points.push({
+            beat: beat + note.beats,
+            frequency: hz(Math.max(0, Math.min(127, pitch + (note.slideOut === 'up' ? 7 : -7)))),
+            ramp: true,
+          });
+        }
+        beat = scoreBeat(beat + note.beats);
       });
       const before = points.filter((p) => p.beat <= elapsed).length - 1;
       const left = points[Math.max(0, before)],
@@ -224,11 +318,21 @@ export function scheduleScorePassage(
       if ('type' in voice) voice.type = 'triangle';
       parameter.setValueAtTime(convert(frequency), when);
       for (const p of points.filter(
-        (p) => p.beat > elapsed && p.beat < elapsed + duration / seconds,
+        (p) => p.beat > elapsed && p.beat <= elapsed + duration / seconds,
       )) {
         const time = when + (p.beat - elapsed) * seconds;
         if (p.ramp) parameter.linearRampToValueAtTime(convert(p.frequency), time);
         else parameter.setValueAtTime(convert(p.frequency), time);
+      }
+      const cutoff = elapsed + duration / seconds;
+      const afterCutoff = points.findIndex((p) => p.beat > cutoff);
+      if (afterCutoff > 0 && points[afterCutoff].ramp) {
+        const left = points[afterCutoff - 1],
+          right = points[afterCutoff];
+        const value =
+          left.frequency +
+          ((right.frequency - left.frequency) * (cutoff - left.beat)) / (right.beat - left.beat);
+        parameter.linearRampToValueAtTime(convert(value), when + duration);
       }
       let offset = 0;
       const active =
@@ -236,13 +340,13 @@ export function scheduleScorePassage(
           offset += n.beats;
           return offset > elapsed;
         }) ?? chain[0];
-      const levelFor = (n: ScoreNote) => {
+      const levelFor = (n: PlaybackNote) => {
         const ghost = noteTones(n)
           .slice()
           .sort((a, b) => a.pitch - b.pitch)[toneIndex]?.ghost;
         return sample
-          ? sampleLevel(ghost, n.accent, tones.length) * (sample.playbackGain ?? 1)
-          : (0.12 * (ghost ? 0.35 : 1) * (n.accent ? 1.25 : 1)) / Math.sqrt(tones.length);
+          ? sampleLevel(ghost, n.accent, n.voiceCount) * (sample.playbackGain ?? 1)
+          : (0.12 * (ghost ? 0.35 : 1) * (n.accent ? 1.25 : 1)) / Math.sqrt(n.voiceCount);
       };
       let level = levelFor(active);
       gain.gain.setValueAtTime(sample ? 0 : level, when);

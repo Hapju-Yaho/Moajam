@@ -43,15 +43,23 @@ const note = (id, overrides = {}) => ({
 });
 const score = () => ({
   title: '나의 기타 악보',
+  rhythmFeel: 'triplet-eighth',
   bpm: 120,
+  timeSignature: { beats: 6, beatType: 8 },
+  keySignature: -2,
+  measureLengths: { Guitar: { 0: 2 } },
+  measureWidths: { Guitar: { 0: 150 } },
+  barlines: { 0: 'double' },
+  repeats: { 0: { start: true, end: true, times: 3 } },
   parts: ['Guitar', 'Bass'],
   notes: [
     note('a', {
       tones: [{ pitch: 64, string: 1, fret: 0 }],
       connection: { type: 'tie', targetId: 'b' },
+      slurTo: 'b',
     }),
     note('b'),
-    note('c', { part: 'Bass', pitch: 40, ghost: true }),
+    note('c', { part: 'Bass', pitch: 40, ghost: true, beats: 1 / 3, tuplet: 3 }),
   ],
   sync: { a: 1.5 },
   instruments: { Guitar: 'guitar', Bass: 'bass' },
@@ -89,6 +97,32 @@ test('portable score roundtrip preserves all parts, notation, settings and attac
   restored.score.notes[0].pitch = 48;
   assert.equal(original.score.notes[0].pitch, 64);
 });
+test('glissando and slide-out survive files and share staff/TAB PDF notation', async () => {
+  const source = {
+    title: '슬라이드',
+    bpm: 120,
+    parts: ['Guitar'],
+    sync: {},
+    notes: [
+      note('a', {
+        tones: [{ pitch: 64, string: 1, fret: 0 }],
+        connection: { type: 'glissando', targetId: 'b' },
+      }),
+      note('b', { pitch: 71, tones: [{ pitch: 71, string: 1, fret: 7 }], slideOut: 'up' }),
+      note('c', { pitch: 67, tones: [{ pitch: 67, string: 1, fret: 3 }], slideOut: 'down' }),
+    ],
+  };
+  const result = parseScoreFile(await serializeScoreFile({ score: source }));
+  assert.deepEqual(result.score, source);
+  const markup = scorePdfMarkup(result.score, 'Guitar', true);
+  assert.equal((markup.match(/aria-label="지판 슬라이드 물결선"/g) ?? []).length, 2);
+  assert.match(markup, /aria-label="슬라이드 아웃 위로"/);
+  assert.match(markup, /aria-label="슬라이드 아웃 아래로"/);
+  assert.throws(() =>
+    validateScoreDocument({ ...source, notes: [note('bad', { slideOut: 'left' })] }),
+  );
+});
+
 test('empty scores and samples awaiting manual root selection roundtrip', async () => {
   const original = {
     score: { title: '', bpm: 120, parts: ['Guitar'], notes: [], sync: {} },
@@ -99,6 +133,24 @@ test('empty scores and samples awaiting manual root selection roundtrip', async 
   const sample = document();
   sample.instrumentSample.rootMidi = null;
   assert.equal(parseScoreFile(await serializeScoreFile(sample)).instrumentSample.rootMidi, null);
+});
+
+test('YouTube reference, source, sync offset and volume survive file save/load alongside a retained audio file', async () => {
+  const input = document();
+  Object.assign(input.score, {
+    referenceAudioSource: 'youtube',
+    referenceYoutubeId: 'M7lc1UVf-VE',
+    referenceAudioOffset: 12.5,
+  });
+  const saved = await serializeScoreFile(input);
+  const restored = parseScoreFile(saved);
+  assert.deepEqual(restored.score, input.score);
+  assert.equal(await restored.referenceAudio.text(), 'backing');
+  for (const patch of [{ referenceYoutubeId: '<iframe>' }, { referenceAudioSource: 'bad' }]) {
+    const invalid = JSON.parse(saved);
+    Object.assign(invalid.score, patch);
+    assert.throws(() => parseScoreFile(JSON.stringify(invalid)));
+  }
 });
 test('sample boundaries roundtrip while older documents keep automatic trimming', async () => {
   const original = document();
@@ -222,6 +274,60 @@ test('PDF systems fit both page width and height without clipping extreme notes'
   assert.throws(() => fitPdfSystem(0, 30));
 });
 
+test('screen/PDF renderer uses labeled tapered curves on both staves, including row boundaries', () => {
+  const source = {
+    title: 'Connections',
+    bpm: 120,
+    parts: ['Guitar'],
+    sync: {},
+    systemLayout: { Guitar: [1, 1] },
+    notes: Array.from({ length: 32 }, (_, i) =>
+      note(`arc-${i}`, {
+        pitch: 64 + (i % 2) * 2,
+        beats: 0.25,
+        lyric: '',
+        tones: [{ pitch: 64 + (i % 2) * 2, string: 1, fret: (i % 2) * 2 }],
+        ...(i === 6 ? { slurTo: 'arc-9' } : {}),
+        ...([0, 2, 15].includes(i)
+          ? {
+              connection: { type: i === 0 ? 'hammer' : 'slide', targetId: `arc-${i + 1}` },
+            }
+          : {}),
+      }),
+    ),
+  };
+  for (const width of [620, 1080]) {
+    const markup = scorePdfMarkup(source, 'Guitar', true, width);
+    assert.doesNotMatch(markup, /NaN|Infinity/);
+    const surfaces = [
+      ...markup.matchAll(
+        /aria-label="(?:오선|TAB) 연결 곡선"><path d="([^"]+)"[^>]*><\/path><text[^>]*>([HS])<\/text>/g,
+      ),
+    ];
+    assert.equal(
+      surfaces.length,
+      8,
+      'three connections, with one split across two systems, on two staves',
+    );
+    assert.equal(surfaces.filter((match) => match[2] === 'H').length, 2);
+    for (const [, d] of surfaces) assert.ok(d.endsWith(' Z'));
+    assert.match(markup, /aria-label="TAB 이음줄\(슬러\)" d="[^"]+ Z"/);
+  }
+});
+
+test('PDF uses the live drawing width, shared fonts and separate staff/TAB barlines', () => {
+  for (const width of [620, 1080, 1600]) {
+    const markup = scorePdfMarkup(score(), 'Guitar', true, width);
+    assert.match(markup, new RegExp(`data-layout-width="${width}"`));
+    const drawingWidth = Number(markup.match(/viewBox="0 [-\d.]+ ([\d.]+) /)[1]);
+    assert.ok(Math.abs(drawingWidth - width) < 0.01);
+    assert.match(markup, /font-family="Segoe UI Symbol, Malgun Gothic, sans-serif"/);
+    assert.match(markup, /data-barline="staff"[^>]*y1="82" y2="122"/);
+    assert.match(markup, /data-barline="tab"[^>]*y1="190" y2="290"/);
+  }
+  assert.doesNotMatch(scorePdfMarkup(score(), 'Guitar', false), /data-barline="tab"/);
+});
+
 test('staff keeps rests while TAB omits rest glyphs and centers its label on the strings', () => {
   const source = { ...score(), notes: [note('rest', { part: 'Bass', rest: true, beats: 1 })] };
   const markup = scorePdfMarkup(source, 'Bass', true);
@@ -232,4 +338,44 @@ test('staff keeps rests while TAB omits rest glyphs and centers its label on the
   assert.deepEqual(ys, [203, 220, 237]);
   assert.equal((ys[0] + ys[2]) / 2, (190 + 250) / 2);
   assert.match(markup, /class="score-measure-number" x="2" y="74"/);
+});
+
+test('rejects invalid meter, bar lengths, width weights, repeat counts and slur targets', () => {
+  for (const patch of [
+    { timeSignature: { beats: 0, beatType: 4 } },
+    { timeSignature: { beats: 4, beatType: 3 } },
+    { rhythmFeel: 'unknown' },
+    { rhythmFeel: '__proto__' },
+    { keySignature: 8 },
+    { keySignature: 1.5 },
+    { measureLengths: { Guitar: { 0: 0 } } },
+    { measureLengths: { Guitar: { 0: 0.1 } } },
+    { measureWidths: { Guitar: { 0: 501 } } },
+    { measureWidths: { Other: { 0: 100 } } },
+    { repeats: { 0: { end: true, times: 100000 } } },
+  ])
+    assert.throws(() => validateScoreDocument({ ...score(), ...patch }));
+  const invalid = score();
+  invalid.notes[0].slurTo = 'missing';
+  assert.throws(() => validateScoreDocument(invalid));
+});
+
+test('PDF prints a note equation above BPM only when a global feel is enabled', () => {
+  for (const rhythmFeel of [
+    'triplet-eighth',
+    'triplet-sixteenth',
+    'dotted-eighth',
+    'dotted-sixteenth',
+    'scottish-eighth',
+    'scottish-sixteenth',
+  ]) {
+    const markup = scorePdfMarkup({ ...score(), rhythmFeel }, 'Guitar', true);
+    assert.match(markup, new RegExp('data-rhythm-feel="' + rhythmFeel + '"'));
+    assert.match(markup, /d="M43 18h10m-10 5h10"/);
+    if (rhythmFeel.startsWith('triplet')) assert.match(markup, />3<\/text>/);
+  }
+  for (const rhythmFeel of [undefined, 'straight']) {
+    const markup = scorePdfMarkup({ ...score(), rhythmFeel }, 'Guitar', true);
+    assert.doesNotMatch(markup, /data-rhythm-feel=/);
+  }
 });

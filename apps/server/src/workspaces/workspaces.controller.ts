@@ -17,7 +17,6 @@ import {
 } from '@nestjs/common';
 import {
   IsOptional,
-  Matches,
   IsIn,
   IsInt,
   IsObject,
@@ -26,7 +25,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../common/database/prisma.service.js';
 import { CurrentUser } from '../common/auth/current-user.decorator.js';
 import type { AuthenticatedUser } from '../common/auth/auth.service.js';
@@ -34,6 +33,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { canWriteDocument, isWorkspaceDocumentKey } from './document-policy.js';
 import { StorageService } from '../media/storage.service.js';
 import { SeparationService } from '../media/separation.service.js';
+import { BandPhotoService } from './band-photo.service.js';
 import { isBandScore } from './score-policy.js';
 
 class CreateWorkspaceDto {
@@ -41,7 +41,6 @@ class CreateWorkspaceDto {
   @IsOptional()
   @IsString()
   @MaxLength(700000)
-  @Matches(/^(data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)?$/)
   photo?: string;
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(80) name!: string;
 }
@@ -81,6 +80,7 @@ export class WorkspacesController {
     private readonly db: PrismaService,
     private readonly storage: StorageService,
     private readonly separation: SeparationService,
+    private readonly photos: BandPhotoService,
   ) {}
   private async membership(workspaceId: string, userId: string, owner = false) {
     const member = await this.db.workspaceMember.findUnique({
@@ -230,28 +230,36 @@ export class WorkspacesController {
     @Body() dto: CreateWorkspaceDto,
   ) {
     if (!dto.name.trim()) throw new BadRequestException('밴드 이름을 입력해주세요.');
-    return this.db.$transaction(async (tx) => {
-      await tx.profile.upsert({
-        where: { id: user.id },
-        create: { id: user.id, displayName: user.email?.split('@')[0] ?? '뮤지션' },
-        update: {},
-      });
-      return tx.workspace.create({
-        data: {
-          name: dto.name.trim(),
-          createdById: user.id,
-          documents: {
-            create: {
-              key: 'band/profile',
-              value: { data: { description: dto.description ?? '', photo: dto.photo ?? '' } },
-              updatedBy: user.id,
+    const workspaceId = randomUUID();
+    const photo = await this.photos.prepare(user.id, workspaceId, dto.photo ?? '');
+    try {
+      return await this.db.$transaction(async (tx) => {
+        await tx.profile.upsert({
+          where: { id: user.id },
+          create: { id: user.id, displayName: user.email?.split('@')[0] ?? '뮤지션' },
+          update: {},
+        });
+        return tx.workspace.create({
+          data: {
+            id: workspaceId,
+            name: dto.name.trim(),
+            createdById: user.id,
+            documents: {
+              create: {
+                key: 'band/profile',
+                value: { data: { description: dto.description ?? '', photo: photo.value } },
+                updatedBy: user.id,
+              },
             },
+            members: { create: { userId: user.id, role: 'OWNER' } },
           },
-          members: { create: { userId: user.id, role: 'OWNER' } },
-        },
-        include: { members: { include: { user: true } } },
+          include: { members: { include: { user: true } } },
+        });
       });
-    });
+    } catch (error) {
+      await this.photos.discard(workspaceId, photo);
+      throw error;
+    }
   }
   @Patch('workspaces/:workspaceId') async updateBand(
     @CurrentUser() user: AuthenticatedUser,
@@ -260,16 +268,27 @@ export class WorkspacesController {
   ) {
     await this.membership(workspaceId, user.id, true);
     if (!dto.name.trim()) throw new BadRequestException('밴드 이름을 입력해주세요.');
-    return this.db.$transaction(async (tx) => {
-      await tx.workspace.update({ where: { id: workspaceId }, data: { name: dto.name.trim() } });
-      const value = { data: { description: dto.description ?? '', photo: dto.photo ?? '' } };
-      await tx.workspaceDocument.upsert({
-        where: { workspaceId_key: { workspaceId, key: 'band/profile' } },
-        create: { workspaceId, key: 'band/profile', value, updatedBy: user.id },
-        update: { value, updatedBy: user.id, revision: { increment: 1 } },
+    const photo = await this.photos.prepare(user.id, workspaceId, dto.photo ?? '');
+    try {
+      return await this.db.$transaction(async (tx) => {
+        const member = await tx.workspaceMember.findUnique({
+          where: { workspaceId_userId: { workspaceId, userId: user.id } },
+        });
+        if (member?.role !== 'OWNER')
+          throw new ForbiddenException('이 밴드에 대한 권한이 없습니다.');
+        await tx.workspace.update({ where: { id: workspaceId }, data: { name: dto.name.trim() } });
+        const value = { data: { description: dto.description ?? '', photo: photo.value } };
+        await tx.workspaceDocument.upsert({
+          where: { workspaceId_key: { workspaceId, key: 'band/profile' } },
+          create: { workspaceId, key: 'band/profile', value, updatedBy: user.id },
+          update: { value, updatedBy: user.id, revision: { increment: 1 } },
+        });
+        return { id: workspaceId, photo: photo.value };
       });
-      return { id: workspaceId };
-    });
+    } catch (error) {
+      await this.photos.discard(workspaceId, photo);
+      throw error;
+    }
   }
   @Patch('workspaces/:workspaceId/members/:userId') async member(
     @CurrentUser() user: AuthenticatedUser,

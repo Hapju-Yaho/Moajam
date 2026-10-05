@@ -7,19 +7,31 @@
   position: fixed;
   inset: 0;
   z-index: 1100;
-  width: 100%;
+  width: 100vw;
   height: 100dvh;
   overflow: auto;
   overscroll-behavior: contain;
   background: #f5f7fc;
   padding: 0 clamp(12px, 2vw, 32px) 24px;
   box-sizing: border-box;
+  margin: 0;
+  border: 0;
+  max-width: none;
+  max-height: none;
 }
 .score-editor-content {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+}
+.score-editor-viewport[data-expanded='true']
+  .score-editor-content
+  > :not(.score-editor-host):not(.guitar-editor),
+.score-editor-viewport[data-expanded='true']
+  .score-editor-host
+  > :not(.guitar-editor):not(.score-backing--youtube) {
+  display: none !important;
 }
 .score-editor-viewbar {
   display: flex;
@@ -136,5 +148,24 @@
   .score-editor-viewbar,
   .score-shortcuts-dialog {
     display: none !important;
+  }
+}
+
+@media screen {
+  .score-editor-viewport[data-expanded='true'] .score-page > header {
+    padding-bottom: 8px;
+  }
+  .score-editor-viewport[data-expanded='true'] .score-page > header > span {
+    display: none;
+  }
+  .score-editor-viewport[data-expanded='true'] .score-page h2 {
+    font-size: 21px;
+    margin-top: 0;
+  }
+  .score-editor-viewport[data-expanded='true'] .score-workspace {
+    padding: 12px;
+  }
+  .score-editor-viewport[data-expanded='true'] .score-page {
+    padding-top: 14px;
   }
 }

@@ -1,3 +1,5 @@
+import { BandPhotoService } from './workspaces/band-photo.service.js';
+import { BandPhotoController } from './workspaces/band-photo.controller.js';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './common/auth/auth.module.js';
@@ -30,6 +32,7 @@ import { YouTubeController } from './media/youtube.controller.js';
   controllers: [
     HealthController,
     WorkspacesController,
+    BandPhotoController,
     MediaController,
     ClientConfigController,
     PersonalController,
@@ -38,6 +41,6 @@ import { YouTubeController } from './media/youtube.controller.js';
     LocalFilesController,
     YouTubeController,
   ],
-  providers: [StorageService, SeparationService, ProfilePhotoService],
+  providers: [StorageService, SeparationService, ProfilePhotoService, BandPhotoService],
 })
 export class AppModule {}

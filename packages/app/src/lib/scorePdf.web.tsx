@@ -4,8 +4,14 @@ import { GuitarStaff } from '../components/GuitarStaff.web';
 import { pitchName, scoreInstrument, scoreMeasureCount, type Score } from './score';
 
 const ignore = () => {};
-export function scorePdfMarkup(score: Score, part: string, showTab: boolean): string {
-  // Export is independent of viewport size, zoom, selection and playback cursor.
+export function scorePdfMarkup(
+  score: Score,
+  part: string,
+  showTab: boolean,
+  layoutWidth = 800,
+): string {
+  // Share the editor's effective drawing width, without its selection or cursor.
+  if (!Number.isFinite(layoutWidth) || layoutWidth <= 0) layoutWidth = 800;
   return renderToStaticMarkup(
     <GuitarStaff
       score={score}
@@ -17,6 +23,7 @@ export function scorePdfMarkup(score: Score, part: string, showTab: boolean): st
       cursor={null}
       playbackBeat={null}
       zoom={100}
+      layoutWidth={layoutWidth}
       onSelect={ignore}
       onAppend={ignore}
       onChordSelect={ignore}
@@ -43,7 +50,6 @@ async function rasterize(svg: SVGSVGElement): Promise<HTMLCanvasElement> {
   svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   svg.setAttribute('width', String(width));
   svg.setAttribute('height', String(height));
-  svg.setAttribute('font-family', 'Arial, Malgun Gothic, Segoe UI Symbol, sans-serif');
   svg
     .querySelectorAll(
       '.score-chord-placeholder, .score-duration-preview, .score-range-highlight, .score-cell-cursor',
@@ -83,17 +89,23 @@ function header(score: Score, part: string): HTMLCanvasElement {
   context.fillStyle = '#fff';
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.fillStyle = '#1d3028';
-  context.font = '600 62px Arial, "Malgun Gothic", sans-serif';
-  context.fillText(score.title || '제목 없는 악보', 0, 76, canvas.width);
+  context.textAlign = 'center';
+  context.fillStyle = '#9aaa9d';
+  context.font = '18px Arial, sans-serif';
+  context.fillText('M O A J A M  S C O R E', canvas.width / 2, 30);
+  context.fillStyle = '#394b40';
+  context.font = '600 62px Georgia, "Malgun Gothic", serif';
+  context.fillText(score.title || '제목 없는 악보', canvas.width / 2, 118, canvas.width);
   const instrument = scoreInstrument(score, part);
-  context.font = '36px Arial, "Malgun Gothic", sans-serif';
-  context.fillText(`${part} · ${instrument.label} · ${score.bpm} BPM · 4/4`, 0, 153, canvas.width);
   context.font = '28px Arial, "Malgun Gothic", sans-serif';
+  context.fillText(`${part} · ${instrument.label}`, canvas.width / 2, 185, canvas.width);
+  context.fillStyle = '#8a988e';
+  context.font = '24px Arial, "Malgun Gothic", sans-serif';
   if (instrument.tuning.length)
     context.fillText(
-      `튜닝 ${[...instrument.tuning].reverse().map(pitchName).join(' - ')}`,
-      0,
-      215,
+      `튜닝 ${[...instrument.tuning].reverse().map(pitchName).join(' – ')} · 음높이를 유지하며 운지를 표시합니다`,
+      canvas.width / 2,
+      242,
       canvas.width,
     );
   return canvas;
@@ -103,6 +115,7 @@ export async function createScorePdf(
   score: Score,
   parts: string[],
   showTab: boolean,
+  layoutWidth = 800,
 ): Promise<Blob> {
   if (!parts.length || parts.some((part) => !score.parts.includes(part)))
     throw new Error('PDF에 저장할 파트를 선택해주세요.');
@@ -116,7 +129,7 @@ export async function createScorePdf(
   let first = true;
   for (const part of parts) {
     const container = document.createElement('div');
-    container.innerHTML = scorePdfMarkup(score, part, showTab);
+    container.innerHTML = scorePdfMarkup(score, part, showTab, layoutWidth);
     const error = container.querySelector('[role="alert"]');
     if (error) throw new Error(error.textContent || '악보를 표시하지 못했어요.');
     const systems = [...container.querySelectorAll<SVGSVGElement>('svg.score-system')];
@@ -135,7 +148,7 @@ export async function createScorePdf(
       if (y + size.height > 277) addPage();
       const canvas = await rasterize(svg);
       pdf.addImage(canvas, 'PNG', 14, y, size.width, size.height);
-      y += size.height + 5;
+      y += size.height + (14 * size.width) / svg.viewBox.baseVal.width;
       canvas.width = 0;
       canvas.height = 0;
     }

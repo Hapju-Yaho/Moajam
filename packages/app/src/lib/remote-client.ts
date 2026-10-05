@@ -385,20 +385,20 @@ export async function api<T>(
   if (result && typeof result === 'object')
     for (const key of ['url', 'signedUrl'])
       if (typeof result[key] === 'string') result[key] = reachableUrl(result[key]);
-  return resolveProfilePhotos(result) as T;
+  return resolvePhotoUrls(result) as T;
 }
 
-function resolveProfilePhotos(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(resolveProfilePhotos);
+function resolvePhotoUrls(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(resolvePhotoUrls);
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(
     Object.entries(value).map(([key, field]) => [
       key,
       (key === 'photo' || key === 'avatarUrl') &&
       typeof field === 'string' &&
-      /^\/v1\/profile-photos\/[a-f0-9-]{36}$/.test(field)
+      /^\/v1\/(?:profile|band)-photos\/[a-f0-9-]{36}$/.test(field)
         ? options.apiUrl.replace(/\/$/, '') + field.slice(3)
-        : resolveProfilePhotos(field),
+        : resolvePhotoUrls(field),
     ]),
   );
 }

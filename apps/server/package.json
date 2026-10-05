@@ -15,6 +15,7 @@
     "prisma:deploy": "node scripts/database.mjs --deploy",
     "prisma:studio": "node scripts/database.mjs --studio",
     "db:local": "node scripts/database.mjs",
+    "band-photos:migrate": "node scripts/migrate-band-photos.mjs",
     "profiles:migrate": "node scripts/migrate-profile-photos.mjs",
     "test:integration": "npm run build && node --test --test-concurrency=1 test/local-api.test.mjs test/sqlite-defaults.test.mjs"
   },

@@ -83,6 +83,24 @@
   color: #344b3e;
   font-size: 12px;
 }
+.score-youtube-backing input[type='url'] {
+  width: min(400px, 55vw);
+}
+.score-youtube-player {
+  width: min(100%, 560px);
+  min-width: 200px;
+  min-height: 200px;
+  aspect-ratio: 16 / 9;
+  margin: 12px 0;
+  background: #101010;
+}
+.score-youtube-player iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  display: block;
+  border: 0;
+}
 .score-file-preview {
   margin: 12px 0;
   padding: 12px;
@@ -280,6 +298,13 @@
   min-height: 0;
   accent-color: #426b53;
 }
+.guitar-toolbar .score-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: 12px;
+}
 .guitar-location {
   font-size: 11px;
   color: #73867a;
@@ -289,6 +314,15 @@
 }
 .guitar-location strong {
   color: #456050;
+}
+.score-location-readout {
+  flex: 0 0 150px;
+  width: 150px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
 }
 .guitar-location span:last-child {
   margin-left: auto;
@@ -340,7 +374,7 @@
   align-items: stretch;
   width: 100%;
   min-width: 0;
-  gap: 18px;
+  gap: 14px;
 }
 .score-range-status {
   display: flex;
@@ -401,6 +435,11 @@
 }
 .score-measure-menu {
   position: fixed;
+  margin: 0;
+  box-sizing: border-box;
+  max-height: calc(100dvh - 16px);
+  max-width: calc(100vw - 16px);
+  overflow: auto;
   z-index: 30;
   width: 240px;
   display: grid;
@@ -410,6 +449,27 @@
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 4px 18px #263c3426;
+}
+.score-editable-title button,
+.score-editable-title input {
+  font: inherit;
+  color: inherit;
+  text-align: center;
+  max-width: 100%;
+}
+.score-editable-title button {
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: text;
+  padding: 4px 12px;
+  border-radius: 6px;
+}
+.score-editable-title button:hover {
+  border-color: #c8d6cd;
+}
+.score-editable-title input {
+  width: min(600px, 100%);
+  padding: 4px 12px;
 }
 .score-measure-menu button {
   text-align: left;
@@ -497,4 +557,38 @@
     width: 100%;
     height: auto;
   }
+}
+
+.score-document-settings > label:first-child {
+  flex: 1 1 230px;
+}
+.score-document-settings > label:first-child input {
+  width: min(100%, 320px);
+}
+.score-measure-menu {
+  width: 270px;
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  box-sizing: border-box;
+}
+.score-measure-menu label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 6px;
+  font-size: 12px;
+}
+.score-measure-menu input[type='number'] {
+  width: 70px;
+}
+.score-measure-menu small {
+  display: block;
+  padding: 4px 6px;
+  color: #65786c;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.score-measure-menu strong {
+  display: block;
+  padding: 6px;
 }

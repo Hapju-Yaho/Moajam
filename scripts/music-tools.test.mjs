@@ -80,8 +80,8 @@ test('chord changes belong to beat positions, including inside a sustained note 
   score = setScoreBeatChord(score, 'Guitar', 10, '<C & G>');
   assert.equal(scoreMeasureCount(score, 'Guitar'), 3);
   const xml = scoreToMusicXml(score);
-  assert.ok(xml.includes('<words>G</words></direction-type><offset>32</offset>'));
-  assert.ok(xml.includes('<words>D/F♯</words></direction-type><offset>40</offset>'));
+  assert.ok(xml.includes('<words>G</words></direction-type><offset>96</offset>'));
+  assert.ok(xml.includes('<words>D/F♯</words></direction-type><offset>120</offset>'));
   assert.ok(xml.includes('&lt;C &amp; G&gt;'));
   const renamed = renameScorePart(score, 'Guitar', 'Lead');
   assert.equal(renamed.beatChords.Lead[6], 'G');
@@ -322,7 +322,7 @@ test('selection playback clips a sustained note and retains silence through the 
   );
 });
 
-test('duration edits preserve following onsets, chords and other parts across repeated changes', () => {
+test('duration edits move following onsets without deleting notes or changing other parts', () => {
   let id = 0;
   const makeId = () => `blank-${++id}`;
   const original = fixture();
@@ -337,19 +337,25 @@ test('duration edits preserve following onsets, chords and other parts across re
           guitar.findIndex((n) => n.id === 'g2'),
         )
         .reduce((sum, n) => sum + n.beats, 0),
-      3,
+      beats,
     );
     assert.equal(
       guitar.reduce((sum, n) => sum + n.beats, 0),
-      5,
+      beats + 2,
     );
     assert.deepEqual(
       edited.notes.find((n) => n.id === 'b1'),
       original.notes[1],
     );
-    assert.deepEqual(edited.sync, original.sync);
+    assert.equal(edited.sync.b1, original.sync.b1);
+    assert.equal(edited.sync.g2, undefined);
   }
-  assert.throws(() => setScoreDuration(edited, 'g1', 4, makeId), /겹치는/);
+  assert.deepEqual(
+    setScoreDuration(edited, 'g1', 4, makeId)
+      .notes.filter((n) => n.part === 'Guitar')
+      .map((n) => n.beats),
+    [4, 2],
+  );
   assert.equal(original.notes[0].beats, 3);
 });
 
@@ -381,7 +387,12 @@ test('blank input splits at the cursor, consumes adjacent blanks and preserves s
     [3, 1],
   );
   assert.deepEqual(extended.sync, { a: 0, d: 3 });
-  assert.throws(() => setScoreDuration(score, 'a', 4, makeId), /겹치는/);
+  assert.deepEqual(
+    setScoreDuration(score, 'a', 4, makeId)
+      .notes.filter((n) => n.part === 'Guitar')
+      .map((n) => n.beats),
+    [4, 1],
+  );
   assert.throws(() => setScoreDuration(score, 'a', 0, makeId));
   assert.throws(() => setScoreDuration(score, 'a', 0.3, makeId));
   assert.equal(setScoreDuration(score, 'd', 4, makeId).notes.at(-1).beats, 4);
@@ -443,7 +454,7 @@ test('staff splits long notes at bar boundaries without changing stored note ide
   );
   assert.throws(() => scoreMeasures({ ...fixture(), notes: [note('x', 'Guitar', 0)] }, 'Guitar'));
   assert.throws(() =>
-    scoreMeasures({ ...fixture(), notes: [note('x', 'Guitar', 1 / 3)] }, 'Guitar'),
+    scoreMeasures({ ...fixture(), notes: [note('x', 'Guitar', 1 / 5)] }, 'Guitar'),
   );
   assert.deepEqual(scoreMeasures({ ...fixture(), notes: [] }, 'Guitar'), [[]]);
 });
@@ -511,22 +522,41 @@ test('systems begin with one measure, default to four per row, and move boundari
   assert.deepEqual(counts(score, 1), [1]);
   assert.deepEqual(counts(score, 5), [4, 1]);
   const pushed = moveScoreMeasureToRow(score, 'Guitar', 2, 1, 8);
-  assert.deepEqual(counts(pushed, 8), [2, 2, 4]);
+  assert.deepEqual(counts(pushed, 8), [2, 4, 2]);
   assert.equal(pushed.notes, score.notes);
   assert.equal(pushed.sync, score.sync);
   const pulled = moveScoreMeasureToRow(pushed, 'Guitar', 2, -1, 8);
-  assert.deepEqual(counts(pulled, 8), [3, 1, 4]);
+  assert.deepEqual(counts(pulled, 8), [3, 4, 1]);
   assert.equal(moveScoreMeasureToRow(score, 'Guitar', 0, 1, 1), score);
   assert.equal(moveScoreMeasureToRow(score, 'Guitar', 0, -1, 1), score);
   const five = moveScoreMeasureToRow(score, 'Guitar', 4, -1, 5);
   assert.deepEqual(counts(five, 5), [5]);
   const futureLayout = { ...score, systemLayout: { Guitar: [3, 1] } };
-  assert.deepEqual(counts(moveScoreMeasureToRow(futureLayout, 'Guitar', 2, 1, 3), 4), [2, 1, 1]);
+  assert.deepEqual(counts(moveScoreMeasureToRow(futureLayout, 'Guitar', 2, 1, 3), 4), [2, 2]);
   const renamed = renameScorePart(pushed, 'Guitar', 'Lead');
-  assert.deepEqual(renamed.systemLayout.Lead, [2, 2, 4]);
+  assert.deepEqual(renamed.systemLayout.Lead, [2]);
   assert.equal(renamed.systemLayout.Guitar, undefined);
   assert.deepEqual(removeScorePart(pushed, 'Guitar').systemLayout, {});
   assert.deepEqual(counts({ ...score, systemLayout: { Guitar: [0, NaN, -1] } }, 5), [4, 1]);
+});
+
+test('moving a row boundary preserves earlier rows and other parts, and reflows all later rows', () => {
+  const score = { ...fixture(), systemLayout: { Guitar: [3, 5, 1, 2, 6], Bass: [2, 3] } };
+  const counts = (value, total) => scoreSystemRows(value, 'Guitar', total).map((row) => row.count);
+  const next = moveScoreMeasureToRow(score, 'Guitar', 5, 1, 19);
+  assert.deepEqual(counts(next, 19), [3, 2, 4, 4, 4, 2]);
+  assert.deepEqual(counts(next, 23), [3, 2, 4, 4, 4, 4, 2], 'new measures also use automatic rows');
+  const previous = moveScoreMeasureToRow(score, 'Guitar', 9, -1, 19);
+  assert.deepEqual(counts(previous, 19), [3, 5, 2, 4, 4, 1]);
+  for (const result of [next, previous]) {
+    assert.equal(result.notes, score.notes);
+    assert.equal(result.sync, score.sync);
+    assert.equal(result.systemLayout.Bass, score.systemLayout.Bass);
+  }
+  const full = { ...score, systemLayout: { Guitar: [16, 4] } };
+  assert.equal(moveScoreMeasureToRow(full, 'Guitar', 16, -1, 20), full);
+  assert.equal(moveScoreMeasureToRow(score, 'Guitar', 3, 1, 19), score);
+  assert.equal(moveScoreMeasureToRow(score, 'Guitar', 25, 1, 19), score);
 });
 
 test('TAB entry adds chord strings, replaces only the chosen string and clears to a rest', () => {
@@ -623,10 +653,10 @@ test('MusicXML exports every chord pitch, fret and tie without advancing time fo
   assert.ok(xml.includes('<string>2</string><fret>2</fret>'));
   assert.ok(xml.includes('<instrument-name>guitar</instrument-name>'));
   for (const measure of xml.matchAll(/<measure[^>]*>(.*?)<\/measure>/g)) {
-    const duration = [...measure[1].matchAll(/<note>(.*?)<\/note>/g)]
+    const duration = [...measure[1].matchAll(/<note(?: [^>]*)?>(.*?)<\/note>/g)]
       .filter((m) => !m[1].includes('<chord/>'))
       .reduce((sum, m) => sum + Number(m[1].match(/<duration>(\d+)<\/duration>/)[1]), 0);
-    assert.equal(duration, 64);
+    assert.equal(duration, 4 * 48);
   }
 });
 test('32nd and 64th notes preserve timing, articulations and exact MusicXML durations', () => {
@@ -642,7 +672,7 @@ test('32nd and 64th notes preserve timing, articulations and exact MusicXML dura
     const nextIndex = score.notes.findIndex((n) => n.id === 'next');
     assert.equal(
       score.notes.slice(0, nextIndex).reduce((sum, n) => sum + n.beats, 0),
-      1,
+      beats,
     );
     assert.equal(score.notes[0].staccato, true);
     assert.equal(score.notes[0].ghost, true);
@@ -662,8 +692,8 @@ test('32nd and 64th notes preserve timing, articulations and exact MusicXML dura
   );
   assert.ok(score.notes.slice(0, -1).every((n) => !n.ghost && !n.staccato));
   const xml = scoreToMusicXml(score);
-  assert.ok(xml.includes('<divisions>16</divisions>'));
-  assert.ok(xml.includes('<duration>1</duration>'));
+  assert.ok(xml.includes('<divisions>48</divisions>'));
+  assert.ok(xml.includes('<duration>3</duration>'));
   assert.ok(xml.includes('<staccato/>'));
   assert.ok(xml.includes('<notehead parentheses="yes">normal</notehead>'));
   assert.throws(() => setScoreDuration(score, 'tiny', 0.03125, makeId));

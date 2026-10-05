@@ -1,3 +1,4 @@
+import type { BandPhotoService } from './band-photo.service.js';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { WorkspacesController } from './workspaces.controller.js';
@@ -5,7 +6,50 @@ import type { PrismaService } from '../common/database/prisma.service.js';
 import type { StorageService } from '../media/storage.service.js';
 import type { SeparationService } from '../media/separation.service.js';
 import type { AuthenticatedUser } from '../common/auth/auth.service.js';
+import { isBandScore } from './score-policy.js';
 import { canWriteDocument } from './document-policy.js';
+
+describe('band photo save failures', () => {
+  for (const operation of ['create', 'update'] as const) {
+    it(`${operation}: leaves the band unchanged when upload fails and discards new files when DB save fails`, async () => {
+      const user = { id: 'owner' } as AuthenticatedUser;
+      const draft = { name: 'Band', photo: 'new image' };
+      const prepared = { value: '/v1/band-photos/new', created: { id: 'new', key: 'owner/new' } };
+      let uploadFails = true;
+      let transactions = 0;
+      const discarded: unknown[] = [];
+      const controller = new WorkspacesController(
+        {
+          workspaceMember: { findUnique: async () => ({ role: 'OWNER' }) },
+          $transaction: async () => {
+            transactions++;
+            throw new Error('DB unavailable');
+          },
+        } as unknown as PrismaService,
+        {} as StorageService,
+        {} as SeparationService,
+        {
+          prepare: async () => {
+            if (uploadFails) throw new Error('R2 unavailable');
+            return prepared;
+          },
+          discard: async (_workspaceId: string, photo: unknown) => {
+            discarded.push(photo);
+          },
+        } as unknown as BandPhotoService,
+      );
+      const save = () =>
+        operation === 'create'
+          ? controller.create(user, draft)
+          : controller.updateBand(user, 'band', draft);
+      await assert.rejects(save(), /R2 unavailable/);
+      assert.equal(transactions, 0);
+      uploadFails = false;
+      await assert.rejects(save(), /DB unavailable/);
+      assert.deepEqual(discarded, [prepared]);
+    });
+  }
+});
 
 function fixture(memberCount: number, role = 'OWNER', storageFails = false) {
   const calls: string[] = [];
@@ -65,6 +109,7 @@ function fixture(memberCount: number, role = 'OWNER', storageFails = false) {
       db as unknown as PrismaService,
       storage as unknown as StorageService,
       separation as unknown as SeparationService,
+      {} as BandPhotoService,
     ),
   };
 }
@@ -131,6 +176,7 @@ describe('band scores', () => {
       db as unknown as PrismaService,
       {} as StorageService,
       {} as SeparationService,
+      {} as BandPhotoService,
     );
   }
   it('lets ordinary members save and read one shared score', async () => {
@@ -263,6 +309,7 @@ describe('personal schedule isolation', () => {
       db as unknown as PrismaService,
       {} as StorageService,
       {} as SeparationService,
+      {} as BandPhotoService,
     );
   }
   it('uses authenticated ownership for reads, updates and deletion, even for matching IDs', async () => {
@@ -385,6 +432,7 @@ describe('band home notifications', () => {
       db as unknown as PrismaService,
       {} as StorageService,
       {} as SeparationService,
+      {} as BandPhotoService,
     );
     assert.deepEqual(
       (await controller.notifications(user, 'band-a')).map((item) => item.id),
@@ -392,5 +440,49 @@ describe('band home notifications', () => {
     );
     assert.deepEqual(await controller.notifications(user, 'band-c'), []);
     assert.equal((await controller.notifications(user)).length, 50);
+  });
+});
+
+describe('band score notation settings', () => {
+  it('accepts shared notation settings and rejects malformed meter, length and repeat metadata', () => {
+    const score = {
+      title: 'Band score',
+      rhythmFeel: 'triplet-sixteenth',
+      bpm: 120,
+      parts: ['Bass'],
+      sync: {},
+      notes: [],
+      timeSignature: { beats: 6, beatType: 8 },
+      keySignature: -2,
+      measureLengths: { Bass: { 0: 5 } },
+      measureWidths: { Bass: { 0: 150 } },
+      repeats: { 0: { start: true, end: true, times: 3 } },
+      barlines: { 0: 'double' },
+    };
+    assert.equal(isBandScore(score), true);
+    const triplet = {
+      id: 'triplet',
+      part: 'Bass',
+      pitch: 40,
+      beats: 1 / 3,
+      tuplet: 3,
+      rest: false,
+      accent: false,
+      chord: '',
+      lyric: '',
+    };
+    assert.equal(isBandScore({ ...score, notes: [triplet] }), true);
+    assert.equal(isBandScore({ ...score, notes: [{ ...triplet, tuplet: 5 }] }), false);
+    for (const patch of [
+      { timeSignature: { beats: 0, beatType: 4 } },
+      { timeSignature: { beats: 4, beatType: 3 } },
+      { measureLengths: { Bass: { 0: 0 } } },
+      { measureLengths: { Bass: { 0: 1.1 } } },
+      { measureWidths: { Other: { 0: 150 } } },
+      { repeats: { 0: { end: true, times: 100000 } } },
+      { barlines: { 0: 'invalid' } },
+      { rhythmFeel: 'unknown' },
+    ])
+      assert.equal(isBandScore({ ...score, ...patch }), false);
   });
 });
