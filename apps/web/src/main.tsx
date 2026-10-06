@@ -15,6 +15,7 @@ import {
   Route,
   Routes,
   useNavigate,
+  useLocation,
   useParams,
   useSearchParams,
 } from 'react-router-dom';
@@ -55,6 +56,49 @@ function RoutedScreen({ route }: { route: AppRoute }) {
     />
   );
 }
+function HistoryNavigationGuard() {
+  const location = useLocation();
+  const currentIndex = React.useRef<number | undefined>(window.history.state?.idx);
+  React.useLayoutEffect(() => {
+    currentIndex.current = window.history.state?.idx;
+  }, [location]);
+  React.useEffect(() => {
+    let restoring = false;
+    let approved = false;
+    const onPopState = (event: PopStateEvent) => {
+      if (restoring) {
+        restoring = false;
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (approved) {
+        approved = false;
+        return;
+      }
+      const nextIndex = event.state?.idx;
+      const previousIndex = currentIndex.current;
+      if (typeof nextIndex !== 'number' || typeof previousIndex !== 'number') return;
+      const delta = nextIndex - previousIndex;
+      if (!delta) return;
+      const proceed = () => {
+        approved = true;
+        window.history.go(delta);
+      };
+      const request = new CustomEvent('moajam:before-navigate', {
+        cancelable: true,
+        detail: proceed,
+      });
+      if (window.dispatchEvent(request)) return;
+      // Restore the current entry before the router can unmount the unsaved editor.
+      event.stopImmediatePropagation();
+      restoring = true;
+      window.history.go(-delta);
+    };
+    window.addEventListener('popstate', onPopState, true);
+    return () => window.removeEventListener('popstate', onPopState, true);
+  }, []);
+  return null;
+}
 const routes: Array<[string, AppRoute]> = [
   ['/me', 'personal-home'],
   ['/me/rehearsals', 'personal-rehearsals'],
@@ -79,6 +123,7 @@ function WebApp() {
   return (
     <AppProviders>
       <BrowserRouter>
+        <HistoryNavigationGuard />
         <Routes>
           {routes.map(([path, route]) => (
             <Route key={path} path={path} element={<RoutedScreen route={route} />} />
