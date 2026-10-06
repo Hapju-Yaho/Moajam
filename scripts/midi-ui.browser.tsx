@@ -173,6 +173,36 @@ void (async () => {
     button('+ 미디 클립').click();
     await wait(() => !!document.querySelector('dialog[open]'));
     button('+ 음표 추가').click();
+    await wait(() => button('+ 음표 추가').getAttribute('aria-pressed') === 'true');
+    check(
+      document.querySelectorAll('.studio-midi-roll rect[role="button"]').length === 0,
+      '추가 토글은 음표를 즉시 생성하지 않아야 합니다.',
+    );
+    const rollSvg = document.querySelector<SVGSVGElement>('.studio-midi-roll svg')!;
+    const rollBounds = document.querySelector('.studio-midi-roll')!.getBoundingClientRect();
+    const svgBounds = rollSvg.getBoundingClientRect();
+    // Synthetic pointer events do not register an active pointer with the browser.
+    const capture = rollSvg.setPointerCapture;
+    rollSvg.setPointerCapture = () => {};
+    rollSvg.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        pointerId: 1,
+        button: 0,
+        clientX: svgBounds.left + 78,
+        clientY: rollBounds.top + 100,
+      }),
+    );
+    rollSvg.dispatchEvent(
+      new PointerEvent('pointerup', {
+        bubbles: true,
+        pointerId: 1,
+        button: 0,
+        clientX: svgBounds.left + 78,
+        clientY: rollBounds.top + 100,
+      }),
+    );
+    rollSvg.setPointerCapture = capture;
     await wait(
       () => document.querySelectorAll('.studio-midi-roll rect[role="button"]').length === 1,
     );

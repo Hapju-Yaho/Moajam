@@ -18,12 +18,19 @@ export function MidiClipEditor({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const initialSequence = useRef(sequence);
+  const rollRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const scrollFrame = useRef<number | null>(null);
+  const suppressCreateClick = useRef(false);
+  const [drawing, setDrawing] = useState(false);
   const gesture = useRef<{
     pointerId: number;
     mode: 'move' | 'create';
     note: MidiNote;
     x: number;
     y: number;
+    clientX: number;
+    clientY: number;
   } | null>(null);
   const [notes, setNotes] = useState(() => sequence.notes.map((note) => ({ ...note })));
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -39,6 +46,7 @@ export function MidiClipEditor({
     const center = pitches.length ? (Math.min(...pitches) + Math.max(...pitches)) / 2 : 60;
     roll.scrollTop = Math.max(0, (highest - center) * 16 + 24 - roll.clientHeight / 2);
     return () => {
+      if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
       element.close();
       previous?.focus();
     };
@@ -67,7 +75,6 @@ export function MidiClipEditor({
       channel: 0,
     };
     setNotes((all) => [...all, note]);
-    setSelectedId(note.id);
     return note;
   };
   const point = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -76,29 +83,36 @@ export function MidiClipEditor({
   };
   const beginGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (event.button !== 0 || gesture.current) return;
+    suppressCreateClick.current = false;
     const { x, y } = point(event);
     if (x < 0 || y < 0 || y >= height) return;
     const target = event.target as SVGElement;
     const existing = notes.find((note) => note.id === target.dataset.noteId);
+    if (!existing && !drawing) {
+      setSelectedId(null);
+      return;
+    }
     const note =
       existing ??
       add(Math.max(0, (Math.round(x / (pixels / 4)) * beat) / 4), high - Math.floor(y / row));
     if (!note) return;
     event.preventDefault();
-    setSelectedId(note.id);
+    setSelectedId(existing ? note.id : null);
     gesture.current = {
       pointerId: event.pointerId,
       mode: existing ? 'move' : 'create',
       note: { ...note },
       x,
       y,
+      clientX: event.clientX,
+      clientY: event.clientY,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
+    scrollFrame.current = requestAnimationFrame(autoScroll);
   };
-  const moveGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
+  const updateGesture = (x: number, y: number) => {
     const current = gesture.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-    const { x, y } = point(event);
+    if (!current) return;
     if (Math.abs(x - current.x) < 4 && Math.abs(y - current.y) < 4) return;
     const next = { ...current.note };
     if (current.mode === 'move') {
@@ -123,6 +137,42 @@ export function MidiClipEditor({
     }
     setNotes((all) => all.map((note) => (note.id === next.id ? next : note)));
   };
+  const moveGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const current = gesture.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    current.clientX = event.clientX;
+    current.clientY = event.clientY;
+    const { x, y } = point(event);
+    updateGesture(x, y);
+  };
+  const autoScroll = () => {
+    const current = gesture.current;
+    const roll = rollRef.current;
+    const svg = svgRef.current;
+    if (!current || !roll || !svg) return;
+    const bounds = roll.getBoundingClientRect();
+    const edge = 40;
+    const speed = (position: number, min: number, max: number) =>
+      position < min + edge
+        ? -Math.min(18, (min + edge - position) / 3)
+        : position > max - edge
+          ? Math.min(18, (position - max + edge) / 3)
+          : 0;
+    const dx = speed(current.clientX, bounds.left, bounds.right);
+    const dy = speed(current.clientY, bounds.top + 24, bounds.bottom);
+    if (dx > 0 && roll.scrollLeft + roll.clientWidth >= roll.scrollWidth - edge) {
+      setLength((value) =>
+        Math.min(600, Math.max(value, ((roll.scrollWidth - 54) / pixels) * beat) + beat * 4),
+      );
+    }
+    roll.scrollLeft += dx;
+    roll.scrollTop += dy;
+    if (dx || dy) {
+      const rect = svg.getBoundingClientRect();
+      updateGesture(current.clientX - rect.left - 54, current.clientY - rect.top - 24);
+    }
+    scrollFrame.current = requestAnimationFrame(autoScroll);
+  };
   const finishGesture = (event: ReactPointerEvent<SVGSVGElement>, cancel = false) => {
     const current = gesture.current;
     if (!current || current.pointerId !== event.pointerId) return;
@@ -134,7 +184,10 @@ export function MidiClipEditor({
       );
       if (current.mode === 'create') setSelectedId(null);
     }
+    suppressCreateClick.current = current.mode === 'create';
     gesture.current = null;
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+    scrollFrame.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
   };
@@ -167,11 +220,24 @@ export function MidiClipEditor({
         </button>
       </header>
       <p>
-        빈 칸을 클릭하고 드래그해 음표 길이를 지정하세요. 음표를 드래그하면 시작 위치와 음높이를
-        이동할 수 있어요.
+        음표 추가를 켜고 빈 칸을 클릭하거나 드래그해 음표를 그리세요. 기존 음표를 누르면 상세 정보를
+        확인하고 드래그해 이동할 수 있어요.
       </p>
       <div className="studio-midi-controls">
-        <button onClick={() => add()}>+ 음표 추가</button>
+        <button
+          aria-pressed={drawing}
+          onClick={() => {
+            setDrawing((value) => !value);
+            setSelectedId(null);
+          }}
+          style={
+            drawing
+              ? { background: '#9fd1b0', color: '#20382a', borderColor: '#9fd1b0' }
+              : undefined
+          }
+        >
+          + 음표 추가
+        </button>
         <button
           disabled={!selected}
           onClick={() => {
@@ -242,7 +308,7 @@ export function MidiClipEditor({
           />
         </label>
       </div>
-      <div className="studio-midi-roll">
+      <div className="studio-midi-roll" ref={rollRef}>
         <div className="studio-midi-ruler" style={{ width: width + 54 }} aria-hidden="true">
           {Array.from({ length: Math.ceil(width / pixels) + 1 }, (_, index) => (
             <span key={index} style={{ width: pixels }}>
@@ -251,7 +317,14 @@ export function MidiClipEditor({
           ))}
         </div>
         <svg
-          style={{ display: 'block', marginTop: -24, touchAction: 'none', userSelect: 'none' }}
+          ref={svgRef}
+          style={{
+            display: 'block',
+            marginTop: -24,
+            touchAction: drawing ? 'none' : 'pan-x pan-y',
+            userSelect: 'none',
+            cursor: drawing ? 'crosshair' : 'default',
+          }}
           width={width + 54}
           height={height + 24}
           role="group"
@@ -295,6 +368,7 @@ export function MidiClipEditor({
             <rect
               key={note.id}
               data-note-id={note.id}
+              style={{ touchAction: 'none' }}
               role="button"
               tabIndex={0}
               aria-label={`${pitchName(note.pitch)}, ${Math.round((note.start / beat) * 100) / 100}박 시작`}
@@ -307,6 +381,7 @@ export function MidiClipEditor({
               stroke="#20382a"
               onClick={(event) => {
                 event.stopPropagation();
+                if (suppressCreateClick.current) return;
                 setSelectedId(note.id);
               }}
               onKeyDown={(event) => {
