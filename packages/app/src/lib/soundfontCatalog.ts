@@ -20,6 +20,7 @@ export function isSoundfontInstrument(value: unknown): value is SoundfontInstrum
 }
 
 export function defaultSoundfontInstrument(part: string, notation?: string): SoundfontInstrumentId {
+  if (notation === 'piano' || notation === 'pianoBass') return 'acoustic_grand_piano';
   if (notation?.startsWith('bass') || /bass|베이스/i.test(part)) return 'electric_bass_finger';
   if (/drum|드럼/i.test(part)) return 'synth_drum';
   if (/vocal|보컬|합창/i.test(part)) return 'choir_aahs';
