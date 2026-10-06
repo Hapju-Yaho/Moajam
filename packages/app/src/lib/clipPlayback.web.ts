@@ -21,10 +21,14 @@ export class ClipPlayback {
 
   constructor(private context: BaseAudioContext) {}
 
-  async prepare(clips: PlaybackClip[]) {
+  async prepare(clips: PlaybackClip[], midiBuffer?: (clip: PlaybackClip) => Promise<AudioBuffer>) {
     const preparation = ++this.preparation;
     const prepared = await Promise.all(
       clips.map(async (clip) => {
+        if (clip.midi) {
+          if (!midiBuffer) throw new Error('MIDI 악기를 준비하지 못했어요.');
+          return { clip, buffer: await midiBuffer(clip) };
+        }
         let pending = this.cache.get(clip.blob);
         if (!pending) {
           pending = clip.blob.arrayBuffer().then((bytes) => this.context.decodeAudioData(bytes));

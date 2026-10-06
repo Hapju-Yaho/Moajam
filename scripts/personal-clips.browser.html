@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+  <meta charset="utf-8" />
+  <title>개인 클립 보관함 검증</title>
+  <pre id="result">RUNNING</pre>
+  <script type="module">
+    import {
+      listPersonalClips,
+      savePersonalClip,
+      updatePersonalClip,
+      deletePersonalClip,
+    } from '../packages/app/src/lib/personalClipLibrary.web.ts';
+    const check = (ok, message) => {
+      if (!ok) throw new Error(message);
+    };
+    try {
+      const a = 'clip-test-a-' + crypto.randomUUID(),
+        b = 'clip-test-b-' + crypto.randomUUID();
+      const blob = new Blob(['audio-test'], { type: 'audio/wav' });
+      await Promise.all([
+        savePersonalClip({ id: 'same-id', ownerId: a, name: '밴드 A 녹음', blob, type: blob.type }),
+        savePersonalClip({
+          id: 'other-band',
+          ownerId: a,
+          name: '밴드 B 녹음',
+          blob,
+          type: blob.type,
+        }),
+        savePersonalClip({
+          id: 'same-id',
+          ownerId: b,
+          name: '다른 사용자 녹음',
+          blob,
+          type: blob.type,
+        }),
+      ]);
+      const all = await listPersonalClips(a);
+      check(all.length === 2, '모든 밴드 클립이 하나의 개인 목록에 있어야 합니다.');
+      check(
+        (await all[0].blob.text()) === 'audio-test',
+        'Blob이 로컬 저장소에서 복원되어야 합니다.',
+      );
+      check((await listPersonalClips(b)).length === 1, '사용자별 클립 목록이 분리되어야 합니다.');
+      await Promise.all([
+        updatePersonalClip(a, 'same-id', { name: '수정한 이름' }),
+        updatePersonalClip(a, 'same-id', { memo: '다른 곡에서도 사용할 메모' }),
+      ]);
+      const renamed = (await listPersonalClips(a)).find((item) => item.id === 'same-id');
+      check(
+        renamed.name === '수정한 이름' && renamed.memo === '다른 곡에서도 사용할 메모',
+        '동시 수정에서 이름과 메모가 유지되어야 합니다.',
+      );
+      await deletePersonalClip(a, 'same-id');
+      check((await listPersonalClips(a)).length === 1, '내 클립 삭제가 반영되어야 합니다.');
+      check(
+        (await listPersonalClips(b))[0].name === '다른 사용자 녹음',
+        '다른 사용자의 같은 ID 클립은 유지되어야 합니다.',
+      );
+      await deletePersonalClip(a, 'other-band');
+      await deletePersonalClip(b, 'same-id');
+      document.getElementById('result').textContent =
+        'PASS: 사용자별 분리, 밴드 공통 목록, Blob 복원, 동시 이름/메모 수정, 삭제';
+    } catch (error) {
+      document.getElementById('result').textContent = 'FAIL: ' + error.message;
+    }
+  </script>
+</html>

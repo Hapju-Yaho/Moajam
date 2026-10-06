@@ -11,7 +11,7 @@ export const soundfontInstruments = [
   { id: 'electric_piano_1', label: '일렉 피아노', group: '건반·기타 악기' },
   { id: 'string_ensemble_1', label: '스트링', group: '건반·기타 악기' },
   { id: 'choir_aahs', label: '합창', group: '건반·기타 악기' },
-  { id: 'synth_drum', label: '신스 드럼', group: '건반·기타 악기' },
+  { id: 'synth_drum', label: '신스 드럼', group: '퍼커션' },
 ] as const;
 
 export type SoundfontInstrumentId = (typeof soundfontInstruments)[number]['id'];

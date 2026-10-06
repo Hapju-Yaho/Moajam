@@ -6,6 +6,7 @@ export function SortableSongList<T extends { id: string; title: string }>({
   songs,
   onReorder,
   renderSong,
+  reorderEnabled = true,
 }: SortableSongListProps<T>) {
   const list = useRef<HTMLDivElement>(null);
   const drag = useRef<{
@@ -135,52 +136,54 @@ export function SortableSongList<T extends { id: string; title: string }>({
             borderRadius: 12,
           }}
         >
-          <button
-            type="button"
-            aria-label={`${song.title} 순서 변경`}
-            title="드래그 또는 위·아래 방향키로 순서 변경"
-            style={{
-              width: 28,
-              flexShrink: 0,
-              alignSelf: 'center',
-              padding: '8px 0',
-              border: 0,
-              background: 'transparent',
-              color: '#64748b',
-              fontSize: 20,
-              cursor: lifted?.id === song.id ? 'grabbing' : 'grab',
-              touchAction: 'none',
-            }}
-            onPointerDown={(event) => {
-              if (event.button !== 0) return;
-              event.preventDefault();
-              const row = event.currentTarget.parentElement!;
-              animations.current.get(song.id)?.cancel();
-              let parent = list.current?.parentElement ?? null;
-              while (parent && !/(auto|scroll)/.test(getComputedStyle(parent).overflowY))
-                parent = parent.parentElement;
-              scrollContainer.current = parent;
-              drag.current = {
-                id: song.id,
-                ids: songs.map((item) => item.id),
-                startY: event.clientY,
-                top: row.offsetTop,
-                scrollY: scrollContainer.current?.scrollTop ?? window.scrollY,
-                pointerId: event.pointerId,
-              };
-              setLifted({ id: song.id, delta: 0 });
-              list.current?.setPointerCapture(event.pointerId);
-            }}
-            onKeyDown={(event) => {
-              if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
-              event.preventDefault();
-              const ids = songs.map((item) => item.id);
-              const target = ids[ids.indexOf(song.id) + (event.key === 'ArrowUp' ? -1 : 1)];
-              if (target) onReorder(movePracticeSong(ids, song.id, target));
-            }}
-          >
-            ⠿
-          </button>
+          {reorderEnabled && (
+            <button
+              type="button"
+              aria-label={`${song.title} 순서 변경`}
+              title="드래그 또는 위·아래 방향키로 순서 변경"
+              style={{
+                width: 28,
+                flexShrink: 0,
+                alignSelf: 'center',
+                padding: '8px 0',
+                border: 0,
+                background: 'transparent',
+                color: '#64748b',
+                fontSize: 20,
+                cursor: lifted?.id === song.id ? 'grabbing' : 'grab',
+                touchAction: 'none',
+              }}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                const row = event.currentTarget.parentElement!;
+                animations.current.get(song.id)?.cancel();
+                let parent = list.current?.parentElement ?? null;
+                while (parent && !/(auto|scroll)/.test(getComputedStyle(parent).overflowY))
+                  parent = parent.parentElement;
+                scrollContainer.current = parent;
+                drag.current = {
+                  id: song.id,
+                  ids: songs.map((item) => item.id),
+                  startY: event.clientY,
+                  top: row.offsetTop,
+                  scrollY: scrollContainer.current?.scrollTop ?? window.scrollY,
+                  pointerId: event.pointerId,
+                };
+                setLifted({ id: song.id, delta: 0 });
+                list.current?.setPointerCapture(event.pointerId);
+              }}
+              onKeyDown={(event) => {
+                if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+                event.preventDefault();
+                const ids = songs.map((item) => item.id);
+                const target = ids[ids.indexOf(song.id) + (event.key === 'ArrowUp' ? -1 : 1)];
+                if (target) onReorder(movePracticeSong(ids, song.id, target));
+              }}
+            >
+              ⠿
+            </button>
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>{renderSong(song)}</div>
         </div>
       ))}

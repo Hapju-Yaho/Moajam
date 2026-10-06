@@ -48,6 +48,7 @@ export class AuthService {
     const url = new URL('https://kauth.kakao.com/oauth/authorize');
     url.search = new URLSearchParams({
       response_type: 'code',
+      prompt: 'login',
       client_id: this.config.getOrThrow('KAKAO_REST_API_KEY'),
       redirect_uri: redirectUri,
       state,

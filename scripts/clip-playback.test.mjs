@@ -175,3 +175,38 @@ test('an older slow decode cannot replace a newer prepared arrangement', async (
   assert.deepEqual(voices[0].args, [0.04, 3, 2]);
   player.dispose();
 });
+
+test('recording after looped multi-track playback resumes both backing tracks at the captured position', async () => {
+  const { player, context, voices } = fixture();
+  await player.prepare([clip('a', 0, 0, 2, 'a'), clip('b', 0, 3, 2, 'b')]);
+  player.start(0, { loop: { start: 0, end: 1 } });
+  context.currentTime = 0.54;
+  const recordStart = player.position();
+  player.stop();
+  const previous = voices.length;
+  context.currentTime = 3; // Permission prompt and count-in must not move the start cursor.
+  player.start(recordStart, { keepAlive: true, leadIn: 0 });
+  assert.equal(recordStart, 0.5);
+  assert.deepEqual(voices[previous].args, [3, 0.5, 1.5]);
+  assert.deepEqual(voices[previous + 1].args, [3, 3.5, 1.5]);
+  context.currentTime = 6;
+  assert.equal(player.position(), 3.5);
+  assert.equal(player.finished(), false);
+  player.dispose();
+});
+
+test('MIDI clips use prepared instrument buffers and share the audio transport clock', async () => {
+  const { player, context, voices } = fixture();
+  const midi = { notes: [], duration: 2 };
+  let rendered = 0;
+  await player.prepare([{ ...clip('midi', 1, 0.5, 1), midi }], async (item) => {
+    assert.equal(item.midi, midi);
+    rendered++;
+    return { duration: 2 };
+  });
+  player.start(1.25);
+  assert.equal(context.decoded, 0);
+  assert.equal(rendered, 1);
+  assert.deepEqual(voices[0].args, [0.04, 0.75, 0.75]);
+  player.dispose();
+});

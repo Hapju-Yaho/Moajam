@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { SortableSongList } from '../components/SortableSongList';
 import { RecommendationsScreen } from './RecommendationsScreen';
 import { Pressable, useWindowDimensions, View } from 'react-native';
@@ -18,14 +19,29 @@ import { useMockAppState, type AdoptedSong } from '../state/MockAppState';
 import { Avatar, AvatarText } from '../styles/layout';
 
 export function SongsScreen({ navigate }: ScreenProps) {
+  const [reorderingWorkspace, setReorderingWorkspace] = useState<string | null>(null);
   const { adoptedSongs, reorderAdoptedSongs, workspaceId } = useMockAppState();
   return (
     <AppShell activeRoute="songs" onNavigate={navigate}>
-      <PageHeading>참여 곡</PageHeading>
+      <FlexBetween>
+        <PageHeading>참여 곡</PageHeading>
+        <ActionButton
+          compact
+          secondary={reorderingWorkspace !== workspaceId}
+          disabled={adoptedSongs.length < 2}
+          accessibilityState={{ selected: reorderingWorkspace === workspaceId }}
+          onPress={() =>
+            setReorderingWorkspace(reorderingWorkspace === workspaceId ? null : workspaceId)
+          }
+        >
+          {reorderingWorkspace === workspaceId ? '순서 변경 완료' : '순서 변경'}
+        </ActionButton>
+      </FlexBetween>
       <Stack gap={16}>
         <SortableSongList
           key={workspaceId}
           songs={adoptedSongs}
+          reorderEnabled={reorderingWorkspace === workspaceId}
           onReorder={reorderAdoptedSongs}
           renderSong={(song) => <SongTile song={song} navigate={navigate} />}
         />
@@ -62,57 +78,61 @@ function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps
     .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`))[0];
   const { width } = useWindowDimensions();
   return (
-    <Surface>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${song.title} 상세 보기`}
-        onPress={() => navigate('song', { id: song.id })}
-      >
-        <FlexRow gap={16}>
+    <Surface style={{ gap: 8, paddingVertical: 12 }}>
+      <FlexRow gap={16} style={{ alignItems: 'flex-start' }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${song.title} 상세 보기`}
+          onPress={() => navigate('song', { id: song.id })}
+        >
           <SongCover
             id={song.id}
             thumbnailUrl={song.thumbnailUrl}
             referenceUrl={song.referenceUrl}
-            size={width < 650 ? 72 : 104}
+            size={width < 650 ? 64 : 80}
           />
-          <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
-            <FlexBetween>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Heading>{song.title}</Heading>
-                <Meta>
-                  {song.artist} · {song.year}
-                </Meta>
-              </View>
-            </FlexBetween>
-            <FlexBetween>
-              <FlexRow>
-                {participants.slice(0, 3).map((member) => (
-                  <Avatar key={member.id} size={28} color={member.color}>
-                    <AvatarText>{member.initials}</AvatarText>
-                  </Avatar>
-                ))}
-                {participants.length > 3 && <Meta>+{participants.length - 3}</Meta>}
-                {!participants.length && <Meta>참여자 미배정</Meta>}
-              </FlexRow>
-              <Meta>의견 {song.comments}</Meta>
-            </FlexBetween>
-          </View>
-        </FlexRow>
-      </Pressable>
-      <Meta>
-        {nextSession ? `다음 합주 · ${nextSession.date} ${nextSession.start}` : '예정된 합주 없음'}
-      </Meta>
-      <FlexBetween>
-        <Meta>내 파트 · {song.myPart || '미배정'}</Meta>
-        <ActionButton
-          compact
-          onPress={() =>
-            navigate(song.archived ? 'song' : 'practice', { id: song.id, songTab: 'overview' })
-          }
-        >
-          {song.archived ? '보관곡 보기' : '연습하기'}
-        </ActionButton>
-      </FlexBetween>
+        </Pressable>
+        <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
+          <FlexBetween>
+            <Pressable
+              style={{ flex: 1, minWidth: 0 }}
+              accessibilityRole="button"
+              accessibilityLabel={`${song.title} 상세 보기`}
+              onPress={() => navigate('song', { id: song.id })}
+            >
+              <Heading>{song.title}</Heading>
+            </Pressable>
+            <ActionButton
+              compact
+              onPress={() =>
+                navigate(song.archived ? 'song' : 'practice', { id: song.id, songTab: 'overview' })
+              }
+            >
+              {song.archived ? '보관곡 보기' : '연습하기'}
+            </ActionButton>
+          </FlexBetween>
+          <Meta>
+            {song.artist} · {song.year}
+          </Meta>
+          <FlexBetween>
+            <FlexRow>
+              {participants.slice(0, 3).map((member) => (
+                <Avatar key={member.id} size={28} color={member.color}>
+                  <AvatarText>{member.initials}</AvatarText>
+                </Avatar>
+              ))}
+              {participants.length > 3 && <Meta>+{participants.length - 3}</Meta>}
+              {!participants.length && <Meta>참여자 미배정</Meta>}
+            </FlexRow>
+            <Meta>의견 {song.comments}</Meta>
+          </FlexBetween>
+        </View>
+      </FlexRow>
+      {nextSession && (
+        <Meta>
+          다음 합주 · {nextSession.date} {nextSession.start}
+        </Meta>
+      )}
     </Surface>
   );
 }

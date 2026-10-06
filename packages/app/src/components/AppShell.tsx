@@ -761,7 +761,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
           </Surface>
         </View>
       </Modal>
-      <BandJoinModal visible={joining} onClose={() => setJoining(false)} />
+      <BandJoinModal visible={joining} onClose={() => setJoining(false)} onJoined={choose} />
     </Shell>
   );
 }

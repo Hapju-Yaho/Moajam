@@ -235,7 +235,7 @@ export function EventRow({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${event.bandName} ${event.title} 보기`}
-        onPress={() => (onSelect ? onSelect(event) : setEditing(true))}
+        onPress={() => (onSelect && !event.personal ? onSelect(event) : setEditing(true))}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }}
       >
         <View

@@ -610,6 +610,14 @@
   padding: 12px !important;
   color: #92a798 !important;
 }
+/* Clip overlays at the visible timeline edge, including during horizontal scrolling. */
+.studio-timeline-overlays {
+  position: absolute;
+  inset: 0 0 0 214px;
+  z-index: 4;
+  pointer-events: none;
+  clip-path: inset(0 0 0 var(--studio-scroll-left, 0px));
+}
 .studio-playhead {
   position: absolute;
   top: 34px;
@@ -740,7 +748,7 @@
 .studio-add-track-control {
   position: sticky;
   left: 0;
-  z-index: 3;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -820,4 +828,136 @@
   border: 1px solid #526758;
   font: inherit;
   min-width: 0;
+}
+
+.studio-midi-instruments {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0;
+}
+.studio-midi-instruments select {
+  width: 50%;
+  min-width: 0;
+  font-size: 10px;
+}
+.studio-midi-preview {
+  width: 100%;
+  height: 60px;
+  display: block;
+}
+.studio-track-picker {
+  position: fixed;
+  margin: 0;
+  color: #e1ece4;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 180px;
+  padding: 12px;
+  border: 1px solid #7a9685;
+  border-radius: 8px;
+  background: #26382e;
+  box-shadow: 0 5px 16px #0005;
+  z-index: 10;
+}
+.studio-track-picker::backdrop {
+  background: #0b181b33;
+}
+.studio-track-picker button {
+  color: #e1ece4;
+  background: #425f4c;
+  border: 1px solid #7d9988;
+  cursor: pointer;
+  font: inherit;
+  width: 100%;
+  height: auto;
+  border-radius: 5px;
+  min-height: 32px;
+}
+.studio-midi-editor {
+  width: min(1080px, 94vw);
+  max-height: 92vh;
+  overflow: auto;
+  border: 1px solid #768e80;
+  border-radius: 12px;
+  padding: 20px;
+  background: #233029;
+  color: #e1ece4;
+}
+.studio-midi-editor::backdrop {
+  background: #0b181bb3;
+}
+.studio-midi-editor header,
+.studio-midi-editor footer,
+.studio-midi-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.studio-midi-editor header,
+.studio-midi-editor footer {
+  justify-content: space-between;
+}
+.studio-midi-editor h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.studio-midi-editor button {
+  color: #e1ece4;
+  background: #425f4c;
+  border: 1px solid #7d9988;
+  border-radius: 5px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.studio-midi-editor button:disabled {
+  opacity: 0.4;
+}
+.studio-midi-controls {
+  margin: 12px 0;
+}
+.studio-midi-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.studio-midi-controls input {
+  width: 76px;
+  padding: 6px;
+  color: #e1ece4;
+  background: #18241d;
+  border: 1px solid #7d9988;
+}
+.studio-midi-roll {
+  overflow: auto;
+  max-height: 50vh;
+  margin: 12px 0;
+  background: #18241d;
+}
+.studio-midi-roll rect[role='button'] {
+  cursor: pointer;
+}
+.studio-midi-roll rect[role='button']:focus {
+  outline: 2px solid #f4d890;
+}
+
+.studio-midi-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 24px;
+  padding-left: 54px;
+  display: flex;
+  background: #18241d;
+  color: #e2eee5;
+  font-size: 10px;
+  box-sizing: border-box;
+}
+.studio-midi-ruler span {
+  flex-shrink: 0;
+  padding-left: 4px;
+  padding-top: 5px;
+  box-sizing: border-box;
 }
