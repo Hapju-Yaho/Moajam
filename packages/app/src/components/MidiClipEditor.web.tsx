@@ -2,20 +2,66 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { createPortal } from 'react-dom';
 import { clientId } from '../lib/clientId';
 import type { MidiNote, MidiSequence } from '../lib/midi';
+import type { SoundfontInstrumentId } from '../lib/soundfontCatalog';
+import { prepareSoundfontInstrument } from '../lib/soundfont.web';
+import { scheduleScoreNote } from '../lib/scoreAudio.web';
 
 export function MidiClipEditor({
   name,
   sequence,
   bpm,
+  instrument = 'acoustic_grand_piano',
   onClose,
   onSave,
 }: {
   name: string;
   sequence: MidiSequence;
   bpm: number;
+  instrument?: SoundfontInstrumentId;
   onClose: () => void;
   onSave: (sequence: MidiSequence) => void;
 }) {
+  const previewContext = useRef<AudioContext | null>(null);
+  const previewOutput = useRef<GainNode | null>(null);
+  const previewRequest = useRef(0);
+  const [previewError, setPreviewError] = useState('');
+  const preview = (pitch: number, velocity: number) => {
+    const request = ++previewRequest.current;
+    void (async () => {
+      const context = previewContext.current ?? new AudioContext();
+      previewContext.current = context;
+      await context.resume();
+      const bank = await prepareSoundfontInstrument(instrument, [pitch]);
+      if (request !== previewRequest.current || previewContext.current !== context) return;
+      previewOutput.current?.disconnect();
+      const output = context.createGain();
+      output.gain.value = (velocity / 127) * 0.7;
+      output.connect(context.destination);
+      previewOutput.current = output;
+      scheduleScoreNote(
+        context,
+        output,
+        {
+          id: 'midi-preview',
+          part: 'MIDI',
+          pitch,
+          beats: 0.7,
+          rest: false,
+          accent: false,
+          chord: '',
+          lyric: '',
+        },
+        context.currentTime + 0.01,
+        120,
+        0.7,
+        bank,
+      );
+      setPreviewError('');
+    })().catch(() => {
+      if (request === previewRequest.current)
+        setPreviewError('음표 미리듣기를 재생하지 못했어요. 음표를 다시 눌러주세요.');
+    });
+  };
   const dialog = useRef<HTMLDialogElement>(null);
   const initialSequence = useRef(sequence);
   const rollRef = useRef<HTMLDivElement>(null);
@@ -31,6 +77,7 @@ export function MidiClipEditor({
     y: number;
     clientX: number;
     clientY: number;
+    previewPitch: number;
   } | null>(null);
   const [notes, setNotes] = useState(() => sequence.notes.map((note) => ({ ...note })));
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -47,6 +94,11 @@ export function MidiClipEditor({
     roll.scrollTop = Math.max(0, (highest - center) * 16 + 24 - roll.clientHeight / 2);
     return () => {
       if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+      previewRequest.current = -1;
+      previewOutput.current?.disconnect();
+      previewOutput.current = null;
+      void previewContext.current?.close();
+      previewContext.current = null;
       element.close();
       previous?.focus();
     };
@@ -75,6 +127,7 @@ export function MidiClipEditor({
       channel: 0,
     };
     setNotes((all) => [...all, note]);
+    preview(note.pitch, note.velocity);
     return note;
   };
   const point = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -106,6 +159,7 @@ export function MidiClipEditor({
       else if (left + noteWidth - x <= handle) mode = 'resize-end';
     }
     setSelectedId(existing ? note.id : null);
+    if (existing) preview(note.pitch, note.velocity);
     gesture.current = {
       pointerId: event.pointerId,
       mode,
@@ -114,6 +168,7 @@ export function MidiClipEditor({
       y,
       clientX: event.clientX,
       clientY: event.clientY,
+      previewPitch: note.pitch,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     scrollFrame.current = requestAnimationFrame(autoScroll);
@@ -156,6 +211,10 @@ export function MidiClipEditor({
         600 - next.start,
         Math.max(beat / 4, Math.abs(endpoint - current.note.start)),
       );
+    }
+    if (next.pitch !== current.previewPitch) {
+      current.previewPitch = next.pitch;
+      preview(next.pitch, next.velocity);
     }
     setNotes((all) => all.map((note) => (note.id === next.id ? next : note)));
   };
@@ -220,6 +279,7 @@ export function MidiClipEditor({
     next.velocity = Math.max(1, Math.min(127, Math.round(next.velocity)));
     next.start = Math.max(0, Math.min(599.99, next.start));
     next.duration = Math.max(0.01, Math.min(600 - next.start, next.duration));
+    if (field === 'pitch' && next.pitch !== selected.pitch) preview(next.pitch, next.velocity);
     setNotes((all) => all.map((note) => (note.id === next.id ? next : note)));
   };
   const pitchName = (pitch: number) =>
@@ -418,6 +478,7 @@ export function MidiClipEditor({
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
                   setSelectedId(note.id);
+                  preview(note.pitch, note.velocity);
                 }
                 if (event.key === 'Delete' || event.key === 'Backspace') {
                   event.preventDefault();
@@ -429,6 +490,7 @@ export function MidiClipEditor({
         </svg>
       </div>
       {error && <p role="alert">{error}</p>}
+      {previewError && <p role="status">{previewError}</p>}
       <footer>
         <button onClick={onClose}>취소</button>
         <button onClick={() => onSave({ notes, duration: end })}>클립에 적용</button>
