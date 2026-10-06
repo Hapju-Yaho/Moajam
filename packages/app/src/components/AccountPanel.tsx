@@ -1,16 +1,19 @@
 import { useState } from 'react';
+import type { ScreenProps } from '../navigation';
 import { ActionButton, Heading, Meta, Surface } from './ProductUI';
 import { Input } from '../styles/layout';
 import { api, serverConfigured, signOut } from '../lib/remote';
 import { useMockAppState } from '../state/MockAppState';
-export function AccountPanel() {
-  const { reloadRemote, workspaceId, canManage, members, leaveWorkspace } = useMockAppState();
+export function AccountPanel({ navigate }: Pick<ScreenProps, 'navigate'>) {
+  const { reloadRemote, workspaceId, canManage, members, leaveWorkspace, selectWorkspace } =
+    useMockAppState();
   const [token, setToken] = useState(
     typeof location === 'undefined'
       ? ''
       : (new URLSearchParams(location.search).get('invite') ?? ''),
   );
   const [message, setMessage] = useState('');
+  const [joining, setJoining] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -24,16 +27,20 @@ export function AccountPanel() {
       <Heading>계정과 밴드 가입</Heading>
       <Input value={token} onChangeText={setToken} placeholder="초대 코드" />
       <ActionButton
-        disabled={!token.trim()}
-        onPress={() =>
+        disabled={joining || !token.trim()}
+        onPress={() => {
+          setJoining(true);
+          setMessage('');
           void api<{ workspaceId: string }>('/invitations/accept', 'POST', { token: token.trim() })
-            .then(() => reloadRemote())
-            .then(() => {
+            .then(async ({ workspaceId: joinedId }) => {
+              await reloadRemote();
               setToken('');
-              setMessage('밴드에 가입했습니다. 사이드바에서 선택해주세요.');
+              selectWorkspace(joinedId);
+              navigate('home', { workspaceId: joinedId });
             })
             .catch((error: Error) => setMessage(error.message))
-        }
+            .finally(() => setJoining(false));
+        }}
       >
         초대 수락
       </ActionButton>

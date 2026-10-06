@@ -112,7 +112,7 @@ export function ScoreSoundfont({
               onChange(event.target.value as SoundfontInstrumentId | 'recording');
             }}
           >
-            {['기타', '베이스', '건반·기타 악기'].map((group) => (
+            {['기타', '베이스', '건반·기타 악기', '퍼커션'].map((group) => (
               <optgroup key={group} label={group}>
                 {soundfontInstruments
                   .filter((item) => item.group === group)

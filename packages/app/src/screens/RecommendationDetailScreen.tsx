@@ -218,7 +218,13 @@ export function RecommendationDetailScreen({ navigate, entityId }: ScreenProps) 
             <Meta>
               채택하면 팀의 채택곡 워크스페이스가 생성되고 자료·연습·합주 기록을 모을 수 있어요.
             </Meta>
-            <ActionButton onPress={() => adoptSong(song.id)} disabled={adopted || !canManage}>
+            <ActionButton
+              onPress={() => {
+                adoptSong(song.id);
+                navigate('recommendations');
+              }}
+              disabled={adopted || !canManage}
+            >
               {adopted
                 ? '이미 채택된 곡 ✓'
                 : !canManage

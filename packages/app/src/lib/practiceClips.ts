@@ -1,3 +1,5 @@
+import type { MidiSequence } from './midi';
+import type { SoundfontInstrumentId } from './soundfontCatalog';
 import type { TrackPart } from './trackParts';
 
 export type TimelineClip = {
@@ -9,12 +11,15 @@ export type TimelineClip = {
   duration: number;
   sourceStart: number;
   trimmed?: boolean;
+  midi?: MidiSequence;
 };
 
 export type TimelineTrack = {
   id: string;
   name: string;
   part?: TrackPart;
+  kind?: 'audio' | 'midi';
+  instrument?: SoundfontInstrumentId;
   volume: number;
   muted: boolean;
   clips?: TimelineClip[];
@@ -55,6 +60,8 @@ export function moveClip(tracks: TimelineTrack[], id: string, targetId: string, 
   const clip = source && trackClips(source).find((item) => item.id === id);
   if (!clip || !Number.isFinite(offset) || !tracks.some((track) => track.id === targetId))
     return tracks;
+  const target = tracks.find((track) => track.id === targetId)!;
+  if ((target.kind === 'midi') !== !!clip.midi) return tracks;
   return tracks.map((track) => {
     if (track.id !== source.id && track.id !== targetId) return track;
     const clips = trackClips(track).filter((item) => item.id !== id);

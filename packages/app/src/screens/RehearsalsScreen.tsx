@@ -247,7 +247,7 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
 
       <ScheduleDashboard
         showNotifications={false}
-        allowPersonal={false}
+        allowPersonal
         events={rehearsals.map((event) => ({
           ...event,
           workspaceId,

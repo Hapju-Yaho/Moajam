@@ -8,6 +8,27 @@ import type { PrismaService } from '../database/prisma.service.js';
 import type { TemporaryAuthService } from './temporary-auth.service.js';
 import type { KakaoClient } from './kakao.client.js';
 
+test('Kakao authorization requires account authentication even with an existing provider session', () => {
+  const redirectUri = 'http://localhost:5173/auth/kakao/callback';
+  const service = new AuthService(
+    new ConfigService({
+      AUTH_MODE: 'kakao',
+      KAKAO_LOGIN_ENABLED: true,
+      KAKAO_REST_API_KEY: 'test-key',
+      KAKAO_ALLOWED_REDIRECT_URIS: [redirectUri],
+    }),
+    {} as PrismaService,
+    {} as TemporaryAuthService,
+    {} as KakaoClient,
+  );
+  const result = service.authorize(redirectUri);
+  const url = new URL(result.authorizationUrl);
+  assert.equal(url.searchParams.get('prompt'), 'login');
+  assert.equal(url.searchParams.get('redirect_uri'), redirectUri);
+  assert.equal(url.searchParams.get('state'), result.state);
+  assert.notEqual(service.authorize(redirectUri).state, result.state);
+});
+
 test('Kakao refresh survives access expiry, rejects access tokens as refresh, and respects logout', async () => {
   const secret = 'test-session-secret-at-least-thirty-two-characters';
   const sessions = new Map<string, { id: string; userId: string; expiresAt: Date }>();
