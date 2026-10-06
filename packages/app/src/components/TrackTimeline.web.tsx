@@ -330,6 +330,7 @@ export function TrackTimeline({
     if (commit && !locked && current.ids.some((id, index) => id !== tracks[index]?.id))
       onReorder(current.ids);
   };
+  const [collapsedTracks, setCollapsedTracks] = useState<string[]>([]);
   const [zoom, setZoom] = useState(48);
   const [zoomDraft, setZoomDraft] = useState('100');
   useEffect(() => setZoomDraft(String(Math.round((zoom / 48) * 100))), [zoom]);
@@ -1105,6 +1106,7 @@ export function TrackTimeline({
             {visible.map((track) => {
               const index = orderedTracks.indexOf(track);
               const clips = trackClips(track);
+              const collapsed = collapsedTracks.includes(track.id);
               const slotEnds: number[] = [];
               const slots = new Map<string, number>();
               [...clips]
@@ -1118,7 +1120,7 @@ export function TrackTimeline({
               const color = ['#9ec7af', '#9bb9dc', '#c1afd7', '#d3bf8f', '#c99191'][index % 5];
               return (
                 <div
-                  className={`studio-track-row ${armed === track.id ? 'armed' : ''}`}
+                  className={`studio-track-row ${armed === track.id ? 'armed' : ''} ${collapsed ? 'collapsed' : ''}`}
                   key={track.id}
                   ref={(row) => {
                     if (row) trackRows.current.set(track.id, row);
@@ -1194,6 +1196,31 @@ export function TrackTimeline({
                         onClick={() => onRemove(track.id)}
                       >
                         <Icon name="trash" />
+                      </button>
+                      <button
+                        type="button"
+                        className="studio-track-collapse"
+                        aria-label={track.name + (collapsed ? ' 트랙 펼치기' : ' 트랙 접기')}
+                        aria-expanded={!collapsed}
+                        title={collapsed ? '트랙 펼치기' : '트랙 접기'}
+                        onClick={() =>
+                          setCollapsedTracks((ids) =>
+                            ids.includes(track.id)
+                              ? ids.filter((id) => id !== track.id)
+                              : [...ids, track.id],
+                          )
+                        }
+                      >
+                        <svg viewBox="0 0 16 16" aria-hidden="true">
+                          <path
+                            d={collapsed ? 'M4 6 L8 10 L12 6' : 'M4 10 L8 6 L12 10'}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
                       </button>
                     </div>
                     {track.kind === 'midi' ? (
@@ -1347,7 +1374,9 @@ export function TrackTimeline({
                     }}
                     style={{
                       width: timelineWidth,
-                      minHeight: Math.max(116, slotEnds.length * 100 + 16),
+                      minHeight: collapsed
+                        ? Math.max(40, slotEnds.length * 28 + 12)
+                        : Math.max(116, slotEnds.length * 100 + 16),
                       touchAction: 'none',
                     }}
                     onPointerDown={(event) => {
@@ -1391,7 +1420,9 @@ export function TrackTimeline({
                             (drag?.group.some((item) => item.clip.id === clip.id)
                               ? clip.offset + drag.offset - drag.original
                               : clip.offset) * zoom,
-                          top: 12 + (slots.get(clip.id) ?? 0) * 100,
+                          top:
+                            (collapsed ? 6 : 12) +
+                            (slots.get(clip.id) ?? 0) * (collapsed ? 28 : 100),
                           width: Math.max(4, clip.duration * zoom),
                         }}
                         onPointerDown={(event) => {
