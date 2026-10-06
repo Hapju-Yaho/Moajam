@@ -5,11 +5,13 @@ export function ProfilePhoto({
   onChange,
   disabled = false,
   horizontal = false,
+  avatarOnly = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
   horizontal?: boolean;
+  avatarOnly?: boolean;
 }) {
   const [error, setError] = useState('');
   const input = useRef<HTMLInputElement>(null);
@@ -32,35 +34,91 @@ export function ProfilePhoto({
         flexWrap: 'wrap',
       }}
     >
-      {value ? (
-        <img
-          src={value}
-          alt="내 프로필"
-          style={{
-            width: horizontal ? 112 : 64,
-            height: horizontal ? 112 : 64,
-            borderRadius: horizontal ? 56 : 32,
-            objectFit: 'cover',
-          }}
-        />
-      ) : (
-        <div
-          aria-hidden="true"
-          style={{
-            width: horizontal ? 112 : 64,
-            height: horizontal ? 112 : 64,
-            borderRadius: horizontal ? 56 : 32,
-            background: '#edf3ff',
-            color: '#6980a4',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 13,
-          }}
-        >
-          사진
-        </div>
-      )}
+      <div style={{ position: 'relative', width: avatarOnly ? 120 : undefined, flexShrink: 0 }}>
+        {value ? (
+          <img
+            src={value}
+            alt="내 프로필"
+            style={{
+              width: avatarOnly ? 120 : horizontal ? 112 : 64,
+              height: avatarOnly ? 120 : horizontal ? 112 : 64,
+              borderRadius: avatarOnly ? 60 : horizontal ? 56 : 32,
+              objectFit: 'cover',
+            }}
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            style={{
+              width: avatarOnly ? 120 : horizontal ? 112 : 64,
+              height: avatarOnly ? 120 : horizontal ? 112 : 64,
+              borderRadius: avatarOnly ? 60 : horizontal ? 56 : 32,
+              background: '#edf3ff',
+              color: '#6980a4',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 13,
+            }}
+          >
+            {avatarOnly ? (
+              <div style={{ position: 'relative', width: 64, height: 72 }}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 4,
+                    left: 18,
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    background: '#cfe0ff',
+                  }}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 6,
+                    left: 4,
+                    width: 56,
+                    height: 30,
+                    borderRadius: '50%',
+                    background: '#cfe0ff',
+                  }}
+                />
+              </div>
+            ) : (
+              '사진'
+            )}
+          </div>
+        )}
+        {avatarOnly && (
+          <button
+            type="button"
+            aria-label={value ? '프로필 사진 변경' : '프로필 사진 선택'}
+            title="PNG·JPEG·WebP, 최대 500KB"
+            disabled={disabled}
+            onClick={() => input.current?.click()}
+            style={{
+              position: 'absolute',
+              right: 5,
+              bottom: 6,
+              width: 24,
+              height: 24,
+              padding: 0,
+              border: '1px solid #dce3ed',
+              borderRadius: '50%',
+              background: 'white',
+              color: '#46586c',
+              fontSize: 22,
+              lineHeight: '20px',
+              boxShadow: '0 2px 6px #0002',
+              cursor: disabled ? 'default' : 'pointer',
+            }}
+          >
+            +
+          </button>
+        )}
+      </div>
       <div
         style={{
           display: 'flex',
@@ -69,14 +127,16 @@ export function ProfilePhoto({
           marginLeft: horizontal ? 'auto' : undefined,
         }}
       >
-        <button
-          type="button"
-          disabled={disabled}
-          style={buttonStyle}
-          onClick={() => input.current?.click()}
-        >
-          {value ? '사진 변경' : '사진 선택'}
-        </button>
+        {!avatarOnly && (
+          <button
+            type="button"
+            disabled={disabled}
+            style={buttonStyle}
+            onClick={() => input.current?.click()}
+          >
+            {value ? '사진 변경' : '사진 선택'}
+          </button>
+        )}
         <input
           ref={input}
           style={{ display: 'none' }}
@@ -105,7 +165,7 @@ export function ProfilePhoto({
             reader.readAsDataURL(file);
           }}
         />
-        {value ? (
+        {value && !avatarOnly ? (
           <button
             type="button"
             style={buttonStyle}

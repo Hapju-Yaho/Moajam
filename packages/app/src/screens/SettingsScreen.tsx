@@ -147,7 +147,7 @@ export function SettingsScreen({ navigate }: ScreenProps) {
         </ActionButton>
       </Surface>
       {workspace && <BandSettings key={workspace.id} />}
-      <AccountPanel />
+      <AccountPanel navigate={navigate} />
       <Surface>
         <Heading>내 데이터</Heading>
         <Meta>

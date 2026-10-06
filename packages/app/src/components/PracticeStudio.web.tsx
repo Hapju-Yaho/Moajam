@@ -1,3 +1,6 @@
+import { MidiClipEditor } from './MidiClipEditor.web';
+import { parseMidi, encodeMidi, cropMidi, isMidiFile, type MidiSequence } from '../lib/midi';
+import { renderMidi } from '../lib/midiAudio.web';
 import { useLocalMetronome } from '../state/localMetronome';
 import { sharedPracticeSettings } from '../lib/sharedPracticeSettings';
 import { ScheduleDialog } from './ScheduleDialog';
@@ -11,7 +14,8 @@ import { clientId } from '../lib/clientId';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useIdentity } from '../state/Identity';
 import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
-import { api, serverConfigured, uploadRemoteFile } from '../lib/remote';
+import { serverConfigured } from '../lib/remote';
+import { savePersonalClip } from '../lib/personalClipLibrary.web';
 import { usePreferences } from '../state/preferences';
 import { readMedia, writeMedia } from '../lib/mediaStore';
 import { ActionButton, Copy, FlexRow, Heading, Meta, Surface } from './ProductUI';
@@ -84,6 +88,7 @@ export function PracticeStudio({
     [],
   );
   const [libraryVersion, setLibraryVersion] = useState(0);
+  const [editingMidi, setEditingMidi] = useState<TimelineClip | null>(null);
   const [importTrack, setImportTrack] = useState<string | null>(null);
   const [publishing, setPublishing] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
@@ -530,7 +535,13 @@ export function PracticeStudio({
       await ensureClickContext();
       if (!alive.current || request !== playbackRequest.current) return;
       setStandalone(false);
-      await playback.current!.prepare(clips);
+      await playback.current!.prepare(clips, (clip) =>
+        renderMidi(
+          clip.midi!,
+          mix.current.tracks.find((track) => track.id === clip.trackId)?.instrument ??
+            'acoustic_grand_piano',
+        ),
+      );
       if (alive.current && request === playbackRequest.current) {
         playback.current!.setMix(mix.current.tracks, mix.current.solo, mix.current.masterVolume);
         playback.current!.start(positionRef.current, {
@@ -541,7 +552,7 @@ export function PracticeStudio({
     } catch {
       if (alive.current && request === playbackRequest.current) {
         playback.current?.stop();
-        setError('재생할 수 없는 파일이에요. 다른 오디오 파일로 다시 시도해주세요.');
+        setError('클립 또는 가상악기 음원을 불러오지 못했어요. 다시 시도해주세요.');
       }
     } finally {
       if (alive.current && request === playbackRequest.current) setPreparing(false);
@@ -553,6 +564,7 @@ export function PracticeStudio({
     recordedDuration = 0,
     targetId?: string,
     offset = 0,
+    midi?: MidiSequence,
   ) => {
     const target = tracks.find((track) => track.id === targetId);
     const clip: TimelineClip = {
@@ -562,7 +574,8 @@ export function PracticeStudio({
       id: clientId(),
       name,
       url: URL.createObjectURL(blob),
-      duration: recordedDuration,
+      duration: midi?.duration ?? recordedDuration,
+      ...(midi ? { midi } : {}),
     };
     const track: Track = {
       id: clientId(),
@@ -573,6 +586,8 @@ export function PracticeStudio({
       volume: preferences.volume,
       muted: false,
       part: target?.part ?? uploadPart,
+      kind: midi ? 'midi' : 'audio',
+      ...(midi ? { instrument: target?.instrument ?? 'acoustic_grand_piano' } : {}),
       clips: [clip],
     };
     const append = (all: Track[], savedClip: TimelineClip) =>
@@ -587,6 +602,33 @@ export function PracticeStudio({
     } else {
       URL.revokeObjectURL(clip.url);
     }
+    return clip;
+  };
+  const importMedia = async (blob: Blob, name: string, targetId: string) => {
+    const target = mix.current.tracks.find((track) => track.id === targetId);
+    if (!target) throw new Error('트랙을 찾을 수 없어요.');
+    const midiFile = isMidiFile({ name, type: blob.type });
+    if ((target.kind === 'midi') !== midiFile)
+      throw new Error(
+        target.kind === 'midi'
+          ? '미디 트랙에는 .mid 또는 .midi 파일을 추가해주세요.'
+          : '오디오 트랙에는 오디오 클립을 추가해주세요.',
+      );
+    if (!blob.size || blob.size > 104857600) throw new Error('100MB 이하의 파일을 선택해주세요.');
+    const midi = midiFile ? parseMidi(await blob.arrayBuffer(), clientId) : undefined;
+    if (!midiFile) validateAudioFile({ name, type: blob.type, size: blob.size });
+    if (!alive.current || !mix.current.tracks.some((track) => track.id === targetId)) return;
+    addBlob(midi ? new Blob([blob], { type: 'audio/midi' }) : blob, name, 0, targetId, 0, midi);
+  };
+  const createMidiClip = (trackId: string) => {
+    const midi: MidiSequence = {
+      notes: [],
+      duration:
+        ((60 / beatBpm) * Number(signature.split('/')[0]) * 4 * 4) /
+        Number(signature.split('/')[1]),
+    };
+    const clip = addBlob(encodeMidi(midi), '미디 클립.mid', 0, trackId, positionRef.current, midi);
+    setEditingMidi(clip);
   };
   const record = async () => {
     if (recording) {
@@ -595,6 +637,13 @@ export function PracticeStudio({
       setPlaying(false);
       return;
     }
+    if (requesting || preparing || saving || refreshing || !loaded) return;
+    playbackRequest.current++;
+    // Freeze the backing transport during microphone permission and count-in.
+    if (playing) positionRef.current = playback.current?.position() ?? positionRef.current;
+    setPosition(positionRef.current);
+    playback.current?.stop();
+    setPlaying(false);
     setError('');
     setRequesting(true);
     const abort = new AbortController();
@@ -604,13 +653,21 @@ export function PracticeStudio({
       if (!alive.current || abort.signal.aborted) return;
       setStandalone(false);
       setPreparing(true);
-      await playback.current!.prepare(clips);
+      await playback.current!.prepare(clips, (clip) =>
+        renderMidi(
+          clip.midi!,
+          mix.current.tracks.find((track) => track.id === clip.trackId)?.instrument ??
+            'acoustic_grand_piano',
+        ),
+      );
       if (!alive.current || abort.signal.aborted) return;
       playback.current!.setMix(mix.current.tracks, mix.current.solo, mix.current.masterVolume);
       setPreparing(false);
       if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
         throw new Error('unsupported');
-      const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mic = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
       if (!alive.current || abort.signal.aborted) {
         mic.getTracks().forEach((track) => track.stop());
         return;
@@ -627,6 +684,11 @@ export function PracticeStudio({
         },
       });
       if (!completed || !alive.current) {
+        mic.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      await context.resume();
+      if (!alive.current || abort.signal.aborted) {
         mic.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -784,31 +846,34 @@ export function PracticeStudio({
           }
           error={error}
           onUpload={(files, targetId) => {
-            if (!tracks.some((track) => track.id === targetId)) {
-              setError('파일을 추가할 트랙을 먼저 만들어주세요.');
-              return;
-            }
-            const failures: string[] = [];
-            files.forEach((file) => {
-              try {
-                validateAudioFile(file);
-                addBlob(file, file.name, 0, targetId);
-              } catch (failure) {
-                failures.push(
-                  `${file.name}: ${failure instanceof Error ? failure.message : '파일을 추가하지 못했어요.'}`,
-                );
+            void (async () => {
+              const failures: string[] = [];
+              for (const file of files) {
+                try {
+                  await importMedia(file, file.name, targetId);
+                } catch (failure) {
+                  failures.push(
+                    file.name +
+                      ': ' +
+                      (failure instanceof Error ? failure.message : '파일을 추가하지 못했어요.'),
+                  );
+                }
               }
-            });
-            setError(failures.join('\n'));
+              if (alive.current) setError(failures.join('\n'));
+            })();
           }}
-          onAdd={() => {
+          onEditMidi={setEditingMidi}
+          onCreateMidi={createMidiClip}
+          onAdd={(kind) => {
             const id = clientId();
             setTracks((all) => [
               ...all,
               {
                 id,
-                name: nextTrackName(all),
-                part: uploadPart,
+                name: nextTrackName(all, kind === 'midi' ? '미디 트랙' : '트랙'),
+                kind,
+                ...(kind === 'midi' ? { instrument: 'acoustic_grand_piano' as const } : {}),
+                part: kind === 'midi' ? 'KEYBOARD' : uploadPart,
                 offset: 0,
                 duration: 0,
                 volume: preferences.volume,
@@ -817,7 +882,7 @@ export function PracticeStudio({
                 clips: [],
               },
             ]);
-            setArmed(id);
+            if (kind === 'audio') setArmed(id);
           }}
           onReorder={(ids) =>
             setTracks((current) => [
@@ -874,30 +939,23 @@ export function PracticeStudio({
               ? (track) => {
                   if (!track.blob) return;
                   setPublishing(track.id);
-                  void archiveClipAudio(track)
+                  void (
+                    track.midi
+                      ? Promise.resolve(
+                          encodeMidi(cropMidi(track.midi, track.sourceStart, track.duration)),
+                        )
+                      : archiveClipAudio(track)
+                  )
                     .then(async (blob) => {
-                      const name = `${track.name.replace(/\.[^.]+$/, '')}.wav`;
-                      const scope = `song/${scopeKey}`;
-                      if (serverConfigured) {
-                        const id = await uploadRemoteFile(blob, name, scope, workspaceId, userId);
-                        await api(
-                          `/assets/${id}/visibility`,
-                          'PATCH',
-                          { visibility: 'WORKSPACE' },
-                          userId,
-                        );
-                      } else {
-                        const key = `library/${scope}`;
-                        const items = (await readMedia<unknown[]>(key, userId)) ?? [];
-                        await writeMedia(
-                          key,
-                          [
-                            ...items,
-                            { id: clientId(), name, blob, type: blob.type, ownerId: userId },
-                          ],
-                          userId,
-                        );
-                      }
+                      const name = `${track.name.replace(/\.[^.]+$/, '')}.${track.midi ? 'mid' : 'wav'}`;
+                      await savePersonalClip({
+                        id: clientId(),
+                        ownerId: userId,
+                        name,
+                        blob,
+                        type: blob.type,
+                        kind: track.midi ? 'midi' : 'audio',
+                      });
                     })
                     .then(() => {
                       if (alive.current) {
@@ -970,15 +1028,51 @@ export function PracticeStudio({
             onLoopEnd: () => setLoopEnd(Math.min(position, duration)),
           }}
         />
-        {clips.map((clip) => (
-          <audio
-            key={clip.id}
-            src={clip.url}
-            preload="metadata"
-            onError={() => setError(`${clip.name} 파일을 읽을 수 없어요.`)}
+        {clips
+          .filter((clip) => !clip.midi)
+          .map((clip) => (
+            <audio
+              key={clip.id}
+              src={clip.url}
+              preload="metadata"
+              onError={() => setError(`${clip.name} 파일을 읽을 수 없어요.`)}
+            />
+          ))}
+        {editingMidi?.midi && (
+          <MidiClipEditor
+            key={editingMidi.id}
+            name={editingMidi.name}
+            instrument={
+              mix.current.tracks.find((track) =>
+                track.clips?.some((clip) => clip.id === editingMidi.id),
+              )?.instrument ?? 'acoustic_grand_piano'
+            }
+            sequence={cropMidi(editingMidi.midi, editingMidi.sourceStart, editingMidi.duration)}
+            bpm={beatBpm}
+            onClose={() => setEditingMidi(null)}
+            onSave={(midi) => {
+              try {
+                const blob = encodeMidi(midi),
+                  url = URL.createObjectURL(blob);
+                urls.current.add(url);
+                patchClip(editingMidi.id, {
+                  midi,
+                  blob,
+                  url,
+                  sourceStart: 0,
+                  duration: midi.duration,
+                  trimmed: false,
+                });
+                setEditingMidi(null);
+              } catch (failure) {
+                setError(
+                  failure instanceof Error ? failure.message : '미디 클립을 저장하지 못했어요.',
+                );
+              }
+            }}
           />
-        ))}
-        <ClipLibrary scopeKey={scopeKey} workspaceId={workspaceId} version={libraryVersion} />
+        )}
+        <ClipLibrary version={libraryVersion} />
         <ScheduleDialog
           visible={!!importTrack}
           label="클립 가져오기"
@@ -993,14 +1087,11 @@ export function PracticeStudio({
               >
                 <h2>클립 가져오기 · {tracks.find((track) => track.id === importTrack)?.name}</h2>
                 <ClipLibrary
-                  scopeKey={scopeKey}
-                  workspaceId={workspaceId}
                   version={libraryVersion}
-                  onChoose={(blob, name) => {
-                    if (!tracks.some((track) => track.id === importTrack))
-                      throw new Error('트랙을 찾을 수 없어요.');
-                    addBlob(blob, name, 0, importTrack);
-                    setImportTrack(null);
+                  kind={tracks.find((track) => track.id === importTrack)?.kind ?? 'audio'}
+                  onChoose={async (blob, name) => {
+                    await importMedia(blob, name, importTrack);
+                    if (alive.current) setImportTrack(null);
                   }}
                 />
                 <button onClick={() => setImportTrack(null)}>닫기</button>

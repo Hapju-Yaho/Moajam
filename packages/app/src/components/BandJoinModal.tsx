@@ -5,7 +5,15 @@ import { Input } from '../styles/layout';
 import { api, serverConfigured } from '../lib/remote';
 import { useMockAppState } from '../state/MockAppState';
 
-export function BandJoinModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+export function BandJoinModal({
+  visible,
+  onClose,
+  onJoined,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onJoined: (workspaceId: string) => void;
+}) {
   const { reloadRemote } = useMockAppState();
   const [token, setToken] = useState('');
   const [message, setMessage] = useState('');
@@ -20,10 +28,14 @@ export function BandJoinModal({ visible, onClose }: { visible: boolean; onClose:
       } catch {
         /* Plain invitation code. */
       }
-      await api('/invitations/accept', 'POST', { token: code });
+      const { workspaceId } = await api<{ workspaceId: string }>('/invitations/accept', 'POST', {
+        token: code,
+      });
       await reloadRemote();
       setToken('');
-      setMessage('밴드에 참여했어요. 사이드바에서 밴드를 선택해주세요.');
+      setMessage('');
+      onClose();
+      onJoined(workspaceId);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '초대 코드를 확인해주세요.');
     } finally {

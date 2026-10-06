@@ -2,7 +2,7 @@ import { parseVideoUrl } from '../lib/video';
 import styled from '@emotion/native';
 import { theme } from '@moajam/ui';
 import type { PropsWithChildren, ReactNode } from 'react';
-import { Pressable, Text, View, type ViewProps } from 'react-native';
+import { Pressable, Text, View, type ViewProps, type AccessibilityState } from 'react-native';
 import { getSongThumbnail } from '../lib/songMedia';
 import { AppIcon, type AppIconName } from './icons';
 
@@ -391,12 +391,14 @@ export function ActionButton({
   danger,
   compact,
   disabled,
+  accessibilityState,
 }: PropsWithChildren<{
   onPress?: () => void;
   secondary?: boolean;
   danger?: boolean;
   compact?: boolean;
   disabled?: boolean;
+  accessibilityState?: AccessibilityState;
 }>) {
   if (secondary) {
     return (
@@ -406,7 +408,7 @@ export function ActionButton({
         onPress={onPress}
         disabled={disabled}
         accessibilityRole="button"
-        accessibilityState={{ disabled }}
+        accessibilityState={{ ...accessibilityState, disabled }}
         style={{
           gap: 7,
           minHeight: compact ? 34 : 40,
@@ -425,7 +427,7 @@ export function ActionButton({
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
+      accessibilityState={{ ...accessibilityState, disabled }}
       style={{
         gap: 7,
         minHeight: compact ? 34 : 40,

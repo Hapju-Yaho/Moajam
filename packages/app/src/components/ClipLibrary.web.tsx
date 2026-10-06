@@ -1,20 +1,17 @@
+import { isMidiFile } from '../lib/midi';
 import { ClipMenu } from './ClipMenu.web';
 import './ClipLibrary.web.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, serverConfigured } from '../lib/remote';
-import { readMedia, writeMedia } from '../lib/mediaStore';
+import {
+  clipLibraryChanged,
+  listPersonalClips,
+  updatePersonalClip,
+  deletePersonalClip,
+  type PersonalClip,
+} from '../lib/personalClipLibrary.web';
 import { useIdentity } from '../state/Identity';
-import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
 import { Surface, Meta } from './ProductUI';
-type Asset = {
-  id: string;
-  name: string;
-  ownerId?: string;
-  mime?: string;
-  type?: string;
-  blob?: Blob;
-};
-type Note = { id: string; authorId: string; text: string };
+type Asset = PersonalClip;
 function Preview({ asset }: { asset: Asset }) {
   const player = useRef<HTMLAudioElement>(null);
   const [url, setUrl] = useState('');
@@ -36,7 +33,7 @@ function Preview({ asset }: { asset: Asset }) {
         owned = URL.createObjectURL(asset.blob);
         return owned;
       }
-      return (await api<{ url: string }>(`/assets/${encodeURIComponent(asset.id)}/download`)).url;
+      throw new Error('저장된 클립을 찾을 수 없어요.');
     };
     void load()
       .then((value) => {
@@ -158,15 +155,13 @@ function Preview({ asset }: { asset: Asset }) {
   );
 }
 export function ClipLibrary({
-  scopeKey,
-  workspaceId,
   version,
   onChoose,
+  kind,
 }: {
-  scopeKey: string;
-  workspaceId: string;
   version: number;
-  onChoose?: (blob: Blob, name: string) => void;
+  onChoose?: (blob: Blob, name: string) => void | Promise<void>;
+  kind?: 'audio' | 'midi';
 }) {
   const disclosure = useRef<HTMLDetailsElement>(null);
   const disclosureAnimation = useRef<Animation | null>(null);
@@ -211,11 +206,6 @@ export function ClipLibrary({
       alive.current = false;
     };
   }, []);
-  const { canManage } = useMockAppState();
-  const [notes, setNotes] = useWorkspaceValue<Note[]>(
-    `song/${scopeKey.split('/').at(-1)}/clip-notes`,
-    [],
-  );
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -225,24 +215,27 @@ export function ClipLibrary({
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [attempt, setAttempt] = useState(0);
-  const scope = `song/${scopeKey}`;
-  const load = useCallback(async () => {
-    const items = serverConfigured
-      ? await api<Asset[]>(`/assets?${new URLSearchParams({ scope, workspaceId })}`)
-      : ((await readMedia<Asset[]>(`library/${scope}`)) ?? []);
-    return items.filter(
-      (item) =>
-        (item.mime ?? item.type ?? '').startsWith('audio/') ||
-        /\.(mp3|wav|m4a|ogg|flac|aac|webm)$/i.test(item.name),
-    );
-  }, [scope, workspaceId]);
+  const load = useCallback(() => listPersonalClips(userId), [userId]);
+  useEffect(() => {
+    const refresh = () => setAttempt((value) => value + 1);
+    window.addEventListener(clipLibraryChanged, refresh);
+    return () => window.removeEventListener(clipLibraryChanged, refresh);
+  }, []);
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setAssets([]);
     setError('');
     void load()
       .then((items) => {
-        if (active) setAssets(items);
+        if (active)
+          setAssets(
+            kind
+              ? items.filter(
+                  (item) => (item.kind === 'midi' || isMidiFile(item)) === (kind === 'midi'),
+                )
+              : items,
+          );
       })
       .catch((failure: Error) => {
         if (active) setError(failure.message);
@@ -253,7 +246,7 @@ export function ClipLibrary({
     return () => {
       active = false;
     };
-  }, [load, version, attempt]);
+  }, [load, version, attempt, kind]);
   const perform = async (action: () => Promise<void>) => {
     setBusy(true);
     setError('');
@@ -307,15 +300,14 @@ export function ClipLibrary({
           </button>
         </summary>
         <div data-clip-library style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Meta>이 브라우저에 개인용으로 보관하며, 모든 밴드의 곡에서 가져올 수 있어요.</Meta>
           {loading && <Meta>클립 불러오는 중…</Meta>}
           {error && <div role="alert">{error}</div>}
           {!loading && !assets.length && (
             <Meta>보관된 클립이 없어요. DAW에서 클립을 선택하고 ‘클립 보관하기’를 눌러주세요.</Meta>
           )}
           {assets.map((asset) => {
-            const note = notes.find((item) => item.id === asset.id);
-            const canMemo = !note || note.authorId === userId || canManage;
-            const canDelete = !serverConfigured || asset.ownerId === userId;
+            const canDelete = asset.ownerId === userId;
             return (
               <div
                 key={asset.id}
@@ -340,25 +332,17 @@ export function ClipLibrary({
                       whiteSpace: 'pre-wrap',
                     }}
                   >
-                    {note?.text}
+                    {asset.memo}
                   </span>
                   {onChoose && (
                     <button
                       disabled={busy || loading}
                       onClick={() =>
                         void perform(async () => {
-                          let blob = asset.blob;
-                          if (!blob) {
-                            const { url } = await api<{ url: string }>(
-                              `/assets/${encodeURIComponent(asset.id)}/download`,
-                            );
-                            const response = await fetch(url);
-                            if (!response.ok) throw new Error('클립을 불러오지 못했어요.');
-                            blob = await response.blob();
-                          }
+                          const blob = asset.blob;
                           if (!blob || blob.size > 104857600)
                             throw new Error('100MB 이하의 클립만 가져올 수 있어요.');
-                          if (alive.current) onChoose(blob, asset.name);
+                          if (alive.current) await onChoose(blob, asset.name);
                         })
                       }
                     >
@@ -376,10 +360,10 @@ export function ClipLibrary({
                       이름 수정하기
                     </button>
                     <button
-                      disabled={!canMemo || busy}
+                      disabled={busy}
                       onClick={() => {
                         setEditing(asset.id);
-                        setDraft(note?.text ?? '');
+                        setDraft(asset.memo ?? '');
                       }}
                     >
                       클립 메모하기
@@ -395,13 +379,7 @@ export function ClipLibrary({
                       title={canDelete ? undefined : '저장한 멤버만 삭제할 수 있어요.'}
                       onClick={() => {
                         void perform(async () => {
-                          if (serverConfigured)
-                            await api(`/assets/${encodeURIComponent(asset.id)}`, 'DELETE');
-                          else
-                            await writeMedia(
-                              `library/${scope}`,
-                              assets.filter((item) => item.id !== asset.id),
-                            );
+                          await deletePersonalClip(userId, asset.id);
                           setAssets((all) => all.filter((item) => item.id !== asset.id));
                         });
                       }}
@@ -425,17 +403,7 @@ export function ClipLibrary({
                       onClick={() =>
                         void perform(async () => {
                           const name = newName.trim();
-                          if (serverConfigured)
-                            await api(`/assets/${encodeURIComponent(asset.id)}/name`, 'PATCH', {
-                              name,
-                            });
-                          else
-                            await writeMedia(
-                              `library/${scope}`,
-                              assets.map((item) =>
-                                item.id === asset.id ? { ...item, name } : item,
-                              ),
-                            );
+                          await updatePersonalClip(userId, asset.id, { name });
                           setAssets((all) =>
                             all.map((item) => (item.id === asset.id ? { ...item, name } : item)),
                           );
@@ -448,7 +416,11 @@ export function ClipLibrary({
                     <button onClick={() => setRenaming(null)}>취소</button>
                   </div>
                 )}
-                <Preview asset={asset} />
+                {asset.kind === 'midi' || isMidiFile(asset) ? (
+                  <Meta>MIDI 파일</Meta>
+                ) : (
+                  <Preview asset={asset} />
+                )}
                 {editing === asset.id && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <textarea
@@ -461,21 +433,16 @@ export function ClipLibrary({
                     />
                     <button
                       disabled={busy}
-                      onClick={() => {
-                        setNotes((all) => {
-                          const previous = all.find((item) => item.id === asset.id);
-                          if (previous && previous.authorId !== userId && !canManage) return all;
-                          return [
-                            ...all.filter((item) => item.id !== asset.id),
-                            {
-                              id: asset.id,
-                              authorId: previous?.authorId ?? userId,
-                              text: draft.trim(),
-                            },
-                          ];
-                        });
-                        setEditing(null);
-                      }}
+                      onClick={() =>
+                        void perform(async () => {
+                          const memo = draft.trim();
+                          await updatePersonalClip(userId, asset.id, { memo });
+                          setAssets((all) =>
+                            all.map((item) => (item.id === asset.id ? { ...item, memo } : item)),
+                          );
+                          setEditing(null);
+                        })
+                      }
                     >
                       저장
                     </button>

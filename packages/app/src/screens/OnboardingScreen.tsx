@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import type { MemberPart } from '@moajam/domain';
 import { ActionButton, Heading, Meta, Surface } from '../components/ProductUI';
 import { ProfilePhoto } from '../components/ProfilePhoto';
@@ -56,7 +56,7 @@ export function OnboardingScreen({
       style={{ flex: 1, backgroundColor: '#f6f8fc' }}
       contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24 }}
     >
-      <View style={{ width: '100%', maxWidth: 520, alignSelf: 'center', gap: 24 }}>
+      <View style={{ width: '100%', maxWidth: 560, alignSelf: 'center', gap: 24 }}>
         <View style={{ gap: 8 }}>
           <Text style={{ color: '#4876dd', fontSize: 14, fontWeight: '700' }}>
             WELCOME TO MOAJAM
@@ -72,24 +72,26 @@ export function OnboardingScreen({
           </Text>
         </View>
         <Surface style={{ padding: 26, gap: 20 }}>
-          <Heading>프로필 사진</Heading>
-          <ProfilePhoto value={photo} onChange={setPhoto} disabled={busy} />
-          <Meta>사진은 나중에 추가해도 괜찮아요. PNG·JPEG·WebP, 최대 500KB</Meta>
-          <View style={{ gap: 8 }}>
-            <Heading>이름</Heading>
-            <Input
-              accessibilityLabel="이름"
-              placeholder="멤버들에게 보여줄 이름"
-              value={name}
-              maxLength={80}
-              editable={!busy}
-              onChangeText={setName}
-            />
+          <View
+            style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 20, marginBottom: 16 }}
+          >
+            <ProfilePhoto value={photo} onChange={setPhoto} disabled={busy} avatarOnly />
+            <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+              <Heading>이름</Heading>
+              <Input
+                accessibilityLabel="이름"
+                placeholder="멤버들에게 보여줄 이름"
+                value={name}
+                maxLength={80}
+                editable={!busy}
+                onChangeText={setName}
+              />
+            </View>
           </View>
           <View style={{ gap: 12 }}>
             <Heading>담당 세션</Heading>
             <Meta>하나 이상 선택해주세요. 여러 세션을 맡고 있어도 좋아요.</Meta>
-            <SessionPicker value={parts} onChange={setParts} disabled={busy} />
+            <SessionPicker value={parts} onChange={setParts} disabled={busy} compact />
           </View>
           {error ? (
             <Text accessibilityRole="alert" style={{ color: '#bd3944', fontSize: 14 }}>
@@ -104,8 +106,14 @@ export function OnboardingScreen({
           </ActionButton>
           <Meta>프로필과 담당 세션은 설정에서 언제든 바꿀 수 있어요.</Meta>
         </Surface>
-        <ActionButton
-          secondary
+        <Pressable
+          accessibilityRole="button"
+          style={{
+            alignSelf: 'center',
+            paddingVertical: 4,
+            paddingHorizontal: 12,
+            opacity: busy ? 0.6 : 1,
+          }}
           disabled={busy}
           onPress={() => {
             setBusy(true);
@@ -116,8 +124,10 @@ export function OnboardingScreen({
               .finally(() => setBusy(false));
           }}
         >
-          다른 계정으로 로그인
-        </ActionButton>
+          <Text style={{ color: '#87929e', fontSize: 13, textDecorationLine: 'underline' }}>
+            다른 계정으로 로그인
+          </Text>
+        </Pressable>
       </View>
     </ScrollView>
   );

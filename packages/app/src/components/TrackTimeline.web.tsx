@@ -1,3 +1,4 @@
+import { soundfontInstruments, type SoundfontInstrumentId } from '../lib/soundfontCatalog';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -188,6 +189,8 @@ export function TrackTimeline({
   error,
   onUpload,
   onAdd,
+  onEditMidi,
+  onCreateMidi,
   onReorder,
   onPatch,
   onPatchClip,
@@ -216,7 +219,9 @@ export function TrackTimeline({
   saveLabel: string;
   error: string;
   onUpload: (files: File[], targetId: string) => void;
-  onAdd: () => void;
+  onAdd: (kind: 'audio' | 'midi') => void;
+  onEditMidi: (clip: TimelineClip) => void;
+  onCreateMidi: (trackId: string) => void;
   onReorder: (ids: string[]) => void;
   onPatch: (id: string, changes: Partial<TimelineTrack>) => void;
   onPatchClip: (id: string, changes: Partial<TimelineClip>) => void;
@@ -240,6 +245,8 @@ export function TrackTimeline({
   publishing: string | null;
   transport: Transport;
 }) {
+  const [addingTrack, setAddingTrack] = useState(false);
+  const addTrackButton = useRef<HTMLButtonElement>(null);
   const [trackOrder, setTrackOrder] = useState<string[] | null>(null);
   const movingTrack = useRef<{
     id: string;
@@ -342,7 +349,8 @@ export function TrackTimeline({
     return () => observer.disconnect();
   }, [expanded]);
   const lanes = useRef(new Map<string, HTMLDivElement>());
-  const locked = !loaded || refreshing || t.playing || t.recording || t.requesting;
+  const locked =
+    !loaded || refreshing || saving || t.preparing || t.playing || t.recording || t.requesting;
   const step = beatSeconds(t.bpm, t.signature);
   const perBar = Number(t.signature.split('/')[0]);
   const barSeconds = step * perBar;
@@ -447,7 +455,7 @@ export function TrackTimeline({
           ref={fileInput}
           aria-label="트랙 음원 파일"
           type="file"
-          accept="audio/*"
+          accept="audio/*,.mid,.midi"
           multiple
           hidden
           onChange={(event) => {
@@ -503,7 +511,7 @@ export function TrackTimeline({
               className={`studio-record ${t.recording ? 'active' : ''}`}
               title={t.recording ? '녹음 완료' : '녹음 시작'}
               aria-label={t.recording ? '녹음 완료' : '녹음 시작'}
-              disabled={!loaded || t.requesting || (t.playing && !t.recording)}
+              disabled={!loaded || t.requesting || t.preparing}
               onClick={t.onRecord}
             >
               <Icon name="record" />
@@ -789,6 +797,11 @@ export function TrackTimeline({
               초
             </label>
           )}
+          {selected?.midi && (
+            <button disabled={locked} onClick={() => onEditMidi(selected)}>
+              미디 악보 편집
+            </button>
+          )}
           {selected && onPublish && (
             <button disabled={!!publishing} onClick={() => onPublish(selected)}>
               {publishing === selected.id ? '보관 중…' : '클립 보관하기'}
@@ -798,6 +811,12 @@ export function TrackTimeline({
         <div
           className="studio-timeline"
           ref={viewport}
+          onScroll={(event) => {
+            event.currentTarget.style.setProperty(
+              '--studio-scroll-left',
+              event.currentTarget.scrollLeft + 'px',
+            );
+          }}
           tabIndex={0}
           aria-label="트랙 타임라인"
           onPointerMove={(event) => {
@@ -975,27 +994,89 @@ export function TrackTimeline({
                         <Icon name="trash" />
                       </button>
                     </div>
-                    <select
-                      aria-label={`${track.name} 세션`}
-                      value={track.part ?? 'UNASSIGNED'}
-                      disabled={t.recording || t.requesting}
-                      onChange={(event) =>
-                        onPatch(track.id, { part: event.target.value as TrackPart })
-                      }
-                    >
-                      {trackParts.map((part) => (
-                        <option key={part.value} value={part.value}>
-                          {part.label}
-                        </option>
-                      ))}
-                    </select>
+                    {track.kind === 'midi' ? (
+                      <div className="studio-midi-instruments">
+                        <select
+                          aria-label={track.name + ' 악기 종류'}
+                          disabled={locked}
+                          value={
+                            soundfontInstruments.find((item) => item.id === track.instrument)
+                              ?.group ?? '건반·기타 악기'
+                          }
+                          onChange={(event) => {
+                            const instrument = soundfontInstruments.find(
+                              (item) => item.group === event.target.value,
+                            )!;
+                            onPatch(track.id, {
+                              instrument: instrument.id,
+                              part:
+                                instrument.group === '기타'
+                                  ? 'GUITAR'
+                                  : instrument.group === '베이스'
+                                    ? 'BASS'
+                                    : instrument.group === '퍼커션'
+                                      ? 'DRUMS'
+                                      : 'KEYBOARD',
+                            });
+                          }}
+                        >
+                          {['기타', '베이스', '건반·기타 악기', '퍼커션'].map((group) => (
+                            <option key={group} value={group}>
+                              {group}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          aria-label={track.name + ' 가상악기'}
+                          disabled={locked}
+                          value={track.instrument ?? 'acoustic_grand_piano'}
+                          onChange={(event) =>
+                            onPatch(track.id, {
+                              instrument: event.target.value as SoundfontInstrumentId,
+                            })
+                          }
+                        >
+                          {soundfontInstruments
+                            .filter(
+                              (item) =>
+                                item.group ===
+                                (soundfontInstruments.find((item) => item.id === track.instrument)
+                                  ?.group ?? '건반·기타 악기'),
+                            )
+                            .map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.label}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <>
+                        <select
+                          aria-label={`${track.name} 세션`}
+                          value={track.part ?? 'UNASSIGNED'}
+                          disabled={t.recording || t.requesting}
+                          onChange={(event) =>
+                            onPatch(track.id, { part: event.target.value as TrackPart })
+                          }
+                        >
+                          {trackParts.map((part) => (
+                            <option key={part.value} value={part.value}>
+                              {part.label}
+                            </option>
+                          ))}
+                        </select>
+                      </>
+                    )}
                     <div className="studio-track-mix">
                       <button
                         className={armed === track.id ? 'record-active' : ''}
                         aria-label={`${track.name} 녹음 대상`}
                         aria-pressed={armed === track.id}
-                        title="녹음 대상"
-                        disabled={locked}
+                        title={
+                          track.kind === 'midi' ? '미디 트랙은 악보 창에서 편집하세요' : '녹음 대상'
+                        }
+                        disabled={locked || track.kind === 'midi'}
                         onClick={() => onArm(track.id)}
                       >
                         <Icon name="record" />
@@ -1031,6 +1112,11 @@ export function TrackTimeline({
                         }
                       />
                     </div>
+                    {track.kind === 'midi' && (
+                      <button disabled={locked} onClick={() => onCreateMidi(track.id)}>
+                        + 미디 클립
+                      </button>
+                    )}
                     <div className="studio-track-offset">
                       <span>{clips.length}개 클립</span>
                       <button
@@ -1077,7 +1163,7 @@ export function TrackTimeline({
                         className={`studio-clip ${selectedId === clip.id ? 'selected' : ''} ${drag?.id === clip.id ? 'dragging' : ''} ${drag?.guide?.targetId === clip.id ? 'snap-target' : ''} ${track.muted || (solo && solo !== track.id) ? 'is-muted' : ''}`}
                         role="button"
                         tabIndex={0}
-                        aria-label={`${clip.name} 오디오 클립`}
+                        aria-label={`${clip.name} ${clip.midi ? '미디' : '오디오'} 클립`}
                         aria-pressed={selectedId === clip.id}
                         title="좌우로 위치 이동 · 위아래로 트랙 이동 · 커서를 놓고 자르기"
                         style={{
@@ -1149,6 +1235,10 @@ export function TrackTimeline({
                           setDrag(null);
                         }}
                         onPointerCancel={() => setDrag(null)}
+                        onDoubleClick={(event) => {
+                          event.stopPropagation();
+                          if (!locked && clip.midi) onEditMidi(clip);
+                        }}
                         onClick={(event) => event.stopPropagation()}
                         onKeyDown={(event) => {
                           if (locked) return;
@@ -1188,15 +1278,54 @@ export function TrackTimeline({
                               : clock(clip.duration)}
                           </small>
                         </div>
-                        <Waveform
-                          blob={clip.blob}
-                          sourceStart={clip.sourceStart}
-                          duration={clip.duration}
-                          onDuration={(duration) => {
-                            if (!clip.trimmed && !(clip.duration > 0))
-                              onClipDuration(clip.id, duration);
-                          }}
-                        />
+                        {clip.midi ? (
+                          <svg
+                            className="studio-midi-preview"
+                            viewBox="0 0 500 60"
+                            preserveAspectRatio="none"
+                            aria-label="미디 음표"
+                          >
+                            {clip.midi.notes
+                              .filter(
+                                (note) =>
+                                  note.start < clip.sourceStart + clip.duration &&
+                                  note.start + note.duration > clip.sourceStart,
+                              )
+                              .map((note) => (
+                                <rect
+                                  key={note.id}
+                                  x={
+                                    ((Math.max(clip.sourceStart, note.start) - clip.sourceStart) /
+                                      Math.max(0.01, clip.duration)) *
+                                    500
+                                  }
+                                  y={((127 - note.pitch) / 127) * 52}
+                                  width={Math.max(
+                                    2,
+                                    ((Math.min(
+                                      clip.sourceStart + clip.duration,
+                                      note.start + note.duration,
+                                    ) -
+                                      Math.max(clip.sourceStart, note.start)) /
+                                      Math.max(0.01, clip.duration)) *
+                                      500,
+                                  )}
+                                  height="3"
+                                  fill="#c5d9f5"
+                                />
+                              ))}
+                          </svg>
+                        ) : (
+                          <Waveform
+                            blob={clip.blob}
+                            sourceStart={clip.sourceStart}
+                            duration={clip.duration}
+                            onDuration={(duration) => {
+                              if (!clip.trimmed && !(clip.duration > 0))
+                                onClipDuration(clip.id, duration);
+                            }}
+                          />
+                        )}
                       </div>
                     ))}
                     {drag &&
@@ -1218,11 +1347,14 @@ export function TrackTimeline({
                         disabled={locked}
                         onClick={(event) => {
                           event.stopPropagation();
-                          openFile(track.id);
+                          if (track.kind === 'midi') onCreateMidi(track.id);
+                          else openFile(track.id);
                         }}
                       >
                         <Icon name="plus" />
-                        음원 파일을 놓거나 추가하세요
+                        {track.kind === 'midi'
+                          ? '미디 클립 만들기 · 파일도 놓을 수 있어요'
+                          : '음원 파일을 놓거나 추가하세요'}
                       </button>
                     )}
                   </div>
@@ -1237,12 +1369,15 @@ export function TrackTimeline({
               <div className="studio-add-track-control">
                 <button
                   type="button"
+                  ref={addTrackButton}
+                  aria-haspopup="dialog"
+                  aria-expanded={addingTrack}
                   aria-label="트랙 추가"
                   title="트랙 추가"
                   disabled={!loaded || locked}
                   onClick={() => {
                     setFilter('ALL');
-                    onAdd();
+                    setAddingTrack(true);
                   }}
                 >
                   <Icon name="plus" />
@@ -1256,21 +1391,23 @@ export function TrackTimeline({
                   : ''}
               </div>
             </div>
-            {drag?.guide && (
-              <div className="studio-snap-guide" style={{ left: 214 + drag.guide.time * zoom }}>
-                <span role="status">
-                  {drag.guide.edge === 'start' ? '클립 시작에 맞춤' : '클립 끝에 맞춤'}
-                </span>
+            <div className="studio-timeline-overlays">
+              {drag?.guide && (
+                <div className="studio-snap-guide" style={{ left: drag.guide.time * zoom }}>
+                  <span role="status">
+                    {drag.guide.edge === 'start' ? '클립 시작에 맞춤' : '클립 끝에 맞춤'}
+                  </span>
+                </div>
+              )}
+              {t.loop && t.loopEnd > t.loopStart && (
+                <div
+                  className="studio-loop-region"
+                  style={{ left: t.loopStart * zoom, width: (t.loopEnd - t.loopStart) * zoom }}
+                />
+              )}
+              <div className="studio-playhead" style={{ left: t.position * zoom }}>
+                <span />
               </div>
-            )}
-            {t.loop && t.loopEnd > t.loopStart && (
-              <div
-                className="studio-loop-region"
-                style={{ left: 214 + t.loopStart * zoom, width: (t.loopEnd - t.loopStart) * zoom }}
-              />
-            )}
-            <div className="studio-playhead" style={{ left: 214 + t.position * zoom }}>
-              <span />
             </div>
           </div>
         </div>
@@ -1311,5 +1448,87 @@ export function TrackTimeline({
       )}
     </section>
   );
-  return expanded ? createPortal(editor, document.body) : editor;
+  return (
+    <>
+      {expanded ? createPortal(editor, document.body) : editor}
+      {addingTrack && (
+        <TrackTypePicker
+          anchor={addTrackButton.current?.getBoundingClientRect()}
+          onClose={() => setAddingTrack(false)}
+          onChoose={(kind) => {
+            onAdd(kind);
+            setAddingTrack(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function TrackTypePicker({
+  anchor,
+  onClose,
+  onChoose,
+}: {
+  anchor?: DOMRect;
+  onClose: () => void;
+  onChoose: (kind: 'audio' | 'midi') => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const initialAnchor = useRef(anchor);
+  useEffect(() => {
+    const element = dialog.current!;
+    const previous = document.activeElement as HTMLElement | null;
+    element.showModal();
+    const bounds = element.getBoundingClientRect();
+    const trigger = initialAnchor.current;
+    element.style.left =
+      Math.max(12, Math.min(window.innerWidth - bounds.width - 12, trigger?.left ?? 12)) + 'px';
+    element.style.top =
+      Math.max(
+        12,
+        Math.min(
+          window.innerHeight - bounds.height - 12,
+          (trigger?.top ?? bounds.height + 20) - bounds.height - 8,
+        ),
+      ) + 'px';
+    return () => {
+      element.close();
+      previous?.focus();
+    };
+  }, []);
+  return createPortal(
+    <dialog
+      ref={dialog}
+      className="studio-track-picker"
+      aria-label="트랙 종류 선택"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (
+          event.clientX < rect.left ||
+          event.clientX > rect.right ||
+          event.clientY < rect.top ||
+          event.clientY > rect.bottom
+        )
+          onClose();
+      }}
+    >
+      <strong>트랙 추가</strong>
+      <button type="button" autoFocus onClick={() => onChoose('audio')}>
+        오디오 트랙
+      </button>
+      <button type="button" onClick={() => onChoose('midi')}>
+        미디 트랙
+      </button>
+      <button type="button" onClick={onClose}>
+        취소
+      </button>
+    </dialog>,
+    document.body,
+  );
 }
