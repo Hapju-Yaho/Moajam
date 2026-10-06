@@ -1042,6 +1042,11 @@ export function PracticeStudio({
           <MidiClipEditor
             key={editingMidi.id}
             name={editingMidi.name}
+            instrument={
+              mix.current.tracks.find((track) =>
+                track.clips?.some((clip) => clip.id === editingMidi.id),
+              )?.instrument ?? 'acoustic_grand_piano'
+            }
             sequence={cropMidi(editingMidi.midi, editingMidi.sourceStart, editingMidi.duration)}
             bpm={beatBpm}
             onClose={() => setEditingMidi(null)}
