@@ -1,5 +1,13 @@
 import { soundfontInstruments, type SoundfontInstrumentId } from '../lib/soundfontCatalog';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  type CSSProperties,
+} from 'react';
 import { createPortal } from 'react-dom';
 import {
   beatSeconds,
@@ -15,6 +23,8 @@ import { trackParts, trackPartLabel, type TrackPart } from '../lib/trackParts';
 import { trackClips, type TimelineClip, type TimelineTrack } from '../lib/practiceClips';
 export type { TimelineTrack } from '../lib/practiceClips';
 import './TrackTimeline.web.css';
+import { contiguousClips } from '../lib/clipMerge.web';
+import { useMarquee } from '../lib/useMarquee.web';
 type Transport = {
   position: number;
   duration: number;
@@ -194,8 +204,16 @@ export function TrackTimeline({
   onReorder,
   onPatch,
   onPatchClip,
+  onPasteClips,
+  onMergeClips,
+  onUndo,
+  canUndo = false,
+  onEditStart,
+  onEditEnd,
+  onEditCancel,
   onClipDuration,
   onMoveClip,
+  onMoveClips,
   onMoveToNewTrack,
   onSave,
   onRefresh,
@@ -225,6 +243,13 @@ export function TrackTimeline({
   onReorder: (ids: string[]) => void;
   onPatch: (id: string, changes: Partial<TimelineTrack>) => void;
   onPatchClip: (id: string, changes: Partial<TimelineClip>) => void;
+  onMergeClips?: (ids: string[]) => Promise<void>;
+  onUndo?: () => void;
+  canUndo?: boolean;
+  onEditStart?: () => void;
+  onEditEnd?: () => void;
+  onEditCancel?: () => void;
+  onPasteClips?: (clips: { trackId: string; clip: TimelineClip }[], position: number) => void;
   onClipDuration: (id: string, duration: number) => void;
   onMoveToNewTrack: (id: string, offset: number) => void;
   onSave: () => void;
@@ -233,6 +258,7 @@ export function TrackTimeline({
   saving: boolean;
   dirty: boolean;
   onMoveClip: (id: string, targetId: string, offset: number) => void;
+  onMoveClips?: (moves: { id: string; targetId: string; offset: number }[]) => void;
   onSplitClip: (id: string, position: number) => void;
   onRemoveClip: (id: string) => void;
   onRemove: (id: string) => void;
@@ -318,8 +344,22 @@ export function TrackTimeline({
   const [follow, setFollow] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState('ALL');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = tracks.flatMap(trackClips).find((clip) => clip.id === selectedId);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedClips = tracks.flatMap(trackClips).filter((clip) => selectedIds.includes(clip.id));
+  const selected = selectedClips.length === 1 ? selectedClips[0] : undefined;
+  const selectedId = selected?.id;
+  const setSelectedId = (id: string | null) => setSelectedIds(id ? [id] : []);
+  const selectionBase = useRef<string[]>([]);
+  const [clipboard, setClipboard] = useState<{ trackId: string; clip: TimelineClip }[]>([]);
+  const [activeTrack, setActiveTrack] = useState<string | null>(null);
+  const resizeClip = useRef<{
+    id: string;
+    pointerId: number;
+    x: number;
+    scroll: number;
+    duration: number;
+  } | null>(null);
+  const lanePan = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const canSplit =
     !!selected &&
     t.position > selected.offset + 0.01 &&
@@ -333,11 +373,19 @@ export function TrackTimeline({
     original: number;
     offset: number;
     guide?: ClipSnap;
+    group: { clip: TimelineClip; trackId: string }[];
   } | null>(null);
   const addRow = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | undefined>(undefined);
   const viewport = useRef<HTMLDivElement>(null);
+  const marquee = useMarquee(
+    viewport,
+    '[data-selection-id]',
+    (ids, additive) =>
+      setSelectedIds(additive ? [...new Set([...selectionBase.current, ...ids])] : ids),
+    214,
+  );
   const [viewportWidth, setViewportWidth] = useState(660);
   useEffect(() => {
     const element = viewport.current;
@@ -407,26 +455,124 @@ export function TrackTimeline({
     if (!drag) return { offset: 0, guide: undefined };
     const delta = clientX - drag.x + (viewport.current?.scrollLeft ?? 0) - drag.scrollLeft;
     if (Math.abs(delta) < 3) return { offset: drag.original, guide: undefined };
-    const raw = Math.max(0, drag.original + delta / zoom);
+    const earliest = Math.min(...drag.group.map((item) => item.clip.offset));
+    const raw = Math.max(drag.original - earliest, drag.original + delta / zoom);
     if (raw === 0) return { offset: 0, guide: undefined };
     const moving = tracks.flatMap(trackClips).find((clip) => clip.id === drag.id);
     // Prefer the destination lane only when two candidate edges are equally close.
     const targets = [...visible]
       .sort((a, b) => Number(b.id === targetId) - Number(a.id === targetId))
-      .flatMap(trackClips);
+      .flatMap(trackClips)
+      .filter((clip) => !drag.group.some((item) => item.clip.id === clip.id));
     const guide =
       magnetic && !free && moving
         ? snapClipEdges({ ...moving, offset: raw }, targets, zoom)
         : undefined;
-    return { offset: guide?.offset ?? snapOffset(raw, t.bpm, t.signature, snap && !free), guide };
+    return {
+      offset: Math.max(
+        drag.original - earliest,
+        guide?.offset ?? snapOffset(raw, t.bpm, t.signature, snap && !free),
+      ),
+      guide,
+    };
   };
+  const deleteClips = useCallback(() => {
+    onEditStart?.();
+    selectedClips.forEach((clip) => onRemoveClip(clip.id));
+    onEditEnd?.();
+    setSelectedIds([]);
+  }, [selectedClips, onRemoveClip, onEditStart, onEditEnd]);
+  const copyClips = useCallback(
+    () =>
+      setClipboard(
+        tracks.flatMap((track) =>
+          trackClips(track)
+            .filter((clip) => selectedIds.includes(clip.id))
+            .map((clip) => ({ trackId: track.id, clip: { ...clip } })),
+        ),
+      ),
+    [tracks, selectedIds],
+  );
+  const pasteClips = useCallback(() => {
+    if (!clipboard.length || !onPasteClips || locked) return;
+    const sources = [...new Set(clipboard.map((item) => item.trackId))];
+    const target = tracks.find((track) => track.id === activeTrack);
+    const items =
+      sources.length === 1 &&
+      target &&
+      clipboard.every((item) => (target.kind === 'midi') === !!item.clip.midi)
+        ? clipboard.map((item) => ({ ...item, trackId: target.id }))
+        : clipboard;
+    onPasteClips(items, t.position);
+  }, [clipboard, onPasteClips, locked, tracks, activeTrack, t.position]);
+  const canMerge =
+    tracks.some((track) =>
+      selectedClips.every((clip) => trackClips(track).some((item) => item.id === clip.id)),
+    ) && contiguousClips(selectedClips);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (
+        target.closest('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"]')
+      )
+        return;
+      if (document.querySelector('dialog[open], [aria-modal="true"]')) return;
+      if (event.repeat || event.altKey || drag || resizeClip.current || movingTrack.current) return;
+      if (event.ctrlKey || event.metaKey) {
+        if (locked || event.shiftKey) return;
+        const key = event.key.toLowerCase();
+        if (key === 'c' && selectedClips.length) {
+          event.preventDefault();
+          copyClips();
+        }
+        if (key === 'v' && clipboard.length) {
+          event.preventDefault();
+          pasteClips();
+        }
+        if (key === 'z' && canUndo) {
+          event.preventDefault();
+          onUndo?.();
+          setSelectedIds([]);
+        }
+        return;
+      }
+      if (event.key === 'Delete' && !locked && selectedClips.length) {
+        event.preventDefault();
+        deleteClips();
+        return;
+      }
       if (event.key === 'Escape') setExpanded(false);
+      if (event.code === 'Space' && loaded && !t.preparing && !t.requesting) {
+        event.preventDefault();
+        if (t.recording) t.onRecord();
+        else t.onPlay();
+      }
+      if (
+        event.key.toLowerCase() === 'r' &&
+        loaded &&
+        !t.recording &&
+        !t.requesting &&
+        !t.preparing
+      ) {
+        event.preventDefault();
+        t.onRecord();
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, []);
+  }, [
+    loaded,
+    t,
+    locked,
+    selectedClips,
+    clipboard,
+    canUndo,
+    onUndo,
+    copyClips,
+    pasteClips,
+    drag,
+    deleteClips,
+  ]);
   useEffect(() => {
     const element = viewport.current;
     if (!element || !follow || !t.playing) return;
@@ -435,6 +581,17 @@ export function TrackTimeline({
     if (x > element.scrollLeft + available - 45 || x < element.scrollLeft)
       element.scrollLeft = Math.max(0, x - available * 0.25);
   }, [t.position, t.playing, follow, zoom]);
+  useEffect(() => {
+    if (selectedClips.length < 2) return;
+    const clear = (event: PointerEvent) => {
+      if (event.ctrlKey || event.metaKey) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest('.studio-clip, .studio-clip-tools')) return;
+      setSelectedIds([]);
+    };
+    document.addEventListener('pointerdown', clear, true);
+    return () => document.removeEventListener('pointerdown', clear, true);
+  }, [selectedClips.length]);
   const seekPosition = (value: number, free = false) =>
     t.onSeek(snapOffset(value, t.bpm, t.signature, snap && !free));
   const seekAt = (event: React.MouseEvent<HTMLElement>) => {
@@ -727,7 +884,9 @@ export function TrackTimeline({
           </div>
         </div>
         <div className="studio-clip-tools">
-          {selected ? (
+          {selectedClips.length > 1 ? (
+            <button disabled>{selectedClips.length}개 클립 선택</button>
+          ) : selected ? (
             naming ? (
               <input
                 aria-label="클립 이름"
@@ -769,12 +928,34 @@ export function TrackTimeline({
           >
             ✂ 커서에서 자르기
           </button>
-          <button
-            disabled={locked || !selected}
-            onClick={() => selected && onRemoveClip(selected.id)}
-          >
+          <button disabled={locked || !selectedClips.length} onClick={deleteClips}>
             클립 삭제
           </button>
+          <button disabled={locked || !selectedClips.length} onClick={copyClips}>
+            클립 복사하기
+          </button>
+          {selectedClips.length > 1 ? (
+            <span
+              title={
+                !canMerge ? '선택된 클립들이 하나의 트랙에서 모두 붙어있어야합니다.' : undefined
+              }
+            >
+              <button
+                disabled={locked || !canMerge || !onMergeClips}
+                onClick={() => {
+                  void onMergeClips?.(selectedClips.map((clip) => clip.id)).then(() =>
+                    setSelectedIds([]),
+                  );
+                }}
+              >
+                클립 합치기
+              </button>
+            </span>
+          ) : (
+            <button disabled={locked || !clipboard.length || !onPasteClips} onClick={pasteClips}>
+              클립 붙여넣기
+            </button>
+          )}
           {selected && (
             <label>
               시작{' '}
@@ -820,6 +1001,14 @@ export function TrackTimeline({
           tabIndex={0}
           aria-label="트랙 타임라인"
           onPointerMove={(event) => {
+            marquee.move(event);
+            if (lanePan.current?.pointerId === event.pointerId && !marquee.active()) {
+              const pan = lanePan.current;
+              event.currentTarget.scrollLeft += pan.x - event.clientX;
+              event.currentTarget.scrollTop += pan.y - event.clientY;
+              pan.x = event.clientX;
+              pan.y = event.clientY;
+            }
             const current = movingTrack.current;
             const container = viewport.current;
             if (!current || !container || locked) return;
@@ -852,10 +1041,23 @@ export function TrackTimeline({
               break;
             }
           }}
-          onPointerUp={() => finishTrackDrag(true)}
-          onPointerCancel={() => finishTrackDrag(false)}
-          onLostPointerCapture={() => finishTrackDrag(false)}
+          onPointerUp={(event) => {
+            marquee.finish(event);
+            lanePan.current = null;
+            finishTrackDrag(true);
+          }}
+          onPointerCancel={(event) => {
+            marquee.finish(event);
+            lanePan.current = null;
+            finishTrackDrag(false);
+          }}
+          onLostPointerCapture={(event) => {
+            marquee.finish(event);
+            lanePan.current = null;
+            finishTrackDrag(false);
+          }}
         >
+          {marquee.box && <div className="studio-selection-box" style={marquee.box} />}
           <div
             className="studio-grid"
             style={
@@ -1146,8 +1348,25 @@ export function TrackTimeline({
                     style={{
                       width: timelineWidth,
                       minHeight: Math.max(116, slotEnds.length * 100 + 16),
+                      touchAction: 'none',
                     }}
-                    onClick={seekAt}
+                    onPointerDown={(event) => {
+                      if ((event.target as HTMLElement).closest('button, .studio-clip') || locked)
+                        return;
+                      setActiveTrack(track.id);
+                      selectionBase.current = selectedIds;
+                      if (!marquee.start(event) && event.pointerType === 'touch') {
+                        lanePan.current = {
+                          pointerId: event.pointerId,
+                          x: event.clientX,
+                          y: event.clientY,
+                        };
+                        viewport.current?.setPointerCapture(event.pointerId);
+                      }
+                    }}
+                    onClick={(event) => {
+                      if (!marquee.consumeClick()) seekAt(event);
+                    }}
                     onDragOver={(event) => {
                       if (loaded && !locked) event.preventDefault();
                     }}
@@ -1160,23 +1379,50 @@ export function TrackTimeline({
                     {clips.map((clip) => (
                       <div
                         key={clip.id}
-                        className={`studio-clip ${selectedId === clip.id ? 'selected' : ''} ${drag?.id === clip.id ? 'dragging' : ''} ${drag?.guide?.targetId === clip.id ? 'snap-target' : ''} ${track.muted || (solo && solo !== track.id) ? 'is-muted' : ''}`}
+                        className={`studio-clip ${selectedIds.includes(clip.id) ? 'selected' : ''} ${drag?.group.some((item) => item.clip.id === clip.id) ? 'dragging' : ''} ${drag?.guide?.targetId === clip.id ? 'snap-target' : ''} ${track.muted || (solo && solo !== track.id) ? 'is-muted' : ''}`}
+                        data-selection-id={clip.id}
                         role="button"
                         tabIndex={0}
                         aria-label={`${clip.name} ${clip.midi ? '미디' : '오디오'} 클립`}
-                        aria-pressed={selectedId === clip.id}
+                        aria-pressed={selectedIds.includes(clip.id)}
                         title="좌우로 위치 이동 · 위아래로 트랙 이동 · 커서를 놓고 자르기"
                         style={{
-                          left: (drag?.id === clip.id ? drag.offset : clip.offset) * zoom,
+                          left:
+                            (drag?.group.some((item) => item.clip.id === clip.id)
+                              ? clip.offset + drag.offset - drag.original
+                              : clip.offset) * zoom,
                           top: 12 + (slots.get(clip.id) ?? 0) * 100,
                           width: Math.max(4, clip.duration * zoom),
                         }}
-                        onFocus={() => setSelectedId(clip.id)}
                         onPointerDown={(event) => {
                           event.stopPropagation();
-                          setSelectedId(clip.id);
+                          setActiveTrack(track.id);
+                          if (event.ctrlKey || event.metaKey) {
+                            setSelectedIds((ids) =>
+                              ids.includes(clip.id)
+                                ? ids.filter((id) => id !== clip.id)
+                                : [...ids, clip.id],
+                            );
+                            return;
+                          }
+                          if (!selectedIds.includes(clip.id)) setSelectedId(clip.id);
                           if (locked || event.button !== 0) return;
+                          onEditStart?.();
                           event.currentTarget.setPointerCapture(event.pointerId);
+                          const right = event.currentTarget.getBoundingClientRect().right;
+                          if (
+                            clip.midi &&
+                            right - event.clientX <= (event.pointerType === 'touch' ? 14 : 8)
+                          ) {
+                            resizeClip.current = {
+                              id: clip.id,
+                              pointerId: event.pointerId,
+                              x: event.clientX,
+                              scroll: viewport.current?.scrollLeft ?? 0,
+                              duration: clip.duration,
+                            };
+                            return;
+                          }
                           setDrag({
                             id: clip.id,
                             x: event.clientX,
@@ -1185,9 +1431,48 @@ export function TrackTimeline({
                             targetId: track.id,
                             original: clip.offset,
                             offset: clip.offset,
+                            group: tracks.flatMap((item) =>
+                              trackClips(item)
+                                .filter(
+                                  (candidate) =>
+                                    candidate.id === clip.id ||
+                                    (selectedIds.includes(clip.id) &&
+                                      selectedIds.includes(candidate.id)),
+                                )
+                                .map((candidate) => ({ clip: { ...candidate }, trackId: item.id })),
+                            ),
                           });
                         }}
                         onPointerMove={(event) => {
+                          const resizing = resizeClip.current;
+                          if (resizing?.id === clip.id && resizing.pointerId === event.pointerId) {
+                            const duration = Math.max(
+                              0.01,
+                              Math.min(
+                                600 - clip.sourceStart,
+                                snapOffset(
+                                  resizing.duration +
+                                    (event.clientX -
+                                      resizing.x +
+                                      (viewport.current?.scrollLeft ?? 0) -
+                                      resizing.scroll) /
+                                      zoom,
+                                  t.bpm,
+                                  t.signature,
+                                  snap && !event.altKey,
+                                ),
+                              ),
+                            );
+                            onPatchClip(clip.id, {
+                              duration,
+                              trimmed: true,
+                              midi: clip.midi && {
+                                ...clip.midi,
+                                duration: Math.max(clip.midi.duration, clip.sourceStart + duration),
+                              },
+                            });
+                            return;
+                          }
                           if (drag?.id === clip.id) {
                             const view = viewport.current;
                             if (view) {
@@ -1207,22 +1492,60 @@ export function TrackTimeline({
                           }
                         }}
                         onPointerUp={(event) => {
+                          if (resizeClip.current?.id === clip.id) {
+                            onEditEnd?.();
+                            resizeClip.current = null;
+                            return;
+                          }
                           if (drag?.id !== clip.id) return;
                           const targetId =
                             dragTarget(event.clientX, event.clientY) ?? drag.targetId;
                           if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) >= 3) {
-                            if (targetId === '__new-track__')
-                              onMoveToNewTrack(
-                                clip.id,
-                                dragPlacement(event.clientX, targetId, event.altKey).offset,
+                            const placement = dragPlacement(
+                              event.clientX,
+                              targetId,
+                              event.altKey,
+                            ).offset;
+                            const delta = placement - drag.original;
+                            if (targetId === '__new-track__') {
+                              drag.group.forEach((item) =>
+                                onMoveToNewTrack(item.clip.id, item.clip.offset + delta),
                               );
-                            else if (targetId)
-                              onMoveClip(
-                                clip.id,
-                                targetId,
-                                dragPlacement(event.clientX, targetId, event.altKey).offset,
+                            } else {
+                              const sourceIndex = tracks.findIndex((item) => item.id === track.id);
+                              const targetIndex = tracks.findIndex((item) => item.id === targetId);
+                              const indices = drag.group.map((item) =>
+                                tracks.findIndex((t) => t.id === item.trackId),
                               );
-                          } else if (!locked)
+                              const shift = Math.max(
+                                -Math.min(...indices),
+                                Math.min(
+                                  tracks.length - 1 - Math.max(...indices),
+                                  targetIndex - sourceIndex,
+                                ),
+                              );
+                              const moves = drag.group.map((item, index) => ({
+                                id: item.clip.id,
+                                targetId: tracks[indices[index] + shift].id,
+                                offset: item.clip.offset + delta,
+                              }));
+                              if (
+                                moves.every(
+                                  (move, index) =>
+                                    (tracks.find((t) => t.id === move.targetId)?.kind ===
+                                      'midi') ===
+                                    !!drag.group[index].clip.midi,
+                                )
+                              ) {
+                                if (onMoveClips) onMoveClips(moves);
+                                else
+                                  moves.forEach((move) =>
+                                    onMoveClip(move.id, move.targetId, move.offset),
+                                  );
+                              }
+                            }
+                          } else if (!locked) {
+                            setSelectedId(clip.id);
                             seekPosition(
                               Math.max(
                                 0,
@@ -1232,15 +1555,32 @@ export function TrackTimeline({
                                     zoom,
                               ),
                             );
+                          }
+                          onEditEnd?.();
                           setDrag(null);
                         }}
-                        onPointerCancel={() => setDrag(null)}
+                        onPointerCancel={() => {
+                          if (resizeClip.current?.id === clip.id)
+                            onPatchClip(clip.id, { duration: resizeClip.current.duration });
+                          onEditCancel?.();
+                          resizeClip.current = null;
+                          setDrag(null);
+                        }}
+                        onLostPointerCapture={() => {
+                          onEditCancel?.();
+                          resizeClip.current = null;
+                          setDrag(null);
+                        }}
                         onDoubleClick={(event) => {
                           event.stopPropagation();
                           if (!locked && clip.midi) onEditMidi(clip);
                         }}
                         onClick={(event) => event.stopPropagation()}
                         onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            setSelectedId(clip.id);
+                          }
                           if (locked) return;
                           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
                             event.preventDefault();
@@ -1270,6 +1610,9 @@ export function TrackTimeline({
                           }
                         }}
                       >
+                        {clip.midi && (
+                          <span className="studio-midi-resize-handle" aria-hidden="true" />
+                        )}
                         <div className="studio-clip-label">
                           <span>{clip.name}</span>
                           <small>
