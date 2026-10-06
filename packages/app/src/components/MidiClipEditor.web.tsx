@@ -25,7 +25,7 @@ export function MidiClipEditor({
   const [drawing, setDrawing] = useState(false);
   const gesture = useRef<{
     pointerId: number;
-    mode: 'move' | 'create';
+    mode: 'move' | 'create' | 'resize-start' | 'resize-end';
     note: MidiNote;
     x: number;
     y: number;
@@ -97,10 +97,18 @@ export function MidiClipEditor({
       add(Math.max(0, (Math.round(x / (pixels / 4)) * beat) / 4), high - Math.floor(y / row));
     if (!note) return;
     event.preventDefault();
+    let mode: 'move' | 'create' | 'resize-start' | 'resize-end' = existing ? 'move' : 'create';
+    if (existing) {
+      const left = (existing.start / beat) * pixels;
+      const noteWidth = Math.max(4, (existing.duration / beat) * pixels);
+      const handle = Math.min(event.pointerType === 'touch' ? 12 : 7, noteWidth / 3);
+      if (x - left <= handle) mode = 'resize-start';
+      else if (left + noteWidth - x <= handle) mode = 'resize-end';
+    }
     setSelectedId(existing ? note.id : null);
     gesture.current = {
       pointerId: event.pointerId,
-      mode: existing ? 'move' : 'create',
+      mode,
       note: { ...note },
       x,
       y,
@@ -127,6 +135,20 @@ export function MidiClipEditor({
         0,
         Math.min(127, current.note.pitch - Math.round((y - current.y) / row)),
       );
+    } else if (current.mode === 'resize-start' || current.mode === 'resize-end') {
+      const step = beat / 4;
+      const delta = Math.round((x - current.x) / (pixels / 4)) * step;
+      const end = current.note.start + current.note.duration;
+      const minimum = Math.min(step, current.note.duration);
+      if (current.mode === 'resize-start') {
+        next.start = Math.max(0, Math.min(end - minimum, current.note.start + delta));
+        next.duration = end - next.start;
+      } else {
+        next.duration = Math.max(
+          minimum,
+          Math.min(600 - next.start, current.note.duration + delta),
+        );
+      }
     } else {
       const endpoint = Math.max(0, Math.min(600, (Math.round(x / (pixels / 4)) * beat) / 4));
       next.start = Math.min(current.note.start, endpoint);
@@ -368,7 +390,15 @@ export function MidiClipEditor({
             <rect
               key={note.id}
               data-note-id={note.id}
-              style={{ touchAction: 'none' }}
+              style={{ touchAction: 'none', cursor: 'move' }}
+              onPointerMove={(event) => {
+                if (gesture.current) return;
+                const rect = event.currentTarget.getBoundingClientRect();
+                const handle = Math.min(event.pointerType === 'touch' ? 12 : 7, rect.width / 3);
+                const offset = event.clientX - rect.left;
+                event.currentTarget.style.cursor =
+                  offset <= handle || rect.width - offset <= handle ? 'ew-resize' : 'move';
+              }}
               role="button"
               tabIndex={0}
               aria-label={`${pitchName(note.pitch)}, ${Math.round((note.start / beat) * 100) / 100}박 시작`}
