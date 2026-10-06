@@ -12,13 +12,15 @@ export function SessionPicker({
   value,
   onChange,
   disabled = false,
+  compact = false,
 }: {
   value: MemberPart[];
   onChange: (value: MemberPart[]) => void;
   disabled?: boolean;
+  compact?: boolean;
 }) {
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: compact ? 8 : 10 }}>
       {choices.map(([part, label]) => {
         const selected = value.includes(part);
         return (
@@ -26,15 +28,15 @@ export function SessionPicker({
             key={part}
             accessibilityRole="checkbox"
             accessibilityLabel={label}
-          accessibilityState={{ checked: selected, disabled }}
-          aria-checked={selected}
+            accessibilityState={{ checked: selected, disabled }}
+            aria-checked={selected}
             disabled={disabled}
             onPress={() =>
               onChange(selected ? value.filter((item) => item !== part) : [...value, part])
             }
             style={{
-              paddingHorizontal: 18,
-              paddingVertical: 13,
+              paddingHorizontal: compact ? 12 : 18,
+              paddingVertical: compact ? 11 : 13,
               borderWidth: 1,
               borderColor: selected ? '#4876dd' : '#dce3ed',
               backgroundColor: selected ? '#edf3ff' : '#fff',
@@ -45,7 +47,7 @@ export function SessionPicker({
             <Text
               style={{
                 color: selected ? '#315fc6' : '#46586c',
-                fontSize: 15,
+                fontSize: compact ? 14 : 15,
                 fontWeight: selected ? '700' : '400',
               }}
             >
