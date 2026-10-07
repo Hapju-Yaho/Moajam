@@ -1,5 +1,14 @@
-import { useEffect, useLayoutEffect, useId, useRef, useState, type PropsWithChildren } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useId,
+  useRef,
+  useState,
+  type PropsWithChildren,
+  type ReactNode,
+} from 'react';
 import './ScoreEditorViewport.web.css';
+import { ScoreEditorLayoutContext, type ScoreInspectorTab } from './ScoreEditorLayout.web';
 
 const shortcuts = [
   [
@@ -30,10 +39,11 @@ const shortcuts = [
   [
     '주법과 연결',
     [
-      ['S', '스타카토 · 같은 박 전체'],
+      ['S', '스타카토 · 드럼은 선택한 타격의 초크'],
       ['X', '데드노트 · 선택한 음'],
       ['O', '고스트노트 · 선택한 음'],
-      ['H / P / J / T', '해머링 / 풀링 / 슬라이드 / 붙임줄'],
+      ['H 또는 P', '선택 구간 해머링·풀링 자동 연결 / 해제'],
+      ['J / T', '레가토 슬라이드 / 붙임줄'],
       ['L', '선택 구간의 이음줄(슬러) 켜기·끄기'],
     ],
   ],
@@ -48,13 +58,22 @@ const shortcuts = [
   ],
 ] as const;
 
-export function ScoreEditorViewport({ children }: PropsWithChildren) {
+export function ScoreEditorViewport({
+  children,
+  heading,
+  title = '나의 악보',
+  shared = false,
+  status,
+}: PropsWithChildren<{ heading?: ReactNode; title?: string; shared?: boolean; status?: string }>) {
   const root = useRef<HTMLDivElement>(null);
   const fullscreenButton = useRef<HTMLButtonElement>(null);
   const helpButton = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const [expanded, setExpanded] = useState(false);
   const titleId = useId();
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspector, setInspector] = useState<ScoreInspectorTab>('notes');
+  const [filePanel, setFilePanel] = useState<'file' | null>(null);
   // ScrollView uses translateZ(0), which contains fixed descendants. The top layer
   // escapes that containing block without remounting the editor or using fullscreen.
   useLayoutEffect(() => {
@@ -94,6 +113,10 @@ export function ScoreEditorViewport({ children }: PropsWithChildren) {
         return;
       event.preventDefault();
       event.stopPropagation();
+      if (filePanel) {
+        setFilePanel(null);
+        return;
+      }
       setExpanded(false);
       fullscreenButton.current?.focus({ preventScroll: true });
     };
@@ -107,90 +130,130 @@ export function ScoreEditorViewport({ children }: PropsWithChildren) {
       });
       window.removeEventListener('keydown', escape, true);
     };
-  }, [expanded]);
+  }, [expanded, filePanel]);
 
   const toggleFullscreen = () => setExpanded((value) => !value);
 
   return (
-    <div
-      ref={root}
-      className="score-editor-viewport"
-      data-expanded={expanded}
-      popover={expanded ? 'manual' : undefined}
+    <ScoreEditorLayoutContext.Provider
+      value={{
+        expanded,
+        inspector,
+        setInspector,
+        filePanel,
+        setFilePanel,
+        inspectorOpen,
+        setInspectorOpen,
+      }}
     >
-      <div className="score-editor-viewbar" role="toolbar" aria-label="악보 화면과 도움말">
-        <span>{expanded ? '넓게 보는 악보 편집' : '악보 편집 도구'}</span>
-        <button
-          ref={helpButton}
-          type="button"
-          aria-haspopup="dialog"
-          onClick={() => dialog.current?.showModal()}
-        >
-          단축키
-        </button>
-        <button
-          ref={fullscreenButton}
-          type="button"
-          aria-pressed={expanded}
-          onClick={() => void toggleFullscreen()}
-        >
-          {expanded ? '원래 화면' : '악보 크게 보기'}
-        </button>
-      </div>
-      <div className="score-editor-content">{children}</div>
-      <dialog
-        ref={dialog}
-        className="score-shortcuts-dialog"
-        aria-labelledby={titleId}
-        onClose={() => helpButton.current?.focus({ preventScroll: true })}
-        onClick={(event) => {
-          const bounds = event.currentTarget.getBoundingClientRect();
-          if (
-            event.target === event.currentTarget &&
-            (event.clientX < bounds.left ||
-              event.clientX > bounds.right ||
-              event.clientY < bounds.top ||
-              event.clientY > bounds.bottom)
-          )
-            dialog.current?.close();
-        }}
+      <div
+        ref={root}
+        className="score-editor-viewport"
+        data-expanded={expanded}
+        data-inspector-open={inspectorOpen}
+        data-inspector={inspector}
+        data-file-panel={filePanel ?? 'closed'}
+        popover={expanded ? 'manual' : undefined}
       >
-        <header>
-          <h2 id={titleId}>악보 편집 단축키</h2>
-          <button
-            type="button"
-            onClick={() => dialog.current?.close()}
-            aria-label="단축키 안내 닫기"
-          >
-            닫기
-          </button>
+        <header className="score-editor-viewbar">
+          <div className="score-expanded-heading">
+            <span className="score-expanded-brand">
+              <svg viewBox="0 0 30 26" aria-hidden="true">
+                <path d="M3 22 6 4l9 12L24 4l3 18" />
+              </svg>{' '}
+              Moajam
+            </span>
+            <strong>{title || '제목 없는 악보'}</strong>
+            <span className="score-expanded-badge">{shared ? '밴드 악보' : '개인 악보'}</span>
+            {status && (
+              <span className="score-expanded-save" role="status">
+                {status}
+              </span>
+            )}
+          </div>
+          <div className="score-normal-heading">{heading}</div>
+          <div className="score-editor-view-actions" role="toolbar" aria-label="악보 화면과 도움말">
+            <div className="score-expanded-file-buttons">
+              <button
+                aria-expanded={filePanel === 'file'}
+                onClick={() => setFilePanel(filePanel === 'file' ? null : 'file')}
+              >
+                파일 · 내보내기⌄
+              </button>
+            </div>
+            <button
+              ref={helpButton}
+              type="button"
+              aria-haspopup="dialog"
+              onClick={() => dialog.current?.showModal()}
+            >
+              단축키
+            </button>
+            <button
+              ref={fullscreenButton}
+              type="button"
+              aria-pressed={expanded}
+              onClick={() => void toggleFullscreen()}
+            >
+              {expanded ? '원래 화면' : '악보 크게 보기'}
+            </button>
+          </div>
         </header>
-        <p>
-          악보의 칸을 클릭한 뒤 사용하세요. 텍스트 입력 중에는 적용되지 않아요. Mac에서는 Ctrl 대신
-          ⌘를 사용해요.
-        </p>
-        <div className="score-shortcuts-groups">
-          {shortcuts.map(([title, items]) => (
-            <section key={title}>
-              <h3>{title}</h3>
-              <dl>
-                {items.map(([key, description]) => (
-                  <div key={key}>
-                    <dt>
-                      <kbd>{key}</kbd>
-                    </dt>
-                    <dd>{description}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ))}
-        </div>
-        <p>
-          여러 박을 선택한 상태에서 Delete를 누르면 선택 구간이 삭제되고 뒤 음표가 당겨져요. 연결
-          주법은 첫 음표를 선택한 뒤 적용하세요.
-        </p>
-      </dialog>
-    </div>
+        <div className="score-editor-content">{children}</div>
+        <dialog
+          ref={dialog}
+          className="score-shortcuts-dialog"
+          aria-labelledby={titleId}
+          onClose={() => helpButton.current?.focus({ preventScroll: true })}
+          onClick={(event) => {
+            const bounds = event.currentTarget.getBoundingClientRect();
+            if (
+              event.target === event.currentTarget &&
+              (event.clientX < bounds.left ||
+                event.clientX > bounds.right ||
+                event.clientY < bounds.top ||
+                event.clientY > bounds.bottom)
+            )
+              dialog.current?.close();
+          }}
+        >
+          <header>
+            <h2 id={titleId}>악보 편집 단축키</h2>
+            <button
+              type="button"
+              onClick={() => dialog.current?.close()}
+              aria-label="단축키 안내 닫기"
+            >
+              닫기
+            </button>
+          </header>
+          <p>
+            악보의 칸을 클릭한 뒤 사용하세요. 텍스트 입력 중에는 적용되지 않아요. Mac에서는 Ctrl
+            대신 ⌘를 사용해요.
+          </p>
+          <div className="score-shortcuts-groups">
+            {shortcuts.map(([title, items]) => (
+              <section key={title}>
+                <h3>{title}</h3>
+                <dl>
+                  {items.map(([key, description]) => (
+                    <div key={key}>
+                      <dt>
+                        <kbd>{key}</kbd>
+                      </dt>
+                      <dd>{description}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))}
+          </div>
+          <p>
+            여러 박을 선택한 상태에서 Delete를 누르면 선택 구간이 삭제되고 뒤 음표가 당겨져요. 연결
+            주법은 첫 음표를 선택한 뒤 적용하세요.
+          </p>
+        </dialog>
+      </div>
+    </ScoreEditorLayoutContext.Provider>
   );
 }

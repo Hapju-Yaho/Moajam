@@ -1,4 +1,5 @@
 import { isSoundfontInstrument, type SoundfontInstrumentId } from './soundfontCatalog';
+import { prepareDrumKit } from './drumKit.web';
 import type { PreparedInstrumentSample, PreparedPlaybackInstrument } from './instrumentSample.web';
 
 const banks = new Map<SoundfontInstrumentId, Promise<Map<number, string>>>();
@@ -62,6 +63,7 @@ export async function prepareSoundfontInstrument(
   id: SoundfontInstrumentId,
   pitches: number[],
 ): Promise<PreparedPlaybackInstrument> {
+  if (id === 'drum_kit') return prepareDrumKit();
   const bank = await loadBank(id);
   const roots = [...bank.keys()];
   const nearest = (pitch: number) =>

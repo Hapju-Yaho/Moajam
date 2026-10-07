@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ko">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>드럼 키보드 입력 검증</title>
+  <div id="root"></div>
+  <script type="module">
+    import { injectIntoGlobalHook } from '/@react-refresh';
+    injectIntoGlobalHook(window);
+    window.$RefreshReg$ = () => {};
+    window.$RefreshSig$ = () => (type) => type;
+    await import('./score-drums.browser.tsx');
+  </script>
+</html>

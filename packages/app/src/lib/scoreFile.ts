@@ -1,3 +1,5 @@
+import { validNaturalPitch } from './score';
+import { readGuitarToneChanges } from './scoreGuitar';
 import {
   isScoreBeat,
   scoreRhythmFeels,
@@ -5,12 +7,17 @@ import {
   cleanScoreConnections,
   scoreConnectionLabels,
   scoreInstruments,
+  scoreInstrument,
+  validDrumTechnique,
+  readScoreMultiMeasureRests,
+  readScoreCapos,
   SCORE_DIVISIONS,
   type Score,
   type ScoreNote,
   type ScoreTone,
 } from './score';
 import { MIN_SAMPLE_REGION, type InstrumentSample } from './samplePitch';
+import { readNoteExpression, readScoreDirections, readScoreNavigation } from './scoreExpression';
 import { isSoundfontInstrument } from './soundfontCatalog';
 
 export type ScoreDocument = {
@@ -44,8 +51,16 @@ function boolean(value: unknown): boolean {
 }
 function tone(value: unknown): ScoreTone {
   const row = record(value);
+  if (row.naturalPitch !== undefined && !validNaturalPitch(Number(row.pitch), row.naturalPitch))
+    throw invalid();
+  if (row.drumTechnique !== undefined && !validDrumTechnique(Number(row.pitch), row.drumTechnique))
+    throw invalid();
   return {
     pitch: integer(row.pitch, 0, 127),
+    ...(row.naturalPitch === undefined ? {} : { naturalPitch: row.naturalPitch as number }),
+    ...(row.drumTechnique === undefined
+      ? {}
+      : { drumTechnique: row.drumTechnique as ScoreTone['drumTechnique'] }),
     ...(row.string === undefined ? {} : { string: integer(row.string, 1, 6) }),
     ...(row.fret === undefined ? {} : { fret: integer(row.fret, 0, 36) }),
     ...(row.ghost === undefined ? {} : { ghost: boolean(row.ghost) }),
@@ -78,7 +93,8 @@ export function validateScoreDocument(value: unknown): Score {
       part = text(n.part, 40);
     if (!id || ids.has(id) || !parts.includes(part)) throw invalid();
     ids.add(id);
-    const beats = number(n.beats, 1 / SCORE_DIVISIONS, 64);
+    const beats = number(n.beats, n.graceBeats === undefined ? 1 / SCORE_DIVISIONS : 0, 64);
+    if (n.graceBeats !== undefined && (beats !== 0 || n.rest || n.blank)) throw invalid();
     if (!isScoreBeat(beats)) throw invalid();
     const note: ScoreNote = {
       id,
@@ -87,6 +103,7 @@ export function validateScoreDocument(value: unknown): Score {
       beats: scoreBeat(beats),
       rest: boolean(n.rest),
       accent: boolean(n.accent),
+      ...readNoteExpression(n),
       chord: text(n.chord, 1000),
       lyric: text(n.lyric, 10000),
     };
@@ -101,6 +118,10 @@ export function validateScoreDocument(value: unknown): Score {
       note.tuplet = 3;
     }
     if (n.slurTo !== undefined) note.slurTo = text(n.slurTo, 200);
+    if (n.slideIn !== undefined) {
+      if (n.slideIn !== 'up' && n.slideIn !== 'down') throw invalid();
+      note.slideIn = n.slideIn;
+    }
     if (n.slideOut !== undefined) {
       if (n.slideOut !== 'up' && n.slideOut !== 'down') throw invalid();
       note.slideOut = n.slideOut;
@@ -128,6 +149,45 @@ export function validateScoreDocument(value: unknown): Score {
     ),
   };
   const isPart = (key: string) => parts.includes(key);
+  if (row.directions !== undefined) score.directions = readScoreDirections(row.directions, parts);
+  if (row.guitarToneChanges !== undefined)
+    score.guitarToneChanges = readGuitarToneChanges(row.guitarToneChanges, parts);
+  if (row.navigation !== undefined) score.navigation = readScoreNavigation(row.navigation);
+  if (row.keyboardStaves !== undefined) {
+    score.keyboardStaves = map(row.keyboardStaves, isPart, (value) => {
+      const left = text(value, 40);
+      if (!isPart(left)) throw invalid();
+      return left;
+    });
+    const lefts = Object.values(score.keyboardStaves);
+    if (
+      new Set(lefts).size !== lefts.length ||
+      lefts.some((left) => Object.hasOwn(score.keyboardStaves!, left))
+    )
+      throw invalid();
+  }
+  if (row.drumVoices !== undefined) {
+    score.drumVoices = map(row.drumVoices, isPart, (value) => {
+      const lower = text(value, 40);
+      if (!isPart(lower)) throw invalid();
+      return lower;
+    });
+    const pairs = [
+      ...Object.entries(score.keyboardStaves ?? {}),
+      ...Object.entries(score.drumVoices),
+    ];
+    const grouped = pairs.flat();
+    if (new Set(grouped).size !== grouped.length) throw invalid();
+  }
+  if (row.partMix !== undefined)
+    score.partMix = map(row.partMix, isPart, (value) => {
+      const mix = record(value);
+      return {
+        volume: number(mix.volume, 0, 1),
+        muted: boolean(mix.muted),
+        solo: boolean(mix.solo),
+      };
+    });
   if (row.timeSignature !== undefined) {
     const time = record(row.timeSignature);
     const beatType = integer(time.beatType, 2, 16);
@@ -135,6 +195,7 @@ export function validateScoreDocument(value: unknown): Score {
     score.timeSignature = { beats: integer(time.beats, 1, 16), beatType };
   }
   if (row.keySignature !== undefined) score.keySignature = integer(row.keySignature, -7, 7);
+  if (row.systemGap !== undefined) score.systemGap = integer(row.systemGap, 0, 160);
   if (row.rhythmFeel !== undefined) {
     if (typeof row.rhythmFeel !== 'string' || !Object.hasOwn(scoreRhythmFeels, row.rhythmFeel))
       throw invalid();
@@ -183,6 +244,7 @@ export function validateScoreDocument(value: unknown): Score {
       if (!Array.isArray(value) || value.length > 32000) throw invalid();
       return value.map((n) => integer(n, 1, 16));
     });
+  if (row.capos !== undefined) score.capos = readScoreCapos(row.capos, score.parts);
   if (row.equalWidthRows !== undefined)
     score.equalWidthRows = map(row.equalWidthRows, isPart, (value) => {
       if (!Array.isArray(value) || value.length > 32000) throw invalid();
@@ -226,7 +288,15 @@ export function validateScoreDocument(value: unknown): Score {
   if (row.referenceAudioOffset !== undefined)
     score.referenceAudioOffset = number(row.referenceAudioOffset, -36000, 36000);
   const cleaned = cleanScoreConnections(score);
+  if (row.multiMeasureRests !== undefined)
+    score.multiMeasureRests = readScoreMultiMeasureRests(row.multiMeasureRests, score.parts);
   if (cleaned !== score) throw invalid();
+  for (const [upper, lower] of Object.entries(score.drumVoices ?? {}))
+    if (
+      scoreInstrument(score, upper).id !== 'drums' ||
+      scoreInstrument(score, lower).id !== 'drums'
+    )
+      throw invalid();
   return score;
 }
 

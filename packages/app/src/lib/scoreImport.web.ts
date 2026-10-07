@@ -1,8 +1,14 @@
+import { readNoteExpression, readScoreDirections, readScoreNavigation } from './scoreExpression';
+import { readGuitarToneChanges } from './scoreGuitar';
 import {
+  readScoreMultiMeasureRests,
+  readScoreCapos,
   isScoreBeat,
   scoreRhythmFeels,
   scoreBeat,
   noteTones,
+  validDrumTechnique,
+  validNaturalPitch,
   connectionError,
   type ScoreConnectionType,
   scoreInstruments,
@@ -17,13 +23,44 @@ export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   const invalid = () =>
     new Error(
-      '일정한 조표·박자표의 MusicXML을 선택해주세요. 같은 박의 코드는 지원하며, 셋잇단음표(3:2)를 지원하며 다성부·꾸밈음·다른 잇단음표는 아직 지원하지 않습니다.',
+      '일정한 조표·박자표의 MusicXML을 선택해주세요. 같은 박의 코드는 지원하며, 셋잇단음표(3:2)를 지원하며 다성부·다른 잇단음표는 아직 지원하지 않습니다.',
     );
+  // Our compact slide is a grace note plus one timed destination; it never consumes another beat.
+  const graceSlides = new Map<Element, NonNullable<ScoreNote['graceSlide']>>();
+  for (const node of doc.querySelectorAll('note[id^="moajam-grace-slide-"]')) {
+    const target = node.nextElementSibling;
+    const stop = target?.querySelector('slide[type="stop"][number="6"]');
+    if (
+      !node.querySelector('grace') ||
+      node.querySelector('duration') ||
+      !target ||
+      target.tagName !== 'note' ||
+      !stop ||
+      !node.querySelector('slide[type="start"][number="6"]')
+    )
+      throw invalid();
+    const step = node.querySelector('pitch step')?.textContent ?? '';
+    const octave = Number(node.querySelector('pitch octave')?.textContent);
+    const pitch =
+      (octave + 1) * 12 +
+      ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[step as 'C'] ?? NaN) +
+      Number(node.querySelector('pitch alter')?.textContent ?? 0);
+    const metadata = readNoteExpression({
+      graceSlide: {
+        pitch,
+        string: Number(node.querySelector('technical string')?.textContent),
+        fret: Number(node.querySelector('technical fret')?.textContent),
+      },
+    });
+    graceSlides.set(target, metadata.graceSlide!);
+    stop.remove();
+    node.remove();
+  }
   if (
     doc.doctype ||
     doc.querySelector('parsererror') ||
     !doc.querySelector('score-partwise') ||
-    doc.querySelector('backup,forward,grace')
+    doc.querySelector('backup,forward')
   )
     throw invalid();
   const times = [...doc.querySelectorAll('time')].map((time) => ({
@@ -146,7 +183,50 @@ export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID
     (node) => node.querySelector('part-name')?.textContent?.trim() || 'Part',
   );
   if (!parts.length || parts.length > 16 || new Set(parts).size !== parts.length) throw invalid();
+  const keyboardStaves: Record<string, string> = {};
+  const keyboardMetadata = doc.querySelector(
+    'miscellaneous-field[name="moajam-keyboard-staves"]',
+  )?.textContent;
+  if (keyboardMetadata) {
+    const value: unknown = JSON.parse(keyboardMetadata);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
+    for (const [right, left] of Object.entries(value)) {
+      if (
+        typeof left !== 'string' ||
+        !parts.includes(right) ||
+        !parts.includes(left) ||
+        right === left ||
+        Object.hasOwn(value, left) ||
+        Object.values(keyboardStaves).includes(left)
+      )
+        throw invalid();
+      keyboardStaves[right] = left;
+    }
+  }
   const instruments: Record<string, string> = {};
+  const drumVoices: Record<string, string> = {};
+  const drumMetadata = doc.querySelector(
+    'miscellaneous-field[name="moajam-drum-voices"]',
+  )?.textContent;
+  if (drumMetadata) {
+    const value: unknown = JSON.parse(drumMetadata);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
+    const occupied = new Set(Object.entries(keyboardStaves).flat());
+    for (const [upper, lower] of Object.entries(value)) {
+      if (
+        typeof lower !== 'string' ||
+        !parts.includes(upper) ||
+        !parts.includes(lower) ||
+        upper === lower ||
+        occupied.has(upper) ||
+        occupied.has(lower)
+      )
+        throw invalid();
+      occupied.add(upper);
+      occupied.add(lower);
+      drumVoices[upper] = lower;
+    }
+  }
   const notes: ScoreNote[] = [];
   const measureChords: NonNullable<Score['measureChords']> = {};
   const beatChords: NonNullable<Score['beatChords']> = {};
@@ -168,6 +248,15 @@ export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID
     const part = parts[index];
     const instrument = definitions[index].querySelector('instrument-name')?.textContent;
     if (instrument && instrument in scoreInstruments) instruments[part] = instrument;
+    const percussionPitches = new Map(
+      [...definitions[index].querySelectorAll('midi-instrument')]
+        .filter((node) => node.querySelector('midi-unpitched'))
+        .map((node) => [
+          node.getAttribute('id'),
+          Number(node.querySelector('midi-unpitched')!.textContent) - 1,
+        ]),
+    );
+    if (element.querySelector('unpitched')) instruments[part] = 'drums';
     const voices = new Set(
       [...element.querySelectorAll('note voice')].map((node) => node.textContent),
     );
@@ -261,15 +350,49 @@ export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID
       }[] = [];
       for (const node of measure.querySelectorAll('note')) {
         const rest = !!node.querySelector('rest');
-        if (!rest && (!node.querySelector('pitch step') || !node.querySelector('pitch octave')))
+        const unpitched = !!node.querySelector('unpitched');
+        if (
+          !rest &&
+          !unpitched &&
+          (!node.querySelector('pitch step') || !node.querySelector('pitch octave'))
+        )
           throw invalid();
         const step = node.querySelector('pitch step')?.textContent ?? 'C';
         const octave = Number(node.querySelector('pitch octave')?.textContent ?? 4);
-        const pitch =
-          (octave + 1) * 12 +
-          ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[step as 'C'] ?? NaN) +
-          Number(node.querySelector('pitch alter')?.textContent ?? 0);
-        const beats = Number(node.querySelector('duration')?.textContent) / division;
+        const pitch = unpitched
+          ? (percussionPitches.get(node.querySelector('instrument')?.getAttribute('id') ?? null) ??
+            NaN)
+          : (octave + 1) * 12 +
+            ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[step as 'C'] ?? NaN) +
+            Number(node.querySelector('pitch alter')?.textContent ?? 0);
+        const grace = !!node.querySelector('grace');
+        const beats = grace ? 0 : Number(node.querySelector('duration')?.textContent) / division;
+        const graceBeats = grace
+          ? Number(
+              (node.id.startsWith('moajam-grace-note-')
+                ? Number(node.id.split('-').at(-1)) / SCORE_DIVISIONS
+                : undefined) ??
+                {
+                  whole: 4,
+                  half: 2,
+                  quarter: 1,
+                  eighth: 0.5,
+                  '16th': 0.25,
+                  '32nd': 0.125,
+                  '64th': 0.0625,
+                }[node.querySelector('type')?.textContent ?? 'eighth'] ??
+                0.5,
+            )
+          : undefined;
+        if (
+          grace &&
+          (rest ||
+            node.querySelector('duration') ||
+            !Number.isFinite(graceBeats) ||
+            graceBeats! <= 0 ||
+            graceBeats! > 64)
+        )
+          throw invalid();
         const modification = node.querySelector('time-modification');
         if (
           modification &&
@@ -280,7 +403,7 @@ export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID
         const tuplet = modification ? (3 as const) : undefined;
         if (
           !Number.isFinite(beats) ||
-          beats <= 0 ||
+          (beats <= 0 && !grace) ||
           beats > 4 ||
           !isScoreBeat(beats) ||
           !Number.isInteger(pitch) ||
@@ -288,11 +411,46 @@ export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID
           pitch > 127
         )
           throw invalid();
+        const naturalPitch = pitch - Number(node.querySelector('pitch alter')?.textContent ?? 0);
         const tone: ScoreTone = {
           pitch,
+          ...(!rest &&
+          !unpitched &&
+          !node.querySelector('technical string') &&
+          validNaturalPitch(pitch, naturalPitch)
+            ? { naturalPitch }
+            : {}),
           ghost: !rest && node.querySelector('notehead')?.getAttribute('parentheses') === 'yes',
-          dead: !rest && node.querySelector('notehead')?.textContent?.trim() === 'x',
+          dead: !rest && !unpitched && node.querySelector('notehead')?.textContent?.trim() === 'x',
         };
+        if (unpitched) {
+          const technique = node.querySelector('technical half-muted')
+            ? 'half-open'
+            : node.querySelector('technical stopped')
+              ? 'closed'
+              : pitch === 44 && node.querySelector('technical open')
+                ? 'open'
+                : pitch === 38 && node.querySelector('notehead')?.textContent?.trim() === 'x'
+                  ? 'rimshot'
+                  : ([...node.querySelectorAll('technical other-technical')]
+                      .map((item) => item.textContent)
+                      .find((value) =>
+                        [
+                          'choke',
+                          'rimshot',
+                          'double',
+                          'buzz',
+                          'flam',
+                          'drag',
+                          'roll2',
+                          'roll3',
+                        ].includes(value ?? ''),
+                      ) ?? undefined);
+          if (technique) {
+            if (!validDrumTechnique(pitch, technique)) throw invalid();
+            tone.drumTechnique = technique;
+          }
+        }
         const string = node.querySelector('technical string'),
           fret = node.querySelector('technical fret');
         if (string && fret) {
@@ -361,20 +519,38 @@ export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID
               id: makeId(),
               part,
               pitch,
+              ...(graceSlides.has(node) ? { graceSlide: graceSlides.get(node) } : {}),
               beats: scoreBeat(beats),
+              ...(grace ? { graceBeats } : {}),
               tuplet,
               rest,
               blank: rest && node.getAttribute('print-object') === 'no',
               tones: rest ? [] : [tone],
               chord:
                 node.previousElementSibling?.id.startsWith('moajam-measure-chord-') ||
-                node.previousElementSibling?.id.startsWith('moajam-beat-chord-')
+                node.previousElementSibling?.id.startsWith('moajam-beat-chord-') ||
+                node.previousElementSibling?.id.startsWith('moajam-capo-') ||
+                node.previousElementSibling?.id.startsWith('moajam-expression-') ||
+                node.previousElementSibling?.id.startsWith('moajam-guitar-tone-')
                   ? ''
                   : (node.previousElementSibling?.querySelector('direction-type words')
                       ?.textContent ?? ''),
               lyric: node.querySelector('lyric text')?.textContent ?? '',
               accent: !!node.querySelector('accent'),
-              staccato: !rest && !!node.querySelector('staccato'),
+              marcato: !!node.querySelector('strong-accent'),
+              staccato:
+                !rest &&
+                (tone.drumTechnique !== 'choke' ||
+                  [...node.querySelectorAll('technical other-technical')].some(
+                    (item) => item.textContent === 'moajam-beat-staccato',
+                  )) &&
+                !!node.querySelector('staccato'),
+              slideIn:
+                !rest && node.querySelector('scoop')
+                  ? 'up'
+                  : !rest && node.querySelector('plop')
+                    ? 'down'
+                    : undefined,
               slideOut:
                 !rest && node.querySelector('doit')
                   ? 'up'
@@ -456,8 +632,48 @@ export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID
     if (tied || pendingConnection || pendingSlurs.size) throw invalid();
   }
   if (notes.length > 2000) throw invalid();
+  for (const [upper, lower] of Object.entries(drumVoices))
+    if (instruments[upper] !== 'drums' || instruments[lower] !== 'drums') throw invalid();
+  const expression = JSON.parse(
+    doc.querySelector('miscellaneous-field[name="moajam-expression"]')?.textContent || '{}',
+  );
+  const directions = readScoreDirections(expression.directions ?? {}, parts),
+    navigation = readScoreNavigation(expression.navigation ?? {});
+  if (expression.notes !== undefined) {
+    if (!Array.isArray(expression.notes) || expression.notes.length !== parts.length)
+      throw invalid();
+    parts.forEach((part, index) => {
+      const metadata = expression.notes[index];
+      if (!Array.isArray(metadata) || metadata.length > 2000) throw invalid();
+      let beat = 0;
+      const graceEntries = metadata.filter((e) => e?.beats === 0 && e?.graceBeats !== undefined);
+      for (const note of notes.filter((n) => n.part === part)) {
+        const entry =
+          note.graceBeats !== undefined
+            ? graceEntries.shift()
+            : metadata.find(
+                (e) =>
+                  e &&
+                  typeof e.beat === 'number' &&
+                  typeof e.beats === 'number' &&
+                  e.beat <= beat &&
+                  beat < e.beat + e.beats,
+              );
+        if (entry) Object.assign(note, readNoteExpression(entry));
+        beat = scoreBeat(beat + note.beats);
+      }
+    });
+  }
+  if (
+    expression.systemGap !== undefined &&
+    (!Number.isInteger(expression.systemGap) ||
+      expression.systemGap < 0 ||
+      expression.systemGap > 160)
+  )
+    throw invalid();
   return {
     title: doc.querySelector('work-title')?.textContent || '가져온 악보',
+    ...(expression.systemGap === undefined ? {} : { systemGap: expression.systemGap }),
     bpm: tempos[0] ?? 120,
     timeSignature,
     keySignature,
@@ -468,8 +684,26 @@ export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID
     barlines,
     parts,
     instruments,
+    capos: readScoreCapos(
+      JSON.parse(
+        doc.querySelector('miscellaneous-field[name="moajam-capos"]')?.textContent || '{}',
+      ),
+      parts,
+    ),
+    keyboardStaves,
+    drumVoices,
+    multiMeasureRests: readScoreMultiMeasureRests(
+      JSON.parse(
+        doc.querySelector('miscellaneous-field[name="moajam-multi-measure-rests"]')?.textContent ||
+          '{}',
+      ),
+      parts,
+    ),
     measureChords,
     beatChords,
+    directions,
+    navigation,
+    guitarToneChanges: readGuitarToneChanges(expression.guitarToneChanges ?? {}, parts),
     notes,
     sync: {},
   };

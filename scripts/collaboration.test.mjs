@@ -1,14 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { Buffer } from 'node:buffer';
 import { URL } from 'node:url';
 import test from 'node:test';
-import ts from 'typescript';
+import { moduleUrl } from './load-typescript.mjs';
 async function source(path) {
-  const { outputText } = ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-  });
-  return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+  return import(moduleUrl(new URL(path, import.meta.url)));
 }
 const { canWriteDocument, isWorkspaceDocumentKey } = await source(
   '../apps/server/src/workspaces/document-policy.ts',
@@ -37,7 +32,7 @@ test('song session reflections have scoped keys and bounded content', () => {
   assert.equal(canWriteDocument('song/s/session/r/memo', '', '곡별 회고', 'u', false), true);
   assert.equal(canWriteDocument('song/s/session/r/memo', '', 'x'.repeat(50001), 'u', false), false);
 });
-const { scoreToMusicXml } = await source('../packages/app/src/lib/score.ts');
+const { scoreToMusicXml, SCORE_DIVISIONS } = await source('../packages/app/src/lib/score.ts');
 test('MusicXML splits notes crossing bar lines with ties and escapes metadata', () => {
   const notes = [3, 2].map((beats, index) => ({
     id: String(index),
@@ -59,7 +54,7 @@ test('MusicXML splits notes crossing bar lines with ties and escapes metadata', 
   const measures = [...xml.matchAll(/<measure[^>]*>(.*?)<\/measure>/g)].map((m) =>
     [...m[1].matchAll(/<duration>(\d+)<\/duration>/g)].reduce((sum, n) => sum + Number(n[1]), 0),
   );
-  assert.deepEqual(measures, [16, 16]);
+  assert.deepEqual(measures, [4 * SCORE_DIVISIONS, 4 * SCORE_DIVISIONS]);
 });
 test('new opinions cannot forge another user’s reaction or reply', () => {
   const row = { id: 'a', authorId: 'u', text: 'Hello', likes: ['v'] };

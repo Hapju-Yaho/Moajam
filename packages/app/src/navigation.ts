@@ -30,6 +30,7 @@ export function parseSongTab(value?: string | null): SongTab {
   return songTabs.includes(value as SongTab) ? (value as SongTab) : 'main';
 }
 export interface NavigationOptions {
+  scoreView?: 'applied';
   id?: string;
   workspaceId?: string;
   songTab?: SongTab;
@@ -37,6 +38,7 @@ export interface NavigationOptions {
 }
 
 export interface ScreenProps {
+  scoreView?: 'applied';
   navigate: (route: AppRoute, options?: NavigationOptions) => void;
   entityId?: string;
   songTab?: SongTab;
@@ -72,7 +74,9 @@ export function buildAppPath(
       ? `/me/practice?${new URLSearchParams({ workspaceId: bandId, songId: id })}`
       : '/me/practice';
   const paths: Partial<Record<AppRoute, string>> = {
-    'band-score-editor': id ? `${base}/songs/${encodeURIComponent(id)}/score` : `${base}/practice`,
+    'band-score-editor': id
+      ? `${base}/songs/${encodeURIComponent(id)}/score${options?.scoreView === 'applied' ? '?view=applied' : ''}`
+      : `${base}/practice`,
     home: base,
     recommendations: `${base}/songs`,
     songs: `${base}/songs`,

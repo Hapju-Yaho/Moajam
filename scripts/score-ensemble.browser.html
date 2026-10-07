@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ko">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  /><title>합주 악보 검증</title>
+  <div id="root"></div>
+  <script type="module">
+    import { injectIntoGlobalHook } from '/@react-refresh';
+    injectIntoGlobalHook(window);
+    window.$RefreshReg$ = () => {};
+    window.$RefreshSig$ = () => (type) => type;
+    await import('./score-ensemble.browser.tsx');
+  </script>
+</html>

@@ -1,5 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { jsPDF } from 'jspdf';
+import { ScoreEnsemble } from '../components/ScoreEnsemble.web';
+import { scorePartStaves, scoreVisibleParts } from './scoreParts';
 import { GuitarStaff } from '../components/GuitarStaff.web';
 import { pitchName, scoreInstrument, scoreMeasureCount, type Score } from './score';
 
@@ -9,11 +11,18 @@ export function scorePdfMarkup(
   part: string,
   showTab: boolean,
   layoutWidth = 800,
+  parts = scorePartStaves(score, part),
 ): string {
   // Share the editor's effective drawing width, without its selection or cursor.
   if (!Number.isFinite(layoutWidth) || layoutWidth <= 0) layoutWidth = 800;
+  const drumPair = Object.entries(score.drumVoices ?? {}).find((pair) => pair.includes(part));
+  const Staff =
+    parts.length > 1 && !parts.every((name) => drumPair?.includes(name))
+      ? ScoreEnsemble
+      : GuitarStaff;
   return renderToStaticMarkup(
-    <GuitarStaff
+    <Staff
+      parts={parts}
       score={score}
       part={part}
       selected={null}
@@ -116,6 +125,7 @@ export async function createScorePdf(
   parts: string[],
   showTab: boolean,
   layoutWidth = 800,
+  ensemble = false,
 ): Promise<Blob> {
   if (!parts.length || parts.some((part) => !score.parts.includes(part)))
     throw new Error('PDF에 저장할 파트를 선택해주세요.');
@@ -127,14 +137,44 @@ export async function createScorePdf(
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
   pdf.setProperties({ title: score.title || '나의 악보', creator: 'Moajam' });
   let first = true;
-  for (const part of parts) {
+  const groups = ensemble
+    ? [parts]
+    : scoreVisibleParts(score)
+        .filter((p) => scorePartStaves(score, p).some((s) => parts.includes(s)))
+        .map((p) => scorePartStaves(score, p));
+  for (const group of groups) {
+    const part = group[0];
     const container = document.createElement('div');
-    container.innerHTML = scorePdfMarkup(score, part, showTab, layoutWidth);
+    container.innerHTML = scorePdfMarkup(score, part, showTab, layoutWidth, group);
     const error = container.querySelector('[role="alert"]');
     if (error) throw new Error(error.textContent || '악보를 표시하지 못했어요.');
-    const systems = [...container.querySelectorAll<SVGSVGElement>('svg.score-system')];
+    const combined = [...container.querySelectorAll<HTMLElement>('.score-ensemble-system')];
+    const systems = combined.length
+      ? combined.map((row) => {
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          let y = 0;
+          for (const staff of row.querySelectorAll('.score-ensemble-staff')) {
+            const source = staff.querySelector<SVGSVGElement>('svg')!;
+            const label = document.createElementNS(svg.namespaceURI, 'text');
+            label.setAttribute('x', '8');
+            label.setAttribute('y', String(y + 16));
+            label.setAttribute('font-size', '12');
+            label.setAttribute('font-family', 'Malgun Gothic, sans-serif');
+            label.textContent = staff.querySelector('.score-staff-name')?.textContent ?? '';
+            svg.append(label);
+            source.setAttribute('y', String(y + 22));
+            source.setAttribute('x', '0');
+            source.setAttribute('width', String(layoutWidth));
+            source.setAttribute('height', String(source.viewBox.baseVal.height));
+            y += source.viewBox.baseVal.height + 22;
+            svg.append(source);
+          }
+          svg.setAttribute('viewBox', `0 0 ${layoutWidth} ${y}`);
+          return svg;
+        })
+      : [...container.querySelectorAll<SVGSVGElement>('svg.score-system')];
     if (!systems.length) throw new Error('저장할 악보 줄이 없어요.');
-    const heading = header(score, part);
+    const heading = header(score, ensemble ? '합주 악보' : part);
     let y = 48;
     const addPage = () => {
       if (!first) pdf.addPage();
@@ -148,7 +188,7 @@ export async function createScorePdf(
       if (y + size.height > 277) addPage();
       const canvas = await rasterize(svg);
       pdf.addImage(canvas, 'PNG', 14, y, size.width, size.height);
-      y += size.height + (14 * size.width) / svg.viewBox.baseVal.width;
+      y += size.height + ((score.systemGap ?? 14) * size.width) / svg.viewBox.baseVal.width;
       canvas.width = 0;
       canvas.height = 0;
     }

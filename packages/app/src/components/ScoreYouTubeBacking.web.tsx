@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { parseYouTubeUrl } from '../lib/youtubeUrl';
+import { ScoreBackingDisclosure } from './ScoreBackingDisclosure.web';
 import {
   createYouTubeFollower,
   loadYouTubePlayerApi,
@@ -23,7 +24,9 @@ export const ScoreYouTubeBacking = forwardRef<
     onChange: (videoId?: string) => void;
     onReadyChange: (ready: boolean) => void;
     onFailure: (message: string) => void;
-    onAlign: (seconds: number) => void;
+    onAlign?: (seconds: number) => void;
+    onTimeChange?: (seconds: number) => void;
+    compact?: boolean;
   }
 >(function ScoreYouTubeBacking(props, ref) {
   const { videoId, suggestedUrl, disabled, volume, onChange } = props;
@@ -31,6 +34,7 @@ export const ScoreYouTubeBacking = forwardRef<
   const [message, setMessage] = useState('');
   const [ready, setReady] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [editingSource, setEditingSource] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   const player = useRef<YouTubePlayer | null>(null);
   const follower = useRef<ReturnType<typeof createYouTubeFollower> | null>(null);
@@ -50,6 +54,13 @@ export const ScoreYouTubeBacking = forwardRef<
   useEffect(() => {
     player.current?.setVolume(Math.round(volume * 100));
   }, [volume]);
+  useEffect(() => {
+    if (!ready || !props.onTimeChange) return;
+    const update = () => latest.current.onTimeChange?.(player.current?.getCurrentTime() ?? 0);
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [ready, props.onTimeChange]);
   useEffect(() => {
     let cancelled = false;
     const host = container.current;
@@ -130,23 +141,54 @@ export const ScoreYouTubeBacking = forwardRef<
     };
   }, [videoId, retry]);
   return (
-    <div className="score-youtube-backing">
-      <div className="score-backing-row">
-        <label>
-          유튜브 주소{' '}
-          <input
-            type="url"
-            aria-label="함께 재생할 유튜브 주소"
-            placeholder="https://www.youtube.com/watch?v=..."
-            value={url}
+    <div
+      className={`score-youtube-backing${props.compact ? ' score-youtube-backing--compact' : ''}`}
+    >
+      {videoId && (
+        <div className="score-youtube-actions">
+          <span className="score-backing-connection" data-ready={ready}>
+            {ready
+              ? '● 연결됨'
+              : message === '유튜브 영상 연결 중…'
+                ? '연결 중…'
+                : '연결 확인 필요'}
+          </span>
+          <button
+            type="button"
             disabled={disabled}
-            onChange={(event) => setUrl(event.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          disabled={disabled || !url.trim()}
-          onClick={() => {
+            aria-expanded={editingSource}
+            onClick={() => {
+              setUrl(`https://www.youtube.com/watch?v=${videoId}`);
+              if (ready) setMessage('');
+              setEditingSource((value) => !value);
+            }}
+          >
+            음원 변경
+          </button>
+          <ScoreBackingDisclosure label="유튜브 반주 관리">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => setRetry((value) => value + 1)}
+            >
+              영상 다시 연결
+            </button>
+            <a href={`https://www.youtube.com/watch?v=${videoId}`} target="_blank" rel="noreferrer">
+              유튜브에서 보기 ↗
+            </a>
+            <button type="button" disabled={disabled} onClick={() => onChange(undefined)}>
+              영상 연결 해제
+            </button>
+          </ScoreBackingDisclosure>
+        </div>
+      )}
+      {(!videoId || editingSource) && (
+        <form
+          noValidate
+          className="score-backing-row score-youtube-source"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (disabled || !url.trim()) return;
             const reference = parseYouTubeUrl(url);
             if (!reference) {
               setMessage(
@@ -156,50 +198,62 @@ export const ScoreYouTubeBacking = forwardRef<
             }
             onChange(reference.videoId);
             setRetry((value) => value + 1);
+            setEditingSource(false);
           }}
         >
-          영상 불러오기
-        </button>
-        {suggested && (
-          <button type="button" disabled={disabled} onClick={() => onChange(suggested.videoId)}>
-            이 곡 영상 불러오기
+          <label>
+            유튜브 주소{' '}
+            <input
+              type="url"
+              aria-label="함께 재생할 유튜브 주소"
+              placeholder="https://www.youtube.com/watch?v=..."
+              value={url}
+              disabled={disabled}
+              onChange={(event) => setUrl(event.target.value)}
+            />
+          </label>
+          <button type="submit" disabled={disabled || !url.trim()}>
+            영상 불러오기
           </button>
-        )}
-        {videoId && (
-          <button type="button" disabled={disabled} onClick={() => onChange(undefined)}>
-            영상 연결 해제
-          </button>
-        )}
-      </div>
-      {videoId && (
-        <>
-          <div className="score-youtube-player" ref={container} />
-          <div className="score-backing-row">
-            <button
-              type="button"
-              disabled={disabled || !ready}
-              onClick={() => latest.current.onAlign(player.current?.getCurrentTime() ?? 0)}
-            >
-              현재 영상 위치를 첫 박으로
-            </button>
+          {suggested && (
             <button
               type="button"
               disabled={disabled}
-              onClick={() => setRetry((value) => value + 1)}
+              onClick={() => {
+                onChange(suggested.videoId);
+                setRetry((value) => value + 1);
+                setEditingSource(false);
+              }}
             >
-              영상 다시 연결
+              이 곡 영상 불러오기
             </button>
-            <a href={`https://www.youtube.com/watch?v=${videoId}`} target="_blank" rel="noreferrer">
-              유튜브에서 보기
-            </a>
-          </div>
-          <p>
-            영상 로딩·광고·버퍼링에 따라 싱크가 어긋날 수 있어요. 첫 박의 음원 위치와 BPM을 곡에
-            맞춰주세요.
-          </p>
-        </>
+          )}
+          {videoId && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingSource(false);
+                if (ready) setMessage('');
+              }}
+            >
+              취소
+            </button>
+          )}
+        </form>
       )}
-      {message && <p role="status">{message}</p>}
+      <div className="score-youtube-media">
+        {videoId && <div className="score-youtube-player" ref={container} />}
+        {videoId && props.onAlign && (
+          <button
+            type="button"
+            disabled={disabled || !ready}
+            onClick={() => latest.current.onAlign?.(player.current?.getCurrentTime() ?? 0)}
+          >
+            현재 영상 위치를 첫 박으로
+          </button>
+        )}
+        {message && <p role="status">{message}</p>}
+      </div>
     </div>
   );
 });

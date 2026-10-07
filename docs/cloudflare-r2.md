@@ -30,7 +30,11 @@
 ```json
 [
   {
-    "AllowedOrigins": ["http://localhost:5173", "http://127.0.0.1:5173"],
+    "AllowedOrigins": [
+      "https://moajam.netlify.app",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173"
+    ],
     "AllowedMethods": ["GET", "HEAD", "PUT"],
     "AllowedHeaders": ["Content-Type", "If-None-Match", "Range"],
     "ExposeHeaders": ["ETag", "Content-Length", "Content-Range", "Accept-Ranges"],
@@ -81,6 +85,7 @@ npm run dev:server
 - 서버 시작 시 `R2 storage requires ...`: 표시된 환경변수가 비어 있다.
 - `R2_ENDPOINT ...`: 공개 r2.dev 주소 대신 계정 S3 API endpoint를 입력한다.
 - 브라우저 CORS 오류: 실제 웹 origin과 PUT/GET, Content-Type/If-None-Match 헤더 허용을 확인한다.
+- 배포된 DAW에서 `Failed to fetch`가 나오고 콘솔의 실패 주소가 `r2.cloudflarestorage.com`이면 해당 버킷의 CORS를 확인한다. Netlify 주소가 `AllowedOrigins`에 있고 `PUT`, `Content-Type`, `If-None-Match`가 허용되어야 한다. Render의 `CORS_ORIGINS`만 수정해도 R2 설정은 바뀌지 않는다. 저장되지 않은 녹음이 있는 페이지는 새로고침하지 말고, 별도 탭에서 버킷 설정을 저장한 다음 원래 페이지에서 저장을 다시 시도한다. 이 설정 변경에는 앱 재배포가 필요 없다.
 - 403 또는 `SignatureDoesNotMatch`: Access Key ID와 Secret Access Key의 조합, 버킷 권한, endpoint, PC 시간을 확인한다. 새 업로드로 새 서명 URL을 받는다.
 - 업로드 후 파일을 못 찾음: 버킷 이름과 키 권한을 확인한다. 만료된 링크 대신 화면에서 다시 불러온다.
 

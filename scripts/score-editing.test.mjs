@@ -1,15 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { Buffer } from 'node:buffer';
 import { URL } from 'node:url';
 import test from 'node:test';
-import ts from 'typescript';
+import { moduleUrl } from './load-typescript.mjs';
 
 async function source(path) {
-  const { outputText } = ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-  });
-  return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+  return import(moduleUrl(new URL(path, import.meta.url)));
 }
 const {
   editScoreMeasure,
@@ -58,6 +53,7 @@ const {
 } = await source('../packages/app/src/lib/score.ts');
 const {
   scoreConnectionArc,
+  scoreConnectionSide,
   scoreStemDirection,
   scoreMeasureLayout,
   scoreSystemLayouts,
@@ -74,6 +70,14 @@ const n = (id, beats = 1, part = 'Guitar') => ({
   lyric: '',
   rest: false,
   accent: false,
+});
+
+test('connections use the opposite side of rendered stems, with source preference for mixed stems', () => {
+  assert.equal(scoreConnectionSide([1, 1]), -1);
+  assert.equal(scoreConnectionSide([-1, -1]), 1);
+  assert.equal(scoreConnectionSide([-1, 1]), 1);
+  assert.equal(scoreConnectionSide([1, -1]), -1);
+  assert.equal(scoreConnectionSide([-1, 1, 1]), -1);
 });
 
 test('connection curves keep narrow note-center spans with pointed ends and a thicker middle', () => {
@@ -256,6 +260,31 @@ test('dot toggles shift following notes and chord anchors without losing notes o
     () => setScoreDotted({ ...score, notes: [n('a'), n('tiny', 0.0625)] }, ['a', 'tiny'], true),
     /점음표/,
   );
+});
+
+test('spacing preserves duration ratios through the final note, including compact and equal-width rows', () => {
+  const points = [0, 0.5, 1, 1.5, 2].map((offset) => ({ offset, space: 40, minSpace: 24 }));
+  const assertRatio = (layout, halfBeat = 0.5, end = 4) => {
+    const short = layout.xAt(halfBeat) - layout.xAt(0);
+    const held = layout.xAt(end) - layout.xAt(end / 2);
+    assert.ok(Math.abs(held / short - end / 2 / halfBeat) < 1e-8);
+    assert.ok(layout.width > layout.xAt(end));
+  };
+  assertRatio(scoreMeasureLayout(points, 0));
+  assertRatio(scoreMeasureLayout(points, 600));
+  for (const width of [160, 300, 900]) {
+    for (const equal of [false, true])
+      assertRatio(scoreSystemLayouts([points, [{ offset: 0, space: 40 }]], width, equal)[0]);
+  }
+  const triplets = [0, 1 / 3, 2 / 3, 1, 2].map((offset) => ({ offset, space: 30 }));
+  assertRatio(scoreSystemLayouts([triplets], 320)[0], 1 / 3);
+  const three = [0, 0.5, 1, 1.5].map((offset) => ({ offset, space: 30 }));
+  assertRatio(scoreSystemLayouts([three], 320, false, [], [3])[0], 0.5, 3);
+  const grace = scoreMeasureLayout(
+    points.map((p) => ({ ...p, leading: p.offset === 1 ? 16 : 0 })),
+    420,
+  );
+  assert.ok(Math.abs(grace.xAt(1) - grace.xAt(0.5) - (grace.xAt(0.5) - grace.xAt(0)) - 16) < 1e-8);
 });
 
 test('equal measure widths fit dense and sparse measures within the same line', () => {
@@ -570,8 +599,10 @@ test('connections validate direction, strings, ties and explicit adjacent target
   assert.throws(() => setScoreConnection(score, ['a', 'b'], 'pull'));
   assert.throws(() => setScoreConnection(score, ['a', 'c'], 'hammer'));
   assert.throws(() => setScoreConnection(score, ['a', 'b'], 'tie'));
-  assert.throws(() =>
-    setScoreConnection({ ...score, notes: [tone('a', 64), tone('b', 67, 2)] }, ['a'], 'slide'),
+  assert.equal(
+    setScoreConnection({ ...score, notes: [tone('a', 64), tone('b', 67, 2)] }, ['a'], 'slide')
+      .notes[0].connection.type,
+    'slide',
   );
   assert.throws(() =>
     setScoreConnection(
@@ -766,7 +797,7 @@ test('slurs span notes, survive complete clipboard copies, and clear when endpoi
   assert.match(scoreToMusicXml(score), /<slur type="stop"/);
 });
 
-test('L marks only repeated pitches on the same string as ghosts without mutating the source', () => {
+test('slurs preserve repeated notes and explicit articulations instead of creating implicit ties', () => {
   const tone = (pitch, string, fret) => ({ pitch, string, fret });
   const original = {
     title: '',
@@ -784,7 +815,7 @@ test('L marks only repeated pitches on the same string as ghosts without mutatin
   assert.equal(linked.notes[0].slurTo, 'd');
   assert.deepEqual(
     linked.notes.map((note) => noteTones(note).map((tone) => !!tone.ghost)),
-    [[false, false], [true, false], [false], [true]],
+    [[false, false], [false, false], [false], [false]],
   );
   assert.ok(original.notes.every((note) => noteTones(note).every((tone) => !tone.ghost)));
 });

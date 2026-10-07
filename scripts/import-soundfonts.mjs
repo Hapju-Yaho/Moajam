@@ -26,6 +26,7 @@ async function download(path) {
   return response.text();
 }
 for (const { id } of soundfontInstruments) {
+  if (id === 'drum_kit') continue; // Generated locally; not a FluidR3 asset.
   const script = await download(`FluidR3_GM/${id}-mp3.js`);
   const assignment = `MIDI.Soundfont.${id} =`;
   const start = script.indexOf(assignment);

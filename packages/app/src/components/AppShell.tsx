@@ -241,6 +241,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
   const personal =
     activeRoute.startsWith('personal-') || ['instrument', 'score-editor'].includes(activeRoute);
   const accountPage = activeRoute === 'settings' || activeRoute === 'help';
+  const scoreEditorPage = activeRoute === 'score-editor' || activeRoute === 'band-score-editor';
   const spaceLabel = accountPage
     ? 'Moajam'
     : personal
@@ -530,7 +531,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
             alignSelf: 'center',
           }}
         >
-          {serverConfigured ? (
+          {serverConfigured && !scoreEditorPage ? (
             <FlexRow wrap>
               <Meta>{syncStatus}</Meta>
               <ActionButton secondary compact onPress={() => setConfirmReload(true)}>

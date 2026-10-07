@@ -1,12 +1,8 @@
 import { api, serverConfigured } from './remote';
 import { encode, decode } from './remote-media.web';
 import { readMedia, writeMedia } from './mediaStore.web';
-import { validateScoreDocument, type ScoreDocument } from './scoreFile';
-
-export type StoredScore = ScoreDocument['score'] & {
-  referenceAudio?: ScoreDocument['referenceAudio'];
-  instrumentSample?: ScoreDocument['instrumentSample'];
-};
+import { readScoreVersionLibrary, type StoredScore } from './scoreVersions';
+export type { StoredScore } from './scoreVersions';
 type RevisionDocument = { revision: number; value: { data: StoredScore } };
 export const scoreConflictMessage =
   '다른 멤버가 악보를 수정했어요. 내 작업을 파일로 저장한 뒤 최신 악보를 불러와주세요.';
@@ -29,7 +25,7 @@ export function createBandScoreStore(workspaceId: string, songId: string, user: 
         ? ((await decode(document?.value.data, user, key)) as StoredScore | undefined)
         : document?.value.data;
       // Refuse corrupt documents instead of opening and overwriting them with an empty score.
-      if (value) validateScoreDocument(value);
+      if (value) readScoreVersionLibrary(value);
       if (request !== loadRequest) throw new Error('새로운 불러오기 요청이 시작됐어요.');
       revision = document?.revision ?? 0;
       return value;
@@ -37,16 +33,21 @@ export function createBandScoreStore(workspaceId: string, songId: string, user: 
     async save(value: StoredScore): Promise<void> {
       if (revision === undefined) throw new Error('악보를 먼저 불러와주세요.');
       if (saving) throw new Error('저장 중이에요. 잠시 기다려주세요.');
-      validateScoreDocument(value);
+      readScoreVersionLibrary(value);
       saving = true;
       try {
         if (serverConfigured) {
+          const encoded = await encode(value, key, user);
+          if (JSON.stringify(encoded).length > 950000)
+            throw new Error(
+              '악보 버전의 전체 용량이 커요. 사용하지 않는 버전을 파일로 보관하고 정리해주세요.',
+            );
           const result = await api<RevisionDocument>(
             path,
             'PUT',
             {
               revision,
-              value: { data: await encode(value, key, user) },
+              value: { data: encoded },
             },
             user,
           );

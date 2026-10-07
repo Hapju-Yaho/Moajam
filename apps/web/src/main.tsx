@@ -51,6 +51,7 @@ function RoutedScreen({ route }: { route: AppRoute }) {
       entityId={entityId}
       songTab={parseSongTab(search.get('tab'))}
       feedback={search.get('feedback') === 'true'}
+      scoreView={search.get('view') === 'applied' ? 'applied' : undefined}
       navigate={go}
     />
   );

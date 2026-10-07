@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { soundfontInstruments, type SoundfontInstrumentId } from '../lib/soundfontCatalog';
 import { prepareSoundfontInstrument } from '../lib/soundfont.web';
 import { createScoreOutput, scheduleScoreNote } from '../lib/scoreAudio.web';
+import { ScoreBackingDisclosure } from './ScoreBackingDisclosure.web';
+import { ScoreSettingsIcon } from './ScoreSettingsIcon.web';
 
 export function ScoreSoundfont({
   part,
@@ -9,18 +11,18 @@ export function ScoreSoundfont({
   disabled,
   volume,
   usingRecording,
-  hasRecording,
   onChange,
   onBusyChange,
+  compact = false,
 }: {
   part: string;
   instrument: SoundfontInstrumentId;
   disabled: boolean;
   volume: number;
   usingRecording: boolean;
-  hasRecording: boolean;
   onChange: (value: SoundfontInstrumentId | 'recording') => void;
   onBusyChange: (value: boolean) => void;
+  compact?: boolean;
 }) {
   const [previewing, setPreviewing] = useState(false);
   const [message, setMessage] = useState('');
@@ -98,11 +100,23 @@ export function ScoreSoundfont({
     }
   };
   return (
-    <section className="score-backing" aria-label="악보 재생 악기">
+    <section
+      className={compact ? 'score-sound-inline' : 'score-backing'}
+      aria-label="악보 재생 악기"
+    >
       <div className="score-backing-row">
-        <strong>{part} 재생 악기</strong>
+        {!compact && <strong>{part} 재생 악기</strong>}
         <label>
-          악기 선택
+          {compact ? (
+            <span>
+              <ScoreSettingsIcon /> <strong>음색</strong>
+              <small className="score-sample-scope">
+                {usingRecording ? '전체 파트 공통' : `현재 파트 · ${part}`}
+              </small>
+            </span>
+          ) : (
+            '악기 선택'
+          )}
           <select
             aria-label="악보 재생 악기 선택"
             value={usingRecording ? 'recording' : instrument}
@@ -112,6 +126,7 @@ export function ScoreSoundfont({
               onChange(event.target.value as SoundfontInstrumentId | 'recording');
             }}
           >
+            <option value="recording">내 악기 소리로 재생</option>
             {['기타', '베이스', '건반·기타 악기', '퍼커션'].map((group) => (
               <optgroup key={group} label={group}>
                 {soundfontInstruments
@@ -123,24 +138,42 @@ export function ScoreSoundfont({
                   ))}
               </optgroup>
             ))}
-            {hasRecording && <option value="recording">내 녹음 소리</option>}
           </select>
         </label>
-        <button type="button" disabled={disabled || usingRecording} onClick={() => void preview()}>
-          {previewing ? '미리 듣기 정지' : '악기 미리 듣기'}
-        </button>
+        {!usingRecording && (
+          <button type="button" disabled={disabled} onClick={() => void preview()}>
+            {previewing ? '미리 듣기 정지' : compact ? '▷ 미리 듣기' : '악기 미리 듣기'}
+          </button>
+        )}
+        {compact && (
+          <ScoreBackingDisclosure label="음색 안내 및 출처" help>
+            <p>
+              {usingRecording
+                ? '내 녹음은 전체 파트에 공통으로 적용돼요. 음색을 선택하면 파트별 가상악기로 돌아갑니다.'
+                : '파트마다 음색을 선택할 수 있어요. 미리 듣기에는 악보 재생 음량이 적용됩니다.'}
+            </p>
+            <p>FluidR3 · Frank Wen / MIDI.js Soundfonts · Benjamin Gleitzman</p>
+            <a href="/soundfonts/fluidr3/NOTICE.txt" target="_blank" rel="noreferrer">
+              출처 및 라이선스
+            </a>
+          </ScoreBackingDisclosure>
+        )}
       </div>
-      <p>
-        {usingRecording
-          ? '내 녹음은 모든 파트에 적용돼요. 위에서 악기를 선택하면 가상악기로 전환돼요.'
-          : '파트마다 다른 악기를 선택할 수 있어요. 미리 듣기에는 악보 재생 볼륨이 적용돼요.'}
-      </p>
-      <p>
-        음원: FluidR3 · Frank Wen / MIDI.js Soundfonts · Benjamin Gleitzman ·{' '}
-        <a href="/soundfonts/fluidr3/NOTICE.txt" target="_blank" rel="noreferrer">
-          출처 및 라이선스
-        </a>
-      </p>
+      {!compact && (
+        <>
+          <p>
+            {usingRecording
+              ? '내 녹음은 모든 파트에 적용돼요. 위에서 악기를 선택하면 가상악기로 전환돼요.'
+              : '파트마다 다른 악기를 선택할 수 있어요. 미리 듣기에는 악보 재생 볼륨이 적용돼요.'}
+          </p>
+          <p>
+            음원: FluidR3 · Frank Wen / MIDI.js Soundfonts · Benjamin Gleitzman ·{' '}
+            <a href="/soundfonts/fluidr3/NOTICE.txt" target="_blank" rel="noreferrer">
+              출처 및 라이선스
+            </a>
+          </p>
+        </>
+      )}
       {message && <p role="status">{message}</p>}
     </section>
   );

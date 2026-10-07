@@ -1,0 +1,35 @@
+.score-section-toggle.score-section-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #d3dfd7;
+  border-radius: 8px;
+  color: #426b53;
+  background: #fff;
+  cursor: pointer;
+}
+.score-section-toggle:hover {
+  background: #f0f6f2;
+}
+.score-section-toggle:focus-visible {
+  outline: 2px solid #648bd2;
+  outline-offset: 2px;
+}
+.score-section-toggle svg {
+  transition: transform 150ms ease;
+}
+.score-section-toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+.score-section-body[hidden] {
+  display: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .score-section-toggle svg {
+    transition: none;
+  }
+}

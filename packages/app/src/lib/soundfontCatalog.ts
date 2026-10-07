@@ -12,6 +12,7 @@ export const soundfontInstruments = [
   { id: 'string_ensemble_1', label: '스트링', group: '건반·기타 악기' },
   { id: 'choir_aahs', label: '합창', group: '건반·기타 악기' },
   { id: 'synth_drum', label: '신스 드럼', group: '퍼커션' },
+  { id: 'drum_kit', label: '드럼 키트 · 어쿠스틱 스타일', group: '퍼커션' },
 ] as const;
 
 export type SoundfontInstrumentId = (typeof soundfontInstruments)[number]['id'];
@@ -20,6 +21,7 @@ export function isSoundfontInstrument(value: unknown): value is SoundfontInstrum
 }
 
 export function defaultSoundfontInstrument(part: string, notation?: string): SoundfontInstrumentId {
+  if (notation === 'drums' || (!notation && /drum|드럼/i.test(part))) return 'drum_kit';
   if (notation === 'piano' || notation === 'pianoBass') return 'acoustic_grand_piano';
   if (notation?.startsWith('bass') || /bass|베이스/i.test(part)) return 'electric_bass_finger';
   if (/drum|드럼/i.test(part)) return 'synth_drum';

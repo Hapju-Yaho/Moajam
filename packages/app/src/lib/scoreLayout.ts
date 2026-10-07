@@ -52,6 +52,15 @@ export function scoreStemDirection(positions: number[], middle = 102): -1 | 1 {
   return middle - Math.min(...positions) >= Math.max(...positions) - middle ? 1 : -1;
 }
 
+// Use the rendered stems (including a beam's shared direction), not pitch/string height.
+// Mixed stems prefer the source's opposite side; endpoints can then be inset away
+// from the destination stem on that side.
+export function scoreConnectionSide(directions: number[]): -1 | 1 {
+  const stems = directions.filter((direction) => direction !== 0);
+  const balance = stems.reduce((sum, direction) => sum + direction, 0);
+  return (balance || stems[0] || 1) > 0 ? -1 : 1;
+}
+
 // Midpoints partition the full measure into contiguous note selection regions.
 export function scoreBeatHitRegions(
   offsets: number[],
@@ -72,10 +81,10 @@ export function scoreBeatHitRegions(
   );
 }
 
-// Justify actual notation, not empty input placeholders. Reserve enough horizontal
-// space for glyphs and chord names, then share remaining space by musical time.
+// Use one horizontal scale per measure, including the final note-to-barline span.
+// Glyph clearance sets the minimum scale; zero-time grace notes get separate space.
 export function scoreMeasureLayout(
-  points: { offset: number; space: number }[],
+  points: { offset: number; space: number; leading?: number }[],
   requestedWidth: number,
 ) {
   const spaces = new Map<number, number>([
@@ -86,13 +95,26 @@ export function scoreMeasureLayout(
     if (point.offset >= 0 && point.offset < 4)
       spaces.set(point.offset, Math.max(spaces.get(point.offset) ?? 8, point.space));
   const beats = [...spaces.keys()].sort((a, b) => a - b);
-  const minimum = [...spaces.values()].reduce((sum, value) => sum + value, 0);
-  const width = Math.max(requestedWidth, minimum + 40);
-  const extra = width - 40 - minimum;
-  const positions = [24];
+  const leading = (beat: number) =>
+    Math.max(0, ...points.filter((p) => p.offset === beat).map((p) => p.leading ?? 0));
+  const leadingWidth = beats.reduce((sum, b) => sum + leading(b), 0);
+  const baseSpace = Math.min(...beats.slice(0, -1).map((beat) => spaces.get(beat)!));
+  // Wider glyphs (accidentals, chords, lyrics) get only their extra clearance.
+  // Ordinary notes share a time scale instead of paying a fixed gap per note.
+  const clearance = (beat: number) => Math.max(0, spaces.get(beat)! - baseSpace);
+  const clearanceWidth = beats.slice(0, -1).reduce((sum, beat) => sum + clearance(beat), 0);
+  const minimumPerBeat = Math.max(
+    ...beats.slice(0, -1).map((beat, index) => baseSpace / (beats[index + 1] - beat)),
+  );
+  const width = Math.max(requestedWidth, minimumPerBeat * 4 + leadingWidth + clearanceWidth + 40);
+  const perBeat = (width - leadingWidth - clearanceWidth - 40) / 4;
+  const positions = [24 + leading(0)];
   for (let i = 1; i < beats.length; i++)
     positions.push(
-      positions[i - 1] + spaces.get(beats[i - 1])! + (extra * (beats[i] - beats[i - 1])) / 4,
+      positions[i - 1] +
+        clearance(beats[i - 1]) +
+        leading(beats[i]) +
+        perBeat * (beats[i] - beats[i - 1]),
     );
   return {
     width,
@@ -110,7 +132,7 @@ export function scoreMeasureLayout(
 }
 
 export function scoreSystemLayouts(
-  measures: { offset: number; space: number; minSpace?: number }[][],
+  measures: { offset: number; space: number; minSpace?: number; leading?: number }[][],
   availableWidth: number,
   equalWidths = false,
   weights: number[] = [],
@@ -177,6 +199,7 @@ export function scoreBeamGroups(
     if (
       fragment.note.rest ||
       fragment.note.blank ||
+      fragment.beats === 0 ||
       fragment.beats * (fragment.note.tuplet ? 1.5 : 1) >= 1
     ) {
       finish();
@@ -195,4 +218,33 @@ export function scoreBeamGroups(
   });
   finish();
   return groups;
+}
+// Adjacent seconds share a stem but alternate its sides. Unisons need distinct
+// heads too, so a third simultaneous alteration can occupy a third lane.
+export function scoreChordHeadOffsets(ys: number[], direction: number): number[] {
+  const offsets = ys.map(() => 0);
+  const lanes: number[][] = [];
+  const order = ys.map((y, index) => ({ y, index })).sort((a, b) => direction * (a.y - b.y));
+  for (const { y, index } of order) {
+    let lane = lanes.findIndex((taken) => taken.every((other) => Math.abs(other - y) > 5.1));
+    if (lane < 0) lane = lanes.length;
+    (lanes[lane] ??= []).push(y);
+    offsets[index] = -direction * lane * 9;
+  }
+  return offsets;
+}
+
+export function scoreAccidentalColumns(ys: number[], marks: string[]): number[] {
+  const columns: number[][] = [];
+  const result = ys.map(() => 0);
+  ys.map((y, index) => ({ y, index }))
+    .sort((a, b) => a.y - b.y)
+    .forEach(({ y, index }) => {
+      if (!marks[index]) return;
+      let column = columns.findIndex((taken) => taken.every((other) => Math.abs(other - y) >= 22));
+      if (column < 0) column = columns.length;
+      (columns[column] ??= []).push(y);
+      result[index] = column * 12;
+    });
+  return result;
 }

@@ -13,6 +13,7 @@ export type PreparedInstrumentSample = {
   loopStart: number;
   loopEnd: number;
   playbackGain?: number;
+  percussion?: boolean;
 };
 
 export type PreparedPlaybackInstrument =

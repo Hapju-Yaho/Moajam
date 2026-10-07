@@ -193,6 +193,59 @@ describe('band scores', () => {
     assert.equal(updated.revision, 2);
     assert.equal(updated.updatedBy, 'member');
   });
+  it('saves and reads zero-beat grace notes without dropping their techniques', async () => {
+    const controller = scoreFixture();
+    const grace = {
+      id: 'grace',
+      part: score.parts[0],
+      pitch: 60,
+      beats: 0,
+      graceBeats: 0.5,
+      rest: false,
+      accent: false,
+      chord: '',
+      lyric: '',
+      staccato: true,
+      connection: { type: 'slide', targetId: 'main' },
+    };
+    const data = {
+      ...score,
+      notes: [
+        grace,
+        {
+          ...grace,
+          id: 'main',
+          pitch: 62,
+          beats: 1,
+          graceBeats: undefined,
+          connection: undefined,
+        },
+      ],
+    };
+    await controller.saveScore(user, 'band', 'song', { revision: 0, value: { data } });
+    assert.deepEqual((await controller.score(user, 'band', 'song'))?.value, { data });
+    for (const patch of [
+      { graceBeats: undefined },
+      { graceBeats: 0 },
+      { graceBeats: -1 },
+      { graceBeats: 0.1 },
+      { graceBeats: Infinity },
+      { graceBeats: '0.5' },
+      { beats: 1 },
+      { rest: true },
+      { blank: true },
+      { tuplet: 3 },
+    ]) {
+      await assert.rejects(
+        controller.saveScore(user, 'band', 'song', {
+          revision: 1,
+          value: { data: { ...data, notes: [{ ...grace, ...patch }, data.notes[1]] } },
+        }),
+        /악보 데이터/,
+      );
+    }
+    assert.equal((await controller.score(user, 'band', 'song'))?.revision, 1);
+  });
   it('rejects both stale edits and concurrent first saves without changing the winner', async () => {
     const controller = scoreFixture();
     await controller.saveScore(user, 'band', 'song', { revision: 0, value: { data: score } });
@@ -472,6 +525,12 @@ describe('band score notation settings', () => {
       lyric: '',
     };
     assert.equal(isBandScore({ ...score, notes: [triplet] }), true);
+    for (const slideIn of ['up', 'down'])
+      assert.equal(
+        isBandScore({ ...score, notes: [{ ...triplet, slideIn, slideOut: 'down' }] }),
+        true,
+      );
+    assert.equal(isBandScore({ ...score, notes: [{ ...triplet, slideIn: 'sideways' }] }), false);
     assert.equal(isBandScore({ ...score, notes: [{ ...triplet, tuplet: 5 }] }), false);
     for (const patch of [
       { timeSignature: { beats: 0, beatType: 4 } },

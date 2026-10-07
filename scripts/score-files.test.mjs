@@ -115,7 +115,7 @@ test('glissando and slide-out survive files and share staff/TAB PDF notation', a
   const result = parseScoreFile(await serializeScoreFile({ score: source }));
   assert.deepEqual(result.score, source);
   const markup = scorePdfMarkup(result.score, 'Guitar', true);
-  assert.equal((markup.match(/aria-label="지판 슬라이드 물결선"/g) ?? []).length, 2);
+  assert.equal((markup.match(/aria-label="시프트 슬라이드 사선"/g) ?? []).length, 2);
   assert.match(markup, /aria-label="슬라이드 아웃 위로"/);
   assert.match(markup, /aria-label="슬라이드 아웃 아래로"/);
   assert.throws(() =>
@@ -299,19 +299,15 @@ test('screen/PDF renderer uses labeled tapered curves on both staves, including 
   for (const width of [620, 1080]) {
     const markup = scorePdfMarkup(source, 'Guitar', true, width);
     assert.doesNotMatch(markup, /NaN|Infinity/);
-    const surfaces = [
-      ...markup.matchAll(
-        /aria-label="(?:오선|TAB) 연결 곡선"><path d="([^"]+)"[^>]*><\/path><text[^>]*>([HS])<\/text>/g,
-      ),
-    ];
+    assert.equal((markup.match(/data-hammer-pull-label="H"/g) ?? []).length, 2);
     assert.equal(
-      surfaces.length,
-      8,
-      'three connections, with one split across two systems, on two staves',
+      (markup.match(/aria-label="레가토 슬라이드 사선"/g) ?? []).length,
+      6,
+      'two slides, one split across systems, on two staves',
     );
-    assert.equal(surfaces.filter((match) => match[2] === 'H').length, 2);
-    for (const [, d] of surfaces) assert.ok(d.endsWith(' Z'));
-    assert.match(markup, /aria-label="TAB 이음줄\(슬러\)" d="[^"]+ Z"/);
+    assert.equal((markup.match(/>sl\.<\/text>/g) ?? []).length, 6);
+    assert.match(markup, /aria-label="H TAB 연결"[^>]*d="[^"]+ Z"/);
+    assert.match(markup, /aria-label="TAB 이음줄\(슬러\)"[^>]*d="[^"]+ Z"/);
   }
 });
 

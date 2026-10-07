@@ -630,6 +630,15 @@ test('ghost continuation is per string while the other chord voices retrigger', 
   );
 });
 
+test('ghost drum hits retrigger instead of sustaining like ghost guitar notes', () => {
+  const f = fixture();
+  const source = score([note({ pitch: 38 }), note({ id: 'b', pitch: 38, ghost: true })]);
+  source.instruments = { Guitar: 'drums' };
+  scheduleScorePassage(f.context, {}, source, 'Guitar', 0, 0, 2, { ...f.sample, sustain: true });
+  assert.equal(f.voices.length, 2);
+  assert.ok(f.voices[1].started[0] > f.voices[0].started[0]);
+});
+
 test('different pitches or strings, rests, blanks and staccato do not create ghost continuations', () => {
   for (const variant of ['pitch', 'string', 'rest', 'blank', 'staccato', 'normal']) {
     const f = fixture();
@@ -788,4 +797,119 @@ test('soundfont loader decodes only requested pitches, caches them and retries f
   assert.equal(f.voices.length, 3);
   await assert.rejects(prepareSoundfontInstrument('../unknown', [60]), /악기를 다시/);
   assert.equal(requests, 2);
+});
+
+test('drum kit keeps kick level in chords and lets short hits decay, bounded by the passage', () => {
+  const solo = fixture(),
+    chord = fixture();
+  const sample = { ...solo.sample, rootMidi: 36, percussion: true };
+  scheduleScoreNote(solo.context, {}, note({ pitch: 36, beats: 0.25 }), 0, 120, 0.25, sample);
+  scheduleScoreNote(
+    chord.context,
+    {},
+    note({ pitch: 36, beats: 0.25, tones: [{ pitch: 36 }, { pitch: 42 }] }),
+    0,
+    120,
+    0.25,
+    sample,
+  );
+  assert.equal(solo.voices[0].stopped, sample.buffer.duration);
+  assert.equal(solo.gains[0].gain.events[1][1], chord.gains[0].gain.events[1][1]);
+  const bounded = fixture();
+  scheduleScorePassage(
+    bounded.context,
+    {},
+    {
+      title: '',
+      bpm: 120,
+      parts: ['Drums'],
+      sync: {},
+      notes: [note({ part: 'Drums', pitch: 36, beats: 0.25 })],
+    },
+    'Drums',
+    0,
+    0,
+    0.5,
+    sample,
+  );
+  assert.equal(bounded.voices[0].stopped, 0.25);
+  const unchanged = fixture();
+  scheduleScoreNote(unchanged.context, {}, note({ pitch: 36, beats: 0.25 }), 0, 120, 0.25, {
+    ...sample,
+    percussion: undefined,
+  });
+  assert.equal(
+    unchanged.voices[0].stopped,
+    0.125,
+    'ordinary samples and synth drum keep their envelope',
+  );
+});
+
+test('acoustic-style kit has audible kick harmonics, balanced hats and smooth finite tails', async () => {
+  const { synthesizeDrum } = await import(
+    moduleUrl(new URL('../packages/app/src/lib/drumKit.web.ts', import.meta.url))
+  );
+  const rms = (values) =>
+    Math.sqrt(values.reduce((sum, value) => sum + value * value, 0) / values.length);
+  const kick = synthesizeDrum(36),
+    hat = synthesizeDrum(42);
+  assert.ok(rms(kick.subarray(0, 8820)) > rms(hat.subarray(0, 8820)) * 3);
+  let filtered = 0,
+    energy = 0;
+  for (let i = 0; i < 8820; i++) {
+    filtered += 0.014 * (kick[i] - filtered);
+    energy += (kick[i] - filtered) ** 2;
+  }
+  assert.ok(Math.sqrt(energy / 8820) > 0.05, 'kick retains body above the deep-bass range');
+  for (const pitch of [35, 36, 37, 38, 42, 44, 46, 49, 50, 51, 52, 53, 55, 56, 57]) {
+    const data = synthesizeDrum(pitch);
+    assert.ok(data.every((value) => Number.isFinite(value) && Math.abs(value) < 0.95));
+    assert.equal(data[0], 0);
+    assert.equal(Math.abs(data.at(-1)), 0);
+    assert.ok(rms(data.subarray(data.length - 1000)) < 0.001);
+  }
+});
+
+test('choke uses staccato length on its cymbal only; snare double and buzz retrigger', () => {
+  const f = fixture();
+  const sample = { ...f.sample, rootMidi: 49, percussion: true };
+  const kick = { ...sample, rootMidi: 36 };
+  const kit = {
+    kind: 'soundfont',
+    samples: new Map([
+      [49, sample],
+      [36, kick],
+    ]),
+  };
+  scheduleScoreNote(
+    f.context,
+    {},
+    note({ beats: 1, tones: [{ pitch: 49, drumTechnique: 'choke' }, { pitch: 36 }] }),
+    0,
+    120,
+    1,
+    kit,
+  );
+  assert.equal(f.voices[0].stopped, 0.225);
+  assert.equal(f.voices[1].stopped, kick.buffer.duration);
+  for (const [technique, count] of [
+    ['double', 2],
+    ['buzz', 4],
+  ]) {
+    const roll = fixture();
+    scheduleScoreNote(
+      roll.context,
+      {},
+      note({ beats: 1, tones: [{ pitch: 38, drumTechnique: technique }] }),
+      0,
+      120,
+      1,
+      { ...sample, rootMidi: 38 },
+    );
+    assert.equal(roll.voices.length, count);
+    assert.deepEqual(
+      roll.voices.map((v) => v.started[0]),
+      Array.from({ length: count }, (_, i) => (i * 0.5) / count),
+    );
+  }
 });

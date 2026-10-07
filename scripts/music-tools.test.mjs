@@ -1,15 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { Buffer } from 'node:buffer';
 import { URL } from 'node:url';
 import test from 'node:test';
-import ts from 'typescript';
+import { moduleUrl } from './load-typescript.mjs';
 
 async function source(path) {
-  const { outputText } = ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-  });
-  return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+  return import(moduleUrl(new URL(path, import.meta.url)));
 }
 const {
   renameScorePart,
