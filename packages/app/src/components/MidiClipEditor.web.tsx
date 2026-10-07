@@ -467,10 +467,14 @@ export function MidiClipEditor({
         }
         if (!(event.ctrlKey || event.metaKey) || event.shiftKey) return;
         const key = event.key.toLowerCase();
-        if (key === 'c' && selectedNotes.length) {
+        if ((key === 'c' || key === 'x') && selectedNotes.length) {
           event.preventDefault();
           event.stopPropagation();
           copyNotes();
+          if (key === 'x') {
+            setNotes((all) => all.filter((note) => !selectedIds.includes(note.id)));
+            setSelectedId(null);
+          }
         }
         if (key === 'v' && clipboard.length && cell) {
           event.preventDefault();

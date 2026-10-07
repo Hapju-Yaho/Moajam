@@ -774,6 +774,9 @@ export function PracticeStudio({
     countAbort.current?.abort();
     if (recorder.current?.state === 'recording') recorder.current.stop();
     playback.current?.stop();
+    positionRef.current = 0;
+    setPosition(0);
+    setClickEpoch((value) => value + 1);
     setPreparing(false);
     setPlaying(false);
     setStandalone(false);
@@ -1096,10 +1099,7 @@ export function PracticeStudio({
             beat: activeBeat,
             onPlay: () => void togglePlay(),
             onStop: stop,
-            onRewind: () => {
-              stop();
-              seek(0);
-            },
+            onRewind: () => seek(0),
             onRecord: () => void record(),
             onSeek: seek,
             onBpm: setBeatBpm,

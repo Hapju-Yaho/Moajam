@@ -522,9 +522,10 @@ export function TrackTimeline({
       if (event.ctrlKey || event.metaKey) {
         if (locked || event.shiftKey) return;
         const key = event.key.toLowerCase();
-        if (key === 'c' && selectedClips.length) {
+        if ((key === 'c' || key === 'x') && selectedClips.length) {
           event.preventDefault();
           copyClips();
+          if (key === 'x') deleteClips();
         }
         if (key === 'v' && clipboard.length) {
           event.preventDefault();
@@ -1606,7 +1607,16 @@ export function TrackTimeline({
                           event.stopPropagation();
                           if (!locked && clip.midi) onEditMidi(clip);
                         }}
-                        onClick={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (t.playing && !t.recording && !t.requesting)
+                            seekPosition(
+                              clip.offset +
+                                (event.clientX - event.currentTarget.getBoundingClientRect().left) /
+                                  zoom,
+                              event.altKey,
+                            );
+                        }}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter') {
                             event.preventDefault();
