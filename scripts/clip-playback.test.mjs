@@ -210,3 +210,31 @@ test('MIDI clips use prepared instrument buffers and share the audio transport c
   assert.deepEqual(voices[0].args, [0.04, 0.75, 0.75]);
   player.dispose();
 });
+
+test('seeking and rewinding during playback replace all voices and keep the clock running', async () => {
+  const { player, context, voices } = fixture();
+  await player.prepare([clip('a', 0, 0, 8, 'a'), clip('b', 2, 1, 5, 'b')]);
+  player.start(0);
+  context.currentTime = 1;
+  const old = [...voices];
+  player.start(4);
+  assert.ok(old.every((voice) => voice.stopped));
+  assert.deepEqual(
+    voices.slice(-2).map((voice) => voice.args.slice(1)),
+    [
+      [4, 4],
+      [3, 3],
+    ],
+  );
+  context.currentTime = 1.54;
+  assert.equal(player.position(), 4.5);
+  assert.equal(player.finished(), false);
+  const beforeRewind = [...voices];
+  player.start(0);
+  assert.ok(beforeRewind.every((voice) => voice.stopped));
+  assert.equal(player.position(), 0);
+  context.currentTime = 2.08;
+  assert.equal(player.position(), 0.5);
+  assert.equal(player.finished(), false);
+  player.dispose();
+});

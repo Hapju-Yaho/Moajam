@@ -1,10 +1,18 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type SetStateAction,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { clientId } from '../lib/clientId';
 import type { MidiNote, MidiSequence } from '../lib/midi';
 import type { SoundfontInstrumentId } from '../lib/soundfontCatalog';
 import { prepareSoundfontInstrument } from '../lib/soundfont.web';
 import { scheduleScoreNote } from '../lib/scoreAudio.web';
+import { useUndoState } from '../lib/useUndoState';
+import { useMarquee } from '../lib/useMarquee.web';
 
 export function MidiClipEditor({
   name,
@@ -68,20 +76,54 @@ export function MidiClipEditor({
   const svgRef = useRef<SVGSVGElement>(null);
   const scrollFrame = useRef<number | null>(null);
   const suppressCreateClick = useRef(false);
+  const pan = useRef<{ pointerId: number; clientX: number; clientY: number } | null>(null);
   const [drawing, setDrawing] = useState(false);
   const gesture = useRef<{
     pointerId: number;
     mode: 'move' | 'create' | 'resize-start' | 'resize-end';
     note: MidiNote;
+    group: MidiNote[];
     x: number;
     y: number;
     clientX: number;
     clientY: number;
     previewPitch: number;
   } | null>(null);
-  const [notes, setNotes] = useState(() => sequence.notes.map((note) => ({ ...note })));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [length, setLength] = useState(Math.max(sequence.duration, (60 / bpm) * 4));
+  const [edit, setEdit, history] = useUndoState({
+    notes: sequence.notes.map((note) => ({ ...note })),
+    length: Math.max(sequence.duration, (60 / bpm) * 4),
+  });
+  const notes = edit.notes;
+  const length = edit.length;
+  const setNotes = (value: SetStateAction<MidiNote[]>) =>
+    setEdit((current) => ({
+      ...current,
+      notes: typeof value === 'function' ? value(current.notes) : value,
+    }));
+  const setLength = (value: SetStateAction<number>) =>
+    setEdit((current) => ({
+      ...current,
+      length: typeof value === 'function' ? value(current.length) : value,
+    }));
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const setSelectedId = (id: string | null) => setSelectedIds(id ? [id] : []);
+  const selectionBase = useRef<string[]>([]);
+  const marquee = useMarquee(
+    rollRef,
+    '[data-selection-id]',
+    (ids, additive) =>
+      setSelectedIds(additive ? [...new Set([...selectionBase.current, ...ids])] : ids),
+    54,
+  );
+  const [clipboard, setClipboard] = useState<MidiNote[]>([]);
+  const [cell, setCell] = useState<{ start: number; pitch: number } | null>(null);
+  const cellPress = useRef<{
+    x: number;
+    y: number;
+    start: number;
+    pitch: number;
+    moved: boolean;
+  } | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
     const element = dialog.current!;
@@ -111,7 +153,8 @@ export function MidiClipEditor({
   const end = Math.max(length, ...notes.map((note) => note.start + note.duration));
   const width = Math.max(768, Math.ceil(end / beat) * pixels);
   const height = (high - low + 1) * row;
-  const selected = notes.find((note) => note.id === selectedId);
+  const selectedNotes = notes.filter((note) => selectedIds.includes(note.id));
+  const selected = selectedNotes.length === 1 ? selectedNotes[0] : undefined;
   const displayNote = selected ?? { pitch: 60, start: 0, duration: beat, velocity: 100 };
   const add = (start = 0, pitch = 60) => {
     if (notes.length >= 2000) {
@@ -135,20 +178,60 @@ export function MidiClipEditor({
     return { x: event.clientX - rect.left - 54, y: event.clientY - rect.top - 24 };
   };
   const beginGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (event.button !== 0 || gesture.current) return;
+    if (event.button !== 0 || gesture.current || pan.current) return;
     suppressCreateClick.current = false;
     const { x, y } = point(event);
-    if (x < 0 || y < 0 || y >= height) return;
+    if (x < 0 || y < 0) {
+      if (event.pointerType === 'touch') {
+        event.preventDefault();
+        pan.current = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+      return;
+    }
+    if (y >= height) return;
     const target = event.target as SVGElement;
     const existing = notes.find((note) => note.id === target.dataset.noteId);
     if (!existing && !drawing) {
-      setSelectedId(null);
+      if (!event.ctrlKey && !event.metaKey) setSelectedId(null);
+      selectionBase.current = selectedIds;
+      cellPress.current = {
+        x: event.clientX,
+        y: event.clientY,
+        start: Math.max(0, Math.min(599.99, Math.floor(x / pixels) * beat)),
+        pitch: high - Math.floor(y / row),
+        moved: false,
+      };
+      if (!marquee.start(event) && event.pointerType === 'touch') {
+        event.preventDefault();
+        pan.current = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
       return;
     }
+    if (existing && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      setSelectedIds((ids) =>
+        ids.includes(existing.id) ? ids.filter((id) => id !== existing.id) : [...ids, existing.id],
+      );
+      preview(existing.pitch, existing.velocity);
+      return;
+    }
+    history.begin();
     const note =
-      existing ??
-      add(Math.max(0, (Math.round(x / (pixels / 4)) * beat) / 4), high - Math.floor(y / row));
-    if (!note) return;
+      existing ?? add(Math.max(0, Math.floor(x / pixels) * beat), high - Math.floor(y / row));
+    if (!note) {
+      history.end();
+      return;
+    }
     event.preventDefault();
     let mode: 'move' | 'create' | 'resize-start' | 'resize-end' = existing ? 'move' : 'create';
     if (existing) {
@@ -158,12 +241,17 @@ export function MidiClipEditor({
       if (x - left <= handle) mode = 'resize-start';
       else if (left + noteWidth - x <= handle) mode = 'resize-end';
     }
-    setSelectedId(existing ? note.id : null);
+    if (!existing) setSelectedId(null);
+    else if (!selectedIds.includes(note.id)) setSelectedId(note.id);
     if (existing) preview(note.pitch, note.velocity);
     gesture.current = {
       pointerId: event.pointerId,
       mode,
       note: { ...note },
+      group:
+        existing && mode === 'move' && selectedIds.includes(note.id)
+          ? selectedNotes.map((item) => ({ ...item }))
+          : [{ ...note }],
       x,
       y,
       clientX: event.clientX,
@@ -179,17 +267,22 @@ export function MidiClipEditor({
     if (Math.abs(x - current.x) < 4 && Math.abs(y - current.y) < 4) return;
     const next = { ...current.note };
     if (current.mode === 'move') {
-      next.start = Math.max(
-        0,
+      const delta = Math.max(
+        -Math.min(...current.group.map((note) => note.start)),
         Math.min(
-          600 - next.duration,
-          current.note.start + (Math.round((x - current.x) / (pixels / 4)) * beat) / 4,
+          600 - Math.max(...current.group.map((note) => note.start + note.duration)),
+          (Math.round((x - current.x) / (pixels / 4)) * beat) / 4,
         ),
       );
-      next.pitch = Math.max(
-        0,
-        Math.min(127, current.note.pitch - Math.round((y - current.y) / row)),
+      const pitchDelta = Math.max(
+        -Math.min(...current.group.map((note) => note.pitch)),
+        Math.min(
+          127 - Math.max(...current.group.map((note) => note.pitch)),
+          -Math.round((y - current.y) / row),
+        ),
       );
+      next.start = current.note.start + delta;
+      next.pitch = current.note.pitch + pitchDelta;
     } else if (current.mode === 'resize-start' || current.mode === 'resize-end') {
       const step = beat / 4;
       const delta = Math.round((x - current.x) / (pixels / 4)) * step;
@@ -205,20 +298,51 @@ export function MidiClipEditor({
         );
       }
     } else {
-      const endpoint = Math.max(0, Math.min(600, (Math.round(x / (pixels / 4)) * beat) / 4));
+      const endpoint = Math.max(0, Math.min(600, Math.round(x / pixels) * beat));
       next.start = Math.min(current.note.start, endpoint);
       next.duration = Math.min(
         600 - next.start,
-        Math.max(beat / 4, Math.abs(endpoint - current.note.start)),
+        Math.max(beat, Math.abs(endpoint - current.note.start)),
       );
     }
     if (next.pitch !== current.previewPitch) {
       current.previewPitch = next.pitch;
       preview(next.pitch, next.velocity);
     }
-    setNotes((all) => all.map((note) => (note.id === next.id ? next : note)));
+    setNotes((all) =>
+      all.map((note) => {
+        if (current.mode === 'move') {
+          const original = current.group.find((item) => item.id === note.id);
+          return original
+            ? {
+                ...original,
+                start: original.start + next.start - current.note.start,
+                pitch: original.pitch + next.pitch - current.note.pitch,
+              }
+            : note;
+        }
+        return note.id === next.id ? next : note;
+      }),
+    );
   };
   const moveGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
+    marquee.move(event);
+    if (
+      cellPress.current &&
+      Math.hypot(event.clientX - cellPress.current.x, event.clientY - cellPress.current.y) > 4
+    )
+      cellPress.current.moved = true;
+    const dragging = pan.current;
+    if (dragging && dragging.pointerId === event.pointerId) {
+      const roll = rollRef.current;
+      if (roll) {
+        roll.scrollLeft += dragging.clientX - event.clientX;
+        roll.scrollTop += dragging.clientY - event.clientY;
+      }
+      dragging.clientX = event.clientX;
+      dragging.clientY = event.clientY;
+      return;
+    }
     const current = gesture.current;
     if (!current || current.pointerId !== event.pointerId) return;
     current.clientX = event.clientX;
@@ -255,17 +379,32 @@ export function MidiClipEditor({
     scrollFrame.current = requestAnimationFrame(autoScroll);
   };
   const finishGesture = (event: ReactPointerEvent<SVGSVGElement>, cancel = false) => {
+    marquee.finish(event);
+    const pressed = cellPress.current;
+    cellPress.current = null;
+    if (pressed && !pressed.moved && !cancel) {
+      setCell({ start: pressed.start, pitch: pressed.pitch });
+      preview(pressed.pitch, 100);
+    }
+    if (pan.current?.pointerId === event.pointerId) {
+      pan.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId))
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      return;
+    }
     const current = gesture.current;
     if (!current || current.pointerId !== event.pointerId) return;
     if (cancel) {
       setNotes((all) =>
         current.mode === 'create'
           ? all.filter((note) => note.id !== current.note.id)
-          : all.map((note) => (note.id === current.note.id ? current.note : note)),
+          : all.map((note) => current.group.find((item) => item.id === note.id) ?? note),
       );
       if (current.mode === 'create') setSelectedId(null);
     }
     suppressCreateClick.current = current.mode === 'create';
+    if (cancel) history.cancel();
+    else history.end();
     gesture.current = null;
     if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
     scrollFrame.current = null;
@@ -282,6 +421,31 @@ export function MidiClipEditor({
     if (field === 'pitch' && next.pitch !== selected.pitch) preview(next.pitch, next.velocity);
     setNotes((all) => all.map((note) => (note.id === next.id ? next : note)));
   };
+  const copyNotes = () => setClipboard(selectedNotes.map((note) => ({ ...note })));
+  const pasteNotes = () => {
+    if (!cell) return;
+    if (notes.length + clipboard.length > 2000) {
+      setError('한 클립에는 2,000개까지 음표를 추가할 수 있어요.');
+      return;
+    }
+    const first = Math.min(...clipboard.map((note) => note.start));
+    const root = [...clipboard].sort((a, b) => a.start - b.start || a.pitch - b.pitch)[0].pitch;
+    const pitchDelta = Math.max(
+      -Math.min(...clipboard.map((note) => note.pitch)),
+      Math.min(127 - Math.max(...clipboard.map((note) => note.pitch)), cell.pitch - root),
+    );
+    const span = Math.max(...clipboard.map((note) => note.start + note.duration)) - first;
+    const start = Math.min(cell.start, 600 - span);
+    const copies = clipboard.map((note) => ({
+      ...note,
+      id: clientId(),
+      start: start + note.start - first,
+      pitch: note.pitch + pitchDelta,
+    }));
+    setNotes((all) => [...all, ...copies]);
+    setSelectedIds(copies.map((note) => note.id));
+    preview(copies[0].pitch, copies[0].velocity);
+  };
   const pitchName = (pitch: number) =>
     ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][pitch % 12] +
     (Math.floor(pitch / 12) - 1);
@@ -290,6 +454,40 @@ export function MidiClipEditor({
       className="studio-midi-editor"
       ref={dialog}
       aria-labelledby="midi-editor-title"
+      onKeyDown={(event) => {
+        if (event.repeat || gesture.current) return;
+        if ((event.target as Element).closest('input, textarea, select, [contenteditable="true"]'))
+          return;
+        if (event.key === 'Delete' && !event.ctrlKey && !event.metaKey && selectedNotes.length) {
+          event.preventDefault();
+          event.stopPropagation();
+          setNotes((all) => all.filter((note) => !selectedIds.includes(note.id)));
+          setSelectedId(null);
+          return;
+        }
+        if (!(event.ctrlKey || event.metaKey) || event.shiftKey) return;
+        const key = event.key.toLowerCase();
+        if ((key === 'c' || key === 'x') && selectedNotes.length) {
+          event.preventDefault();
+          event.stopPropagation();
+          copyNotes();
+          if (key === 'x') {
+            setNotes((all) => all.filter((note) => !selectedIds.includes(note.id)));
+            setSelectedId(null);
+          }
+        }
+        if (key === 'v' && clipboard.length && cell) {
+          event.preventDefault();
+          event.stopPropagation();
+          pasteNotes();
+        }
+        if (key === 'z' && history.canUndo) {
+          event.preventDefault();
+          event.stopPropagation();
+          history.undo();
+          setSelectedId(null);
+        }
+      }}
       onCancel={(event) => {
         event.preventDefault();
         onClose();
@@ -321,14 +519,21 @@ export function MidiClipEditor({
           + 음표 추가
         </button>
         <button
-          disabled={!selected}
+          disabled={!selectedNotes.length}
           onClick={() => {
-            setNotes((all) => all.filter((note) => note.id !== selectedId));
+            setNotes((all) => all.filter((note) => !selectedIds.includes(note.id)));
             setSelectedId(null);
           }}
         >
           음표 삭제
         </button>
+        <button disabled={!selectedNotes.length} onClick={copyNotes}>
+          음표 복사하기
+        </button>
+        <button disabled={!clipboard.length || !cell} onClick={pasteNotes}>
+          음표 붙여넣기
+        </button>
+        {selectedNotes.length > 1 && <span>{selectedNotes.length}개 음표 선택</span>}
         <label>
           클립 길이 (박)
           <input
@@ -390,8 +595,13 @@ export function MidiClipEditor({
           />
         </label>
       </div>
-      <div className="studio-midi-roll" ref={rollRef}>
-        <div className="studio-midi-ruler" style={{ width: width + 54 }} aria-hidden="true">
+      <div className="studio-midi-roll" ref={rollRef} style={{ position: 'relative' }}>
+        {marquee.box && <div className="studio-selection-box" style={marquee.box} />}
+        <div
+          className="studio-midi-ruler"
+          style={{ width: width + 54, touchAction: 'pan-x pan-y' }}
+          aria-hidden="true"
+        >
           {Array.from({ length: Math.ceil(width / pixels) + 1 }, (_, index) => (
             <span key={index} style={{ width: pixels }}>
               {index + 1}
@@ -403,7 +613,7 @@ export function MidiClipEditor({
           style={{
             display: 'block',
             marginTop: -24,
-            touchAction: drawing ? 'none' : 'pan-x pan-y',
+            touchAction: 'none',
             userSelect: 'none',
             cursor: drawing ? 'crosshair' : 'default',
           }}
@@ -446,10 +656,23 @@ export function MidiClipEditor({
               </text>
             </g>
           ))}
+          {cell && (
+            <rect
+              x={54 + (cell.start / beat) * pixels}
+              y={24 + (high - cell.pitch) * row}
+              width={pixels}
+              height={row}
+              fill="none"
+              stroke="#c8e1d1"
+              strokeWidth="2"
+              pointerEvents="none"
+            />
+          )}
           {notes.map((note) => (
             <rect
               key={note.id}
               data-note-id={note.id}
+              data-selection-id={note.id}
               style={{ touchAction: 'none', cursor: 'move' }}
               onPointerMove={(event) => {
                 if (gesture.current) return;
@@ -467,12 +690,11 @@ export function MidiClipEditor({
               width={Math.max(4, (note.duration / beat) * pixels)}
               height={row - 4}
               rx="3"
-              fill={note.id === selectedId ? '#f4d890' : '#9fd1b0'}
+              fill={selectedIds.includes(note.id) ? '#f4d890' : '#9fd1b0'}
               stroke="#20382a"
               onClick={(event) => {
                 event.stopPropagation();
                 if (suppressCreateClick.current) return;
-                setSelectedId(note.id);
               }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -480,9 +702,12 @@ export function MidiClipEditor({
                   setSelectedId(note.id);
                   preview(note.pitch, note.velocity);
                 }
-                if (event.key === 'Delete' || event.key === 'Backspace') {
+                if (event.key === 'Backspace') {
                   event.preventDefault();
-                  setNotes((all) => all.filter((item) => item.id !== note.id));
+                  setNotes((all) =>
+                    all.filter((item) => !selectedIds.includes(item.id) && item.id !== note.id),
+                  );
+                  setSelectedId(null);
                 }
               }}
             />

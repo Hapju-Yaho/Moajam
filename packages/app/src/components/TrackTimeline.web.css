@@ -372,6 +372,7 @@
   color: #a9b7af;
 }
 .studio-timeline {
+  position: relative;
   overflow: auto;
   max-height: 570px;
   min-height: 250px;
@@ -960,4 +961,46 @@
   padding-left: 4px;
   padding-top: 5px;
   box-sizing: border-box;
+}
+
+.studio-selection-box {
+  position: absolute;
+  border: 1px solid #b6d4f7;
+  background: #8cbcf533;
+  pointer-events: none;
+  z-index: 20;
+}
+.studio-midi-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 2;
+  background: #b6d4f733;
+}
+
+.studio-track-title input {
+  min-width: 0;
+}
+.studio-track-title .studio-track-collapse {
+  flex-shrink: 0;
+  color: #a3b3a7;
+}
+.studio-track-row.collapsed {
+  min-height: 40px;
+}
+.studio-track-row.collapsed .studio-track-head > :not(.studio-track-title) {
+  display: none;
+}
+.studio-track-row.collapsed .studio-clip {
+  height: 24px;
+}
+.studio-track-row.collapsed .studio-clip-label small,
+.studio-track-row.collapsed .studio-wave,
+.studio-track-row.collapsed .studio-wave-status,
+.studio-track-row.collapsed .studio-midi-preview,
+.studio-track-row.collapsed .studio-empty-clip {
+  display: none;
 }

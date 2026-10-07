@@ -1,3 +1,5 @@
+import { useUndoState } from '../lib/useUndoState';
+import { mergeClips } from '../lib/clipMerge.web';
 import { MidiClipEditor } from './MidiClipEditor.web';
 import { parseMidi, encodeMidi, cropMidi, isMidiFile, type MidiSequence } from '../lib/midi';
 import { renderMidi } from '../lib/midiAudio.web';
@@ -92,7 +94,9 @@ export function PracticeStudio({
   const [importTrack, setImportTrack] = useState<string | null>(null);
   const [publishing, setPublishing] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
-  const [tracks, setTracks] = useState<Track[]>([]);
+  const [tracks, setTracks, trackHistory] = useUndoState<Track[]>([]);
+  const { reset: resetTracks, replace: replaceTracks } = trackHistory;
+  const [merging, setMerging] = useState(false);
   const uploadPart: TrackPart = 'UNASSIGNED';
   const [notes, setNotes] = useState<Note[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -152,7 +156,7 @@ export function PracticeStudio({
     void readMedia<Session>(`practice/${scopeKey}`, userId)
       .then((session) => {
         if (!active) return;
-        setTracks(
+        resetTracks(
           (session?.tracks ?? []).map((track) =>
             withClips(
               {
@@ -198,7 +202,7 @@ export function PracticeStudio({
     return () => {
       active = false;
     };
-  }, [scopeKey, userId, loadAttempt]);
+  }, [scopeKey, userId, loadAttempt, resetTracks]);
   const snapshot = useMemo<Session>(
     () => ({
       tracks: tracks.map((track) =>
@@ -246,7 +250,7 @@ export function PracticeStudio({
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
   const applyDocument = (document: Session) => {
-    setTracks(
+    resetTracks(
       document.tracks.map((track) =>
         withClips(
           track,
@@ -605,6 +609,7 @@ export function PracticeStudio({
     return clip;
   };
   const importMedia = async (blob: Blob, name: string, targetId: string) => {
+    const insertionPosition = positionRef.current;
     const target = mix.current.tracks.find((track) => track.id === targetId);
     if (!target) throw new Error('트랙을 찾을 수 없어요.');
     const midiFile = isMidiFile({ name, type: blob.type });
@@ -618,7 +623,14 @@ export function PracticeStudio({
     const midi = midiFile ? parseMidi(await blob.arrayBuffer(), clientId) : undefined;
     if (!midiFile) validateAudioFile({ name, type: blob.type, size: blob.size });
     if (!alive.current || !mix.current.tracks.some((track) => track.id === targetId)) return;
-    addBlob(midi ? new Blob([blob], { type: 'audio/midi' }) : blob, name, 0, targetId, 0, midi);
+    addBlob(
+      midi ? new Blob([blob], { type: 'audio/midi' }) : blob,
+      name,
+      0,
+      targetId,
+      insertionPosition,
+      midi,
+    );
   };
   const createMidiClip = (trackId: string) => {
     const midi: MidiSequence = {
@@ -762,6 +774,9 @@ export function PracticeStudio({
     countAbort.current?.abort();
     if (recorder.current?.state === 'recording') recorder.current.stop();
     playback.current?.stop();
+    positionRef.current = 0;
+    setPosition(0);
+    setClickEpoch((value) => value + 1);
     setPreparing(false);
     setPlaying(false);
     setStandalone(false);
@@ -770,7 +785,7 @@ export function PracticeStudio({
     const clip = clips.find((item) => item.id === id);
     if (!clip || !Number.isFinite(duration) || duration <= 0) return;
     decodedDurations.current.set(clip.blob, duration);
-    setTracks((current) => hydrateClipDuration(current, id, duration));
+    replaceTracks((current) => hydrateClipDuration(current, id, duration));
     setSavedSnapshot((current) => {
       if (!current) return current;
       const next = hydrateClipDuration(current.tracks, id, duration);
@@ -892,7 +907,101 @@ export function PracticeStudio({
           }
           onPatch={patchTrack}
           onPatchClip={patchClip}
+          onEditStart={trackHistory.begin}
+          onEditEnd={trackHistory.end}
+          onEditCancel={trackHistory.cancel}
+          onUndo={trackHistory.undo}
+          canUndo={trackHistory.canUndo}
+          onMergeClips={async (ids) => {
+            const current = mix.current.tracks;
+            const owner = current.find((track) =>
+              ids.every((id) => trackClips(track).some((clip) => clip.id === id)),
+            );
+            if (!owner || merging) return;
+            const sourceClips = trackClips(owner).filter((clip) => ids.includes(clip.id));
+            const scope = scopeKey;
+            setMerging(true);
+            try {
+              const merged = await mergeClips(sourceClips, clientId);
+              if (!alive.current || loadedScope.current !== scope) return;
+              const url = URL.createObjectURL(merged.blob);
+              urls.current.add(url);
+              setTracks((all) =>
+                all.map((track) =>
+                  track.id === owner.id
+                    ? withClips(
+                        track,
+                        [
+                          ...trackClips(track).filter((clip) => !ids.includes(clip.id)),
+                          { ...merged, url },
+                        ].sort((a, b) => a.offset - b.offset),
+                      )
+                    : track,
+                ),
+              );
+            } catch (reason) {
+              if (alive.current)
+                setError(reason instanceof Error ? reason.message : '클립을 합치지 못했어요.');
+            } finally {
+              if (alive.current) setMerging(false);
+            }
+          }}
+          onPasteClips={(items, position) => {
+            const first = Math.min(...items.map((item) => item.clip.offset));
+            const copies = items.map((item) => {
+              const url = URL.createObjectURL(item.clip.blob);
+              urls.current.add(url);
+              return {
+                trackId: item.trackId,
+                clip: {
+                  ...item.clip,
+                  id: clientId(),
+                  url,
+                  offset: position + item.clip.offset - first,
+                  midi: item.clip.midi
+                    ? {
+                        ...item.clip.midi,
+                        notes: item.clip.midi.notes.map((note) => ({ ...note, id: clientId() })),
+                      }
+                    : undefined,
+                },
+              };
+            });
+            setTracks((all) => {
+              const next = all.map((track) =>
+                withClips(track, [
+                  ...trackClips(track),
+                  ...copies.filter((item) => item.trackId === track.id).map((item) => item.clip),
+                ]),
+              );
+              for (const id of new Set(copies.map((item) => item.trackId))) {
+                if (next.some((track) => track.id === id)) continue;
+                const clips = copies.filter((item) => item.trackId === id).map((item) => item.clip);
+                next.push({
+                  id: clientId(),
+                  name: '붙여넣은 트랙',
+                  kind: clips[0].midi ? 'midi' : 'audio',
+                  instrument: clips[0].midi ? 'acoustic_grand_piano' : undefined,
+                  volume: 1,
+                  muted: false,
+                  url: '',
+                  duration: 0,
+                  offset: 0,
+                  clips,
+                });
+              }
+              return next;
+            });
+          }}
           onClipDuration={hydrateDuration}
+          onMoveClips={(moves) =>
+            setTracks((all) =>
+              moves.reduce(
+                (next, move) => moveClip(next, move.id, move.targetId, move.offset),
+                all,
+              ),
+            )
+          }
           onMoveClip={(id, targetId, offset) =>
             setTracks((all) => moveClip(all, id, targetId, offset))
           }
@@ -906,7 +1015,7 @@ export function PracticeStudio({
           onRefresh={requestRefresh}
           refreshing={refreshing}
           onSave={() => void saveChanges()}
-          saving={saving}
+          saving={saving || merging}
           dirty={dirty}
           onSplitClip={(id, position) =>
             setTracks((all) => splitClip(all, id, position, clientId()))
@@ -990,10 +1099,7 @@ export function PracticeStudio({
             beat: activeBeat,
             onPlay: () => void togglePlay(),
             onStop: stop,
-            onRewind: () => {
-              stop();
-              seek(0);
-            },
+            onRewind: () => seek(0),
             onRecord: () => void record(),
             onSeek: seek,
             onBpm: setBeatBpm,
