@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import { Image, Pressable, View } from 'react-native';
 import { getDocumentAsync } from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { ActionButton, Meta } from './ProductUI';
@@ -96,7 +96,34 @@ export function ProfilePhoto({
               borderColor: '#dce3ed',
             }}
           >
-            <Text style={{ color: '#46586c', fontSize: 20 }}>+</Text>
+            <View
+              style={{ width: 14, height: 14 }}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 6,
+                  top: 1,
+                  width: 2,
+                  height: 12,
+                  borderRadius: 1,
+                  backgroundColor: '#46586c',
+                }}
+              />
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 1,
+                  top: 6,
+                  width: 12,
+                  height: 2,
+                  borderRadius: 1,
+                  backgroundColor: '#46586c',
+                }}
+              />
+            </View>
           </Pressable>
         )}
       </View>

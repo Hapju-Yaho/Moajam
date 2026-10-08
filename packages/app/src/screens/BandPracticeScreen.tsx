@@ -78,25 +78,7 @@ export function BandPracticeScreen({ navigate, entityId, feedback }: ScreenProps
           </Meta>
         )}
       </Surface>
-      {song && (
-        <Surface>
-          <FlexBetween>
-            <Heading>밴드 공용 악보</Heading>
-            <ActionButton
-              onPress={() =>
-                navigate('band-score-editor', { id: song.id, workspaceId, scoreView: 'applied' })
-              }
-            >
-              적용된 악보 열기
-            </ActionButton>
-          </FlexBetween>
-          <Meta>
-            연습에 적용한 버전으로 함께 재생하세요. 악보 화면에서 이지·하드 버전을 편집하고 연습용
-            버전을 바꿀 수 있어요.
-          </Meta>
-        </Surface>
-      )}
-      {song && <SongPractice key={song.id} song={song} feedback={feedback} />}
+      {song && <SongPractice key={song.id} song={song} feedback={feedback} navigate={navigate} />}
     </AppShell>
   );
 }

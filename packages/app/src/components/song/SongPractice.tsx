@@ -1,11 +1,21 @@
+import { SongPdfLibrary } from '../SongPdfLibrary';
+import type { ScreenProps } from '../../navigation';
 import { View, useWindowDimensions } from 'react-native';
 import { ReferenceVideo } from '../ReferenceVideo';
 import { useMockAppState, useWorkspaceValue } from '../../state/MockAppState';
 import type { WorkspaceSong } from '../../mocks/workspaces';
 import { PracticeStudio } from '../PracticeStudio';
-import { ActionButton, Copy, PageHeading, Meta, Surface } from '../ProductUI';
+import { ActionButton, Copy, PageHeading, Meta, Surface, FlexRow } from '../ProductUI';
 import type { Arrangement } from './SongOverview';
-export function SongPractice({ song, feedback }: { song: WorkspaceSong; feedback?: boolean }) {
+export function SongPractice({
+  song,
+  feedback,
+  navigate,
+}: {
+  song: WorkspaceSong;
+  feedback?: boolean;
+  navigate?: ScreenProps['navigate'];
+}) {
   const { width } = useWindowDimensions();
   const { workspaceId, canManage, updateSong } = useMockAppState();
   const [arrangement] = useWorkspaceValue<Arrangement>(`song/${song.id}/arrangement`, {
@@ -39,6 +49,24 @@ export function SongPractice({ song, feedback }: { song: WorkspaceSong; feedback
             </Meta>
             <PageHeading style={{ fontSize: 28 }}>{song.title}</PageHeading>
             <Copy style={{ color: '#75847b' }}>{song.artist}</Copy>
+            <FlexRow wrap>
+              <SongPdfLibrary songId={song.id} title={song.title} />
+              {navigate && (
+                <ActionButton
+                  secondary
+                  compact
+                  onPress={() =>
+                    navigate('band-score-editor', {
+                      id: song.id,
+                      workspaceId,
+                      scoreView: 'expanded',
+                    })
+                  }
+                >
+                  악보 편집
+                </ActionButton>
+              )}
+            </FlexRow>
           </View>
           {song.referenceUrl && (
             <View style={{ width: width >= 1100 ? '48%' : '100%', maxWidth: 500 }}>

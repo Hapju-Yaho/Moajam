@@ -19,7 +19,7 @@ import { SongsScreen } from './screens/SongsScreen';
 import { SongWorkspaceScreen } from './screens/SongWorkspaceScreen';
 
 interface AppScreenProps {
-  scoreView?: 'applied';
+  scoreView?: 'applied' | 'expanded';
   route: AppRoute;
   navigate: (route: AppRoute, options?: NavigationOptions) => void;
   entityId?: string;
@@ -127,7 +127,7 @@ export function MoajamApp() {
     workspaceId?: string;
     songTab?: SongTab;
     feedback?: boolean;
-    scoreView?: 'applied';
+    scoreView?: 'applied' | 'expanded';
   }>({
     route: 'personal-home',
   });

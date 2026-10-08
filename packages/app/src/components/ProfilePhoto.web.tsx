@@ -109,13 +109,28 @@ export function ProfilePhoto({
               borderRadius: '50%',
               background: 'white',
               color: '#46586c',
-              fontSize: 22,
-              lineHeight: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               boxShadow: '0 2px 6px #0002',
               cursor: disabled ? 'default' : 'pointer',
             }}
           >
-            +
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              style={{ display: 'block' }}
+            >
+              <path
+                d="M8 2v12M2 8h12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
           </button>
         )}
       </div>

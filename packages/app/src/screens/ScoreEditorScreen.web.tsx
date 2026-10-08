@@ -924,6 +924,7 @@ export function ScoreEditorScreen({
   return (
     <AppShell activeRoute={bandScore ? 'band-score-editor' : 'score-editor'} onNavigate={navigate}>
       <ScoreEditorViewport
+        initiallyExpanded={scoreView === 'expanded'}
         title={score.title}
         shared={bandScore}
         status={bandDirty ? '저장하지 않은 변경사항' : status}

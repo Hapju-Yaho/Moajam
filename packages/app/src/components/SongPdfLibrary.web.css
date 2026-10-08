@@ -1,0 +1,111 @@
+.song-pdf-dialog {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 20px;
+  border: 0;
+  background: transparent;
+  color: #20354a;
+}
+.song-pdf-dialog[open] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.song-pdf-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 29, 53, 0.48);
+}
+.song-pdf-card {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  max-height: 90%;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  border: 1px solid #dce4f0;
+  border-radius: 16px;
+  background: white;
+  box-shadow: 0 12px 32px #101d5326;
+}
+.song-pdf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+.song-pdf-header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 26px;
+  overflow-wrap: anywhere;
+}
+.song-pdf-body {
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
+.song-pdf-description {
+  color: #7b8795;
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+.song-pdf-body h3 {
+  font-size: 14px;
+  margin: 16px 0 10px;
+}
+.song-pdf-add {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 64px;
+  border: 1px dashed #c1cede;
+  border-radius: 12px;
+  background: #f7f9ff;
+  color: #416bd1;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  cursor: pointer;
+}
+.song-pdf-add:hover {
+  background: #eef3ff;
+  border-color: #416bd1;
+}
+.song-pdf-add:focus-within {
+  outline: 2px solid #416bd1;
+  outline-offset: 2px;
+}
+.song-pdf-add-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font-size: 23px;
+  font-weight: 400;
+}
+.song-pdf-add input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.song-pdf-add.is-disabled {
+  opacity: 0.5;
+  cursor: default;
+}
