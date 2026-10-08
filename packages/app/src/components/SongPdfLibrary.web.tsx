@@ -1,5 +1,6 @@
+import { ScheduleDialog } from './ScheduleDialog';
+import './StudioConfirm.web.css';
 import './SongPdfLibrary.web.css';
-import { PdfThumbnail } from './PdfThumbnail.web';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ActionButton } from './ProductUI';
@@ -23,6 +24,7 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
   );
   const scope = 'song/' + workspaceId + '/' + songId;
   const [open, setOpen] = useState(false);
+  const [deleting, setDeleting] = useState<FileEntry | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -108,7 +110,7 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
     }
   };
   const removePdf = async (file: FileEntry) => {
-    if (busy || !window.confirm('「' + file.name + '」 악보를 삭제할까요?')) return;
+    if (busy) return;
     const request = generation.current;
     setBusy(true);
     setError('');
@@ -120,6 +122,7 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
           files.filter((item) => item.id !== file.id),
         );
       if (request !== generation.current) return;
+      setDeleting(null);
       setFiles((current) => current.filter((item) => item.id !== file.id));
       setParts((current) => {
         const next = { ...current };
@@ -166,6 +169,7 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
             ref={dialog}
             aria-label={title + ' PDF 악보'}
             onCancel={(event) => {
+              if (event.target !== event.currentTarget) return;
               event.preventDefault();
               if (!busy) setOpen(false);
             }}
@@ -188,109 +192,191 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
                 <p className="song-pdf-description">세션별 악보를 선택하면 새 창에서 열립니다.</p>
                 {error && <p role="alert">{error}</p>}
                 {busy && <p>파일 처리 중…</p>}
-                {trackParts
-                  .filter((item) => item.value !== 'MIX')
-                  .map((item) => {
-                    const group = pdfs.filter(
-                      (file) => (parts[file.id] ?? 'UNASSIGNED') === item.value,
-                    );
-                    return (
-                      <section key={item.value} style={{ marginBottom: 16 }}>
-                        <h3>{trackPartLabel(item.value)}</h3>
-                        {group.length ? (
-                          group.map((file) => (
-                            <div key={file.id} style={{ position: 'relative', marginBottom: 10 }}>
-                              <button
-                                disabled={busy}
-                                onClick={() => void showPdf(file)}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 12,
-                                  width: '100%',
-                                  minHeight: 64,
-                                  padding: '12px 48px 12px 14px',
-                                  border: '1px solid #dce4f0',
-                                  borderRadius: 12,
-                                  background: '#f7f9ff',
-                                  color: '#20354a',
-                                  textAlign: 'left',
-                                }}
-                              >
-                                <PdfThumbnail id={file.id} name={file.name} blob={file.blob} />
-                                <span style={{ overflowWrap: 'anywhere', fontWeight: 500 }}>
-                                  {file.name}
-                                </span>
-                              </button>
-                              {(!serverConfigured || file.ownerId === currentUserId) && (
-                                <button
-                                  type="button"
-                                  aria-label={file.name + ' 삭제'}
-                                  title="PDF 악보 삭제"
-                                  disabled={busy}
-                                  onClick={() => void removePdf(file)}
-                                  style={{
-                                    position: 'absolute',
-                                    top: 6,
-                                    right: 6,
-                                    width: 30,
-                                    height: 30,
-                                    border: 'none',
-                                    borderRadius: 8,
-                                    background: '#fff1f2',
-                                    color: '#be4b55',
-                                    fontSize: 22,
-                                    lineHeight: '24px',
-                                    cursor: 'pointer',
-                                  }}
+                <div className="song-pdf-sessions">
+                  {trackParts
+                    .filter(
+                      (item) =>
+                        item.value !== 'MIX' &&
+                        (item.value !== 'UNASSIGNED' ||
+                          pdfs.some((file) => !parts[file.id] || parts[file.id] === 'UNASSIGNED')),
+                    )
+                    .map((item) => {
+                      const group = pdfs.filter(
+                        (file) => (parts[file.id] ?? 'UNASSIGNED') === item.value,
+                      );
+                      return (
+                        <section key={item.value} style={{ marginBottom: 16 }}>
+                          <h3>
+                            {item.value === 'UNASSIGNED' ? '기존 악보' : trackPartLabel(item.value)}
+                          </h3>
+                          <div className="song-pdf-files">
+                            {group.length ? (
+                              group.map((file) => (
+                                <div
+                                  key={file.id}
+                                  style={{ position: 'relative', marginBottom: 10 }}
                                 >
-                                  ×
-                                </button>
-                              )}
-                            </div>
-                          ))
-                        ) : (
-                          <p style={{ color: '#7b8795' }}>등록된 PDF 악보가 없어요.</p>
-                        )}
-                        <label className={busy ? 'song-pdf-add is-disabled' : 'song-pdf-add'}>
-                          <span className="song-pdf-add-icon" aria-hidden="true">
-                            <svg
-                              width="14"
-                              height="14"
-                              viewBox="0 0 16 16"
-                              aria-hidden="true"
-                              style={{ display: 'block' }}
-                            >
-                              <path
-                                d="M8 2v12M2 8h12"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.5"
-                                strokeLinecap="round"
+                                  <button
+                                    disabled={busy}
+                                    onClick={() => void showPdf(file)}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 12,
+                                      width: '100%',
+                                      minHeight: 64,
+                                      padding: '12px 48px 12px 14px',
+                                      border: '1px solid #dce4f0',
+                                      borderRadius: 12,
+                                      background: '#f7f9ff',
+                                      color: '#20354a',
+                                      textAlign: 'left',
+                                    }}
+                                  >
+                                    <svg
+                                      width="32"
+                                      height="38"
+                                      viewBox="0 0 32 38"
+                                      aria-hidden="true"
+                                      style={{ flexShrink: 0 }}
+                                    >
+                                      <path
+                                        d="M5 1h15l7 7v28H5z"
+                                        fill="white"
+                                        stroke="#cc5964"
+                                        strokeWidth="1.5"
+                                      />
+                                      <path
+                                        d="M20 1v8h7"
+                                        fill="none"
+                                        stroke="#cc5964"
+                                        strokeWidth="1.5"
+                                      />
+                                      <rect
+                                        x="1"
+                                        y="18"
+                                        width="30"
+                                        height="13"
+                                        rx="3"
+                                        fill="#cc5964"
+                                      />
+                                      <text
+                                        x="16"
+                                        y="27.5"
+                                        textAnchor="middle"
+                                        fill="white"
+                                        fontSize="10"
+                                        fontWeight="600"
+                                      >
+                                        PDF
+                                      </text>
+                                    </svg>
+                                    <span style={{ overflowWrap: 'anywhere', fontWeight: 500 }}>
+                                      {file.name}
+                                    </span>
+                                  </button>
+                                  {(!serverConfigured || file.ownerId === currentUserId) && (
+                                    <button
+                                      type="button"
+                                      aria-label={file.name + ' 삭제'}
+                                      title="PDF 악보 삭제"
+                                      disabled={busy}
+                                      onClick={() => setDeleting(file)}
+                                      style={{
+                                        position: 'absolute',
+                                        top: 6,
+                                        right: 6,
+                                        width: 30,
+                                        height: 30,
+                                        border: 'none',
+                                        borderRadius: 8,
+                                        background: '#fff1f2',
+                                        color: '#be4b55',
+                                        fontSize: 22,
+                                        lineHeight: '24px',
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
+                              ))
+                            ) : (
+                              <p style={{ color: '#7b8795' }}>등록된 PDF 악보가 없어요.</p>
+                            )}
+                          </div>
+                          {item.value !== 'UNASSIGNED' && (
+                            <label className={busy ? 'song-pdf-add is-disabled' : 'song-pdf-add'}>
+                              <span className="song-pdf-add-icon" aria-hidden="true">
+                                <svg
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 16 16"
+                                  aria-hidden="true"
+                                  style={{ display: 'block' }}
+                                >
+                                  <path
+                                    d="M8 2v12M2 8h12"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                  />
+                                </svg>
+                              </span>
+                              <span>악보 추가</span>
+                              <input
+                                type="file"
+                                accept="application/pdf,.pdf"
+                                aria-label={trackPartLabel(item.value) + ' 악보 추가'}
+                                disabled={busy}
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  event.target.value = '';
+                                  if (file) void upload(file, item.value);
+                                }}
                               />
-                            </svg>
-                          </span>
-                          <span>악보 추가</span>
-                          <input
-                            type="file"
-                            accept="application/pdf,.pdf"
-                            aria-label={trackPartLabel(item.value) + ' 악보 추가'}
-                            disabled={busy}
-                            onChange={(event) => {
-                              const file = event.target.files?.[0];
-                              event.target.value = '';
-                              if (file) void upload(file, item.value);
-                            }}
-                          />
-                        </label>
-                      </section>
-                    );
-                  })}
+                            </label>
+                          )}
+                        </section>
+                      );
+                    })}
+                </div>
               </div>
             </div>
           </dialog>,
           document.body,
         )}
+      <ScheduleDialog
+        visible={!!deleting}
+        label="악보 삭제 확인"
+        onClose={() => {
+          if (!busy) setDeleting(null);
+        }}
+      >
+        {deleting && (
+          <div className="studio-confirm-overlay">
+            <div className="studio-confirm-card">
+              <h2>악보를 삭제할까요?</h2>
+              <p>「{deleting.name}」 악보를 삭제합니다.</p>
+              {error && <p role="alert">{error}</p>}
+              <div>
+                <button disabled={busy} onClick={() => setDeleting(null)}>
+                  취소
+                </button>
+                <button
+                  className="song-pdf-delete"
+                  disabled={busy}
+                  onClick={() => void removePdf(deleting)}
+                >
+                  {busy ? '삭제 중…' : '삭제'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </ScheduleDialog>
     </>
   );
 }
