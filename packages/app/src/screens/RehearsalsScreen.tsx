@@ -140,14 +140,18 @@ function FormField({
   multiline?: boolean;
 }) {
   return (
-    <View style={{ gap: 7, flex: 1 }}>
+    <View style={{ gap: 7, flexGrow: 1, flexShrink: 0 }}>
       <Label>{label}</Label>
       <Input
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
         multiline={multiline}
-        style={multiline ? { minHeight: 120, textAlignVertical: 'top', lineHeight: 22 } : undefined}
+        style={
+          multiline
+            ? { minHeight: 120, flexShrink: 0, textAlignVertical: 'top', lineHeight: 22 }
+            : { flexShrink: 0 }
+        }
       />
     </View>
   );
@@ -188,7 +192,7 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
   );
   const [checkDraft, setCheckDraft] = useState('');
   const [isCheckModalOpen, setIsCheckModalOpen] = useState(false);
-  const [memo, setMemo] = useWorkspaceValue(`session/${selectedId}/memo`, '');
+  const [memo, setMemo] = useWorkspaceValue(`session/${selectedId}/memo`, schedule?.goal ?? '');
   const [saved, setSaved] = useState(false);
   const [draft, setDraft] = useState<SessionDraft>(initialSchedule ?? blankSchedule);
   const [modalMode, setModalMode] = useState<'new' | 'edit' | null>(null);
@@ -287,48 +291,52 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
                   </Meta>
                 </View>
               </FlexRow>
-              <ActionButton
-                secondary
-                compact={width < 620}
-                disabled={!canManage}
-                onPress={openEditSchedule}
-              >
-                일정 편집
-              </ActionButton>
-            </FlexBetween>
-            <FlexRow wrap>
-              {canManage ? (
+              <FlexRow gap={8}>
                 <ActionButton
                   secondary
-                  danger
-                  compact
-                  onPress={() => {
-                    cancelRehearsal(schedule.id);
-                    setSelectedId(undefined);
-                  }}
+                  compact={width < 620}
+                  disabled={!canManage}
+                  onPress={openEditSchedule}
                 >
-                  일정 삭제
+                  일정 편집
                 </ActionButton>
-              ) : null}
+                {canManage ? (
+                  <ActionButton
+                    secondary
+                    danger
+                    compact
+                    onPress={() => {
+                      cancelRehearsal(schedule.id);
+                      setSelectedId(undefined);
+                    }}
+                  >
+                    일정 삭제
+                  </ActionButton>
+                ) : null}
+              </FlexRow>
+            </FlexBetween>
+            <View style={{ gap: 10 }}>
               <Meta>{schedule.cancelled ? '취소된 합주입니다.' : '합주할 곡을 선택하세요.'}</Meta>
-              {adoptedSongs.map((song) => (
-                <Pill
-                  key={song.id}
-                  active={schedule.songIds?.includes(song.id)}
-                  onPress={() => {
-                    if (canManage)
-                      saveRehearsal({
-                        ...schedule,
-                        songIds: schedule.songIds?.includes(song.id)
-                          ? schedule.songIds.filter((id) => id !== song.id)
-                          : [...(schedule.songIds ?? []), song.id],
-                      });
-                  }}
-                >
-                  <PillText>{song.title}</PillText>
-                </Pill>
-              ))}
-            </FlexRow>
+              <FlexRow wrap>
+                {adoptedSongs.map((song) => (
+                  <Pill
+                    key={song.id}
+                    active={schedule.songIds?.includes(song.id)}
+                    onPress={() => {
+                      if (canManage)
+                        saveRehearsal({
+                          ...schedule,
+                          songIds: schedule.songIds?.includes(song.id)
+                            ? schedule.songIds.filter((id) => id !== song.id)
+                            : [...(schedule.songIds ?? []), song.id],
+                        });
+                    }}
+                  >
+                    <PillText active={schedule.songIds?.includes(song.id)}>{song.title}</PillText>
+                  </Pill>
+                ))}
+              </FlexRow>
+            </View>
             <Divider />
             <FlexBetween>
               <FlexRow>
@@ -539,7 +547,7 @@ export function RehearsalsScreen({ navigate, entityId }: ScreenProps) {
           placeholder="이번 합주에서 꼭 맞춰볼 내용을 적어주세요."
           multiline
         />
-        <View style={{ gap: 9 }}>
+        <View style={{ gap: 9, flexShrink: 0 }}>
           <Label>참석 멤버</Label>
           <FlexRow wrap gap={8}>
             {members.map((member) => {

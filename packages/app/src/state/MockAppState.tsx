@@ -251,17 +251,25 @@ export function useMockAppState() {
     leaveWorkspace: (confirmDelete = false) => store.leaveWorkspace(workspaceId, confirmDelete),
     actionError: store.actionError,
     clearActionError: () => store.setActionError(''),
-    setDocument: <T,>(key: string, value: T | ((previous: T) => T), initial: T) =>
-      update((band) => ({
-        ...band,
-        documents: {
-          ...band.documents,
-          [key]:
-            typeof value === 'function'
-              ? (value as (previous: T) => T)((band.documents?.[key] as T | undefined) ?? initial)
-              : value,
-        },
-      })),
+    setDocument: <T,>(
+      key: string,
+      value: T | ((previous: T) => T),
+      initial: T,
+      bandId = workspaceId,
+    ) =>
+      update(
+        (band) => ({
+          ...band,
+          documents: {
+            ...band.documents,
+            [key]:
+              typeof value === 'function'
+                ? (value as (previous: T) => T)((band.documents?.[key] as T | undefined) ?? initial)
+                : value,
+          },
+        }),
+        bandId,
+      ),
     deleteSong: (id: string) => {
       if (!canManage) return;
       update((band) => ({
@@ -420,7 +428,17 @@ export function useMockAppState() {
       update(
         (band) => ({
           ...band,
-          rehearsals: [...band.rehearsals.filter((item) => item.id !== event.id), event],
+          rehearsals: [
+            ...band.rehearsals.filter((item) => item.id !== event.id),
+            !band.rehearsals.some((item) => item.id === event.id) && event.songIds === undefined
+              ? {
+                  ...event,
+                  songIds: band.adoptedSongs
+                    .filter((song) => !song.archived)
+                    .map((song) => song.id),
+                }
+              : event,
+          ],
         }),
         bandId,
       );

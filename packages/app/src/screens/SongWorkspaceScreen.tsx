@@ -1,5 +1,6 @@
+import { theme } from '@moajam/ui';
 import { SongActions } from '../components/SongActions';
-import { Pressable } from 'react-native';
+import { Pressable, View, useWindowDimensions } from 'react-native';
 import { useState } from 'react';
 import { AppShell } from '../components/AppShell';
 import {
@@ -37,6 +38,7 @@ export function SongWorkspaceScreen({
   entityId,
   songTab: requestedTab = 'main',
 }: ScreenProps) {
+  const { width } = useWindowDimensions();
   const songTab = requestedTab === 'resources' ? 'main' : requestedTab;
   const { adoptedSongs, workspaceId, currentUserId, rehearsals, syncStatus } = useMockAppState();
   const song = adoptedSongs.find((item) => item.id === entityId);
@@ -93,75 +95,87 @@ export function SongWorkspaceScreen({
   );
   return (
     <AppShell activeRoute="song" onNavigate={navigate}>
+      <Pressable onPress={() => navigate('songs', { workspaceId })}>
+        <Meta style={{ color: theme.colors.primary, fontWeight: '500' }}>← 목록으로 돌아가기</Meta>
+      </Pressable>
       <Surface>
         <FlexBetween>
-          <ActionButton secondary compact onPress={() => navigate('songs', { workspaceId })}>
-            ← 참여 곡 목록
-          </ActionButton>
+          <FlexRow wrap>
+            <SongActions song={song} onDeleted={() => navigate('songs', { workspaceId })} />
+          </FlexRow>
           <Meta accessibilityLiveRegion="polite">{syncStatus}</Meta>
         </FlexBetween>
-        <FlexBetween style={{ gap: 16 }}>
-          <PageHeading style={{ flex: 1, minWidth: 0 }}>{song.title}</PageHeading>
-          <SongActions song={song} onDeleted={() => navigate('songs', { workspaceId })} />
-        </FlexBetween>
-        <Copy>
-          {song.artist} · Key {arrangement.key || '미정'} · BPM {arrangement.bpm || '미정'}
-        </Copy>
-        <FlexRow wrap>
-          <ActionButton onPress={() => selectTab('practice')}>이 곡 연습하기</ActionButton>
-          <ActionButton
-            secondary
-            onPress={() =>
-              void shareLink(
-                buildAppPath(
-                  'song',
-                  { id: song.id, workspaceId, songTab },
-                  { route: 'song', workspaceId },
-                ),
-              )
-                .then(() => setMessage('현재 탭 링크를 공유했어요. 밴드 멤버만 열 수 있어요.'))
-                .catch(() => setMessage('공유하지 못했어요. 주소창의 링크를 복사해주세요.'))
-            }
-          >
-            현재 탭 공유
-          </ActionButton>
-        </FlexRow>
-        {!!message && <Meta accessibilityLiveRegion="polite">{message}</Meta>}
-        <FlexRow wrap>
-          {songTabs
-            .filter((tab) => tab !== 'resources')
-            .filter((tab) => tab !== 'practice')
-            .map((tab) => (
-              <Pill
-                key={tab}
-                accessibilityRole="button"
-                accessibilityState={{ selected: songTab === tab }}
-                active={songTab === tab}
-                onPress={() => selectTab(tab)}
-              >
-                <PillText active={songTab === tab}>
-                  {labels[tab]}
-                  {tab === 'discussion'
-                    ? ` ${opinions.length}`
-                    : tab === 'history'
-                      ? ` ${sessions.length}`
-                      : ''}
-                </PillText>
-              </Pill>
-            ))}
-        </FlexRow>
-      </Surface>
-      {songTab === 'main' && (
-        <>
-          <Surface>
-            <Heading>곡 레퍼런스</Heading>
+        <Heading>곡 레퍼런스</Heading>
+        <View
+          style={{
+            flexDirection: width < 760 ? 'column' : 'row',
+            gap: 24,
+            alignItems: width < 760 ? 'stretch' : 'center',
+          }}
+        >
+          <View style={width < 760 ? { gap: 12 } : { flex: 1, minWidth: 0, gap: 12 }}>
             <ReferenceVideo
               referenceUrl={song.referenceUrl}
               thumbnailUrl={song.thumbnailUrl}
               title={song.title}
             />
-            <Copy>{song.goal || song.reason || '함께 연주할 방향을 이야기해보세요.'}</Copy>
-          </Surface>
+          </View>
+          <View style={{ flex: 1, minWidth: 0, gap: 16 }}>
+            <FlexBetween style={{ gap: 16 }}>
+              <PageHeading style={{ flex: 1, minWidth: 0 }}>{song.title}</PageHeading>
+            </FlexBetween>
+            <Copy>
+              {song.artist} · Key {arrangement.key || '미정'} · BPM {arrangement.bpm || '미정'}
+            </Copy>
+            <FlexRow wrap>
+              <ActionButton onPress={() => selectTab('practice')}>이 곡 연습하기</ActionButton>
+              <ActionButton
+                secondary
+                onPress={() =>
+                  void shareLink(
+                    buildAppPath(
+                      'song',
+                      { id: song.id, workspaceId, songTab },
+                      { route: 'song', workspaceId },
+                    ),
+                  )
+                    .then(() => setMessage('현재 탭 링크를 공유했어요. 밴드 멤버만 열 수 있어요.'))
+                    .catch(() => setMessage('공유하지 못했어요. 주소창의 링크를 복사해주세요.'))
+                }
+              >
+                현재 탭 공유
+              </ActionButton>
+            </FlexRow>
+            {!!message && <Meta accessibilityLiveRegion="polite">{message}</Meta>}
+            <FlexRow wrap>
+              {songTabs
+                .filter((tab) => tab !== 'resources')
+                .filter((tab) => tab !== 'practice')
+                .map((tab) => (
+                  <Pill
+                    key={tab}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: songTab === tab }}
+                    active={songTab === tab}
+                    onPress={() => selectTab(tab)}
+                  >
+                    <PillText active={songTab === tab}>
+                      {labels[tab]}
+                      {tab === 'discussion'
+                        ? ` ${opinions.length}`
+                        : tab === 'history'
+                          ? ` ${sessions.length}`
+                          : ''}
+                    </PillText>
+                  </Pill>
+                ))}
+            </FlexRow>
+          </View>
+        </View>
+        <Copy>{song.goal || song.reason || '함께 연주할 방향을 이야기해보세요.'}</Copy>
+      </Surface>
+      {songTab === 'main' && (
+        <>
           <FlexBetween>
             <Heading>곡 전체 의견</Heading>
             <Pressable

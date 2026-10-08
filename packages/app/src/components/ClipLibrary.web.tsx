@@ -1,3 +1,4 @@
+import { downloadBlob } from '../lib/platformActions.web';
 import { isMidiFile } from '../lib/midi';
 import { ClipMenu } from './ClipMenu.web';
 import './ClipLibrary.web.css';
@@ -367,6 +368,37 @@ export function ClipLibrary({
                       }}
                     >
                       클립 메모하기
+                    </button>
+                    <button
+                      disabled={busy || !asset.blob?.size}
+                      onClick={() => {
+                        const midi = asset.kind === 'midi' || isMidiFile(asset);
+                        const type = (asset.blob.type || asset.type).split(';')[0];
+                        const extension = midi
+                          ? 'mid'
+                          : (
+                              {
+                                'audio/wav': 'wav',
+                                'audio/x-wav': 'wav',
+                                'audio/mpeg': 'mp3',
+                                'audio/mp4': 'm4a',
+                                'audio/webm': 'webm',
+                                'audio/ogg': 'ogg',
+                                'audio/flac': 'flac',
+                                'audio/aac': 'aac',
+                              } as Record<string, string>
+                            )[type];
+                        const name = asset.name.replace(/[\\/:*?"<>|]/g, '_');
+                        downloadBlob(
+                          extension &&
+                            !/\.(mid|midi|wav|mp3|m4a|mp4|webm|ogg|flac|aac)$/i.test(name)
+                            ? name + '.' + extension
+                            : name,
+                          asset.blob,
+                        );
+                      }}
+                    >
+                      클립 다운로드
                     </button>
                     <button
                       style={{
