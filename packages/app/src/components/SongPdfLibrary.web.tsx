@@ -277,6 +277,31 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
                                       {file.name}
                                     </span>
                                   </button>
+                                  {item.value === 'UNASSIGNED' && (
+                                    <select
+                                      aria-label={file.name + ' 세션 지정'}
+                                      value=""
+                                      disabled={busy}
+                                      onChange={(event) => {
+                                        const part = event.target.value;
+                                        if (part)
+                                          setParts((current) => ({ ...current, [file.id]: part }));
+                                      }}
+                                    >
+                                      <option value="" disabled>
+                                        세션 선택
+                                      </option>
+                                      {trackParts
+                                        .filter(
+                                          (part) => !['MIX', 'UNASSIGNED'].includes(part.value),
+                                        )
+                                        .map((part) => (
+                                          <option key={part.value} value={part.value}>
+                                            {part.label}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  )}
                                   {(!serverConfigured || file.ownerId === currentUserId) && (
                                     <button
                                       type="button"
