@@ -209,7 +209,9 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
                           <h3>
                             {item.value === 'UNASSIGNED' ? '기존 악보' : trackPartLabel(item.value)}
                           </h3>
-                          <div className="song-pdf-files">
+                          <div
+                            className={group.length ? 'song-pdf-files' : 'song-pdf-files is-empty'}
+                          >
                             {group.length ? (
                               group.map((file) => (
                                 <div
