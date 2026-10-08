@@ -1,6 +1,6 @@
 type Row = Record<string, unknown>;
 export const isWorkspaceDocumentKey = (key: string) =>
-  /^(recommendations|songs|rehearsals|practice\/order|song\/[\w-]+\/(discussion|feedback|clip-notes|checks|arrangement|links|session\/[\w-]+\/memo)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
+  /^(recommendations|songs|rehearsals|practice\/order|song\/[\w-]+\/(discussion|feedback|clip-notes|checks|arrangement|links|pdf-parts|session\/[\w-]+\/memo)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
     key,
   );
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -211,6 +211,17 @@ export function canWriteDocument(
       typeof after.structure === 'string' &&
       typeof after.bpm === 'string' &&
       /^\d{0,3}$/.test(after.bpm)
+    );
+  if (key.endsWith('/pdf-parts'))
+    return (
+      object(after) &&
+      Object.keys(after).length <= 3000 &&
+      Object.entries(after).every(
+        ([id, part]) =>
+          /^[\w-]{1,128}$/.test(id) &&
+          typeof part === 'string' &&
+          ['UNASSIGNED', 'VOCAL', 'GUITAR', 'BASS', 'DRUMS', 'KEYBOARD', 'OTHER'].includes(part),
+      )
     );
   if (key.endsWith('/memo')) return typeof after === 'string' && after.length <= 50000;
   if (key.endsWith('/checks') || key.endsWith('/tasks'))
