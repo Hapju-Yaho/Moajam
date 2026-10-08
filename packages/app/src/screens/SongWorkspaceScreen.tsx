@@ -99,13 +99,9 @@ export function SongWorkspaceScreen({
         <Meta style={{ color: theme.colors.primary, fontWeight: '500' }}>← 목록으로 돌아가기</Meta>
       </Pressable>
       <Surface>
-        <FlexBetween>
-          <FlexRow wrap>
-            <SongActions song={song} onDeleted={() => navigate('songs', { workspaceId })} />
-          </FlexRow>
-          <Meta accessibilityLiveRegion="polite">{syncStatus}</Meta>
-        </FlexBetween>
-        <Heading>곡 레퍼런스</Heading>
+        <Meta style={{ alignSelf: 'flex-end' }} accessibilityLiveRegion="polite">
+          {syncStatus}
+        </Meta>
         <View
           style={{
             flexDirection: width < 760 ? 'column' : 'row',
@@ -170,6 +166,9 @@ export function SongWorkspaceScreen({
                   </Pill>
                 ))}
             </FlexRow>
+            <FlexRow style={{ justifyContent: 'flex-end' }} wrap>
+              <SongActions song={song} onDeleted={() => navigate('songs', { workspaceId })} />
+            </FlexRow>
           </View>
         </View>
         <Copy>{song.goal || song.reason || '함께 연주할 방향을 이야기해보세요.'}</Copy>
@@ -215,7 +214,7 @@ export function SongWorkspaceScreen({
           }}
         />
       )}
-      {songTab === 'practice' && <SongPractice song={song} />}
+      {songTab === 'practice' && <SongPractice song={song} navigate={navigate} />}
       {songTab === 'history' && <SongHistory songId={song.id} navigate={navigate} />}
     </AppShell>
   );

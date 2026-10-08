@@ -64,12 +64,19 @@ export function ScoreEditorViewport({
   title = '나의 악보',
   shared = false,
   status,
-}: PropsWithChildren<{ heading?: ReactNode; title?: string; shared?: boolean; status?: string }>) {
+  initiallyExpanded = false,
+}: PropsWithChildren<{
+  heading?: ReactNode;
+  title?: string;
+  shared?: boolean;
+  status?: string;
+  initiallyExpanded?: boolean;
+}>) {
   const root = useRef<HTMLDivElement>(null);
   const fullscreenButton = useRef<HTMLButtonElement>(null);
   const helpButton = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const titleId = useId();
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspector, setInspector] = useState<ScoreInspectorTab>('notes');
