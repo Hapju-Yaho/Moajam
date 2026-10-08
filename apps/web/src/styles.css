@@ -44,3 +44,10 @@ button {
   font-family: inherit;
   font-weight: 400;
 }
+
+/* Keep example text distinct from entered values, including native web inputs. */
+input::placeholder,
+textarea::placeholder {
+  color: #a3aab5 !important;
+  opacity: 1;
+}

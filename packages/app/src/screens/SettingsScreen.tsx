@@ -24,6 +24,14 @@ import type { ScreenProps } from '../navigation';
 export function SettingsScreen({ navigate }: ScreenProps) {
   const preferences = usePreferences();
   const [draft, setDraft] = useState(preferences);
+  const [bpmText, setBpmText] = useState(String(preferences.bpm));
+  const commitBpm = () => {
+    const value = Number(bpmText);
+    const bpm = Math.max(30, Math.min(300, Number.isFinite(value) ? Math.round(value) : 30));
+    setBpmText(String(bpm));
+    setDraft((current) => ({ ...current, bpm }));
+    return bpm;
+  };
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const { workspace, workspaces, canManage } = useMockAppState();
@@ -32,9 +40,10 @@ export function SettingsScreen({ navigate }: ScreenProps) {
       setMessage('이름을 입력해주세요.');
       return;
     }
+    const bpm = commitBpm();
     setSaving(true);
     try {
-      const saved = await persistPreferences({ ...draft, name: draft.name.trim() });
+      const saved = await persistPreferences({ ...draft, bpm, name: draft.name.trim() });
       setDraft((current) => (current === draft ? saved : current));
       setMessage('설정을 저장했습니다.');
     } catch (error) {
@@ -78,17 +87,17 @@ export function SettingsScreen({ navigate }: ScreenProps) {
               active={draft.volume === volume}
               onPress={() => setDraft({ ...draft, volume })}
             >
-              <PillText>{Math.round(volume * 100)}%</PillText>
+              <PillText active={draft.volume === volume}>{Math.round(volume * 100)}%</PillText>
             </Pill>
           ))}
         </FlexRow>
         <Meta>메트로놈 BPM (30–300)</Meta>
         <Input
           keyboardType="numeric"
-          value={String(draft.bpm)}
-          onChangeText={(value) =>
-            setDraft({ ...draft, bpm: Math.max(30, Math.min(300, Number(value) || 30)) })
-          }
+          value={bpmText}
+          onChangeText={setBpmText}
+          onBlur={commitBpm}
+          onSubmitEditing={commitBpm}
         />
         <FlexRow>
           <Copy>연습 메트로놈</Copy>
@@ -105,7 +114,9 @@ export function SettingsScreen({ navigate }: ScreenProps) {
               active={draft.countIn === countIn}
               onPress={() => setDraft({ ...draft, countIn })}
             >
-              <PillText>{countIn ? `${countIn}박` : '없음'}</PillText>
+              <PillText active={draft.countIn === countIn}>
+                {countIn ? `${countIn}박` : '없음'}
+              </PillText>
             </Pill>
           ))}
         </FlexRow>
@@ -130,6 +141,7 @@ export function SettingsScreen({ navigate }: ScreenProps) {
           secondary
           onPress={() => {
             setDraft(preferences);
+            setBpmText(String(preferences.bpm));
             setMessage('변경 내용을 취소했습니다.');
           }}
         >

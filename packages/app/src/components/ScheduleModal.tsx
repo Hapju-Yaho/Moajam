@@ -61,7 +61,7 @@ function ScheduleForm({
   event?: Rehearsal;
   onOpenRehearsal?: () => void;
 }) {
-  const { workspaces, currentUserId, saveRehearsal } = useMockAppState();
+  const { workspaces, currentUserId, saveRehearsal, setDocument } = useMockAppState();
   const personal = usePersonalSchedules();
   const [scope, setScope] = useState<'personal' | 'team'>(workspaceId ? 'team' : 'personal');
   const [saving, setSaving] = useState(false);
@@ -78,6 +78,13 @@ function ScheduleForm({
       place: '',
       goal: '',
     },
+  );
+  const [memo, setMemo] = useState(
+    (workspaces.find((band) => band.id === bandId)?.documents?.[
+      'session/' + event?.id + '/memo'
+    ] as string | undefined) ??
+      event?.goal ??
+      '',
   );
   const [error, setError] = useState('');
   const readOnly = !!event && scope === 'team' && !bands.some((band) => band.id === bandId);
@@ -102,7 +109,10 @@ function ScheduleForm({
         id: event?.id ?? `session-${Date.now()}`,
       };
       if (scope === 'personal') await personal.save(next);
-      else saveRehearsal(next, bandId);
+      else {
+        saveRehearsal(next, bandId);
+        setDocument('session/' + next.id + '/memo', memo, '', bandId);
+      }
       onClose();
     } catch (error) {
       setError(error instanceof Error ? error.message : '일정을 저장하지 못했어요.');
@@ -208,7 +218,7 @@ function ScheduleForm({
               ] as const
             ).map(([key, label]) => (
               <View key={key} style={{ gap: 6 }}>
-                <Label>{label}</Label>
+                <Label>{key === 'goal' && scope === 'team' ? '합주 메모 (선택)' : label}</Label>
                 <Input
                   editable={!readOnly}
                   accessibilityLabel={label}
@@ -223,8 +233,11 @@ function ScheduleForm({
                       ? '준비할 내용이나 함께 기억할 내용을 적어주세요.'
                       : '장소를 입력해주세요.'
                   }
-                  value={draft[key]}
-                  onChangeText={(value) => setDraft((previous) => ({ ...previous, [key]: value }))}
+                  value={key === 'goal' && scope === 'team' ? memo : draft[key]}
+                  onChangeText={(value) => {
+                    if (key === 'goal' && scope === 'team') setMemo(value);
+                    else setDraft((previous) => ({ ...previous, [key]: value }));
+                  }}
                 />
               </View>
             ))}

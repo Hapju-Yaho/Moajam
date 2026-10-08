@@ -1004,3 +1004,7 @@
 .studio-track-row.collapsed .studio-empty-clip {
   display: none;
 }
+
+.studio-ruler-row > .studio-track-head {
+  border-bottom: 1px solid #667267;
+}
