@@ -1,3 +1,4 @@
+import './StudioConfirm.web.css';
 import { soundfontInstruments, type SoundfontInstrumentId } from '../lib/soundfontCatalog';
 import {
   useEffect,
