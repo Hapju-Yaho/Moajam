@@ -200,16 +200,29 @@ export function HomeScreen({ navigate }: ScreenProps) {
                 }}
               >
                 <FlexRow gap={12}>
-                  <SongCover
-                    id={song.id}
-                    thumbnailUrl={song.thumbnailUrl}
-                    referenceUrl={song.referenceUrl}
-                    size={50}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Copy style={{ fontWeight: '500' }}>{song.title}</Copy>
-                    <Meta>{song.artist}</Meta>
-                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={song.title + ' 상세 보기'}
+                    onPress={() => navigate('song', { id: song.id, workspaceId: workspace?.id })}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
+                    }}
+                  >
+                    <SongCover
+                      id={song.id}
+                      thumbnailUrl={song.thumbnailUrl}
+                      referenceUrl={song.referenceUrl}
+                      size={50}
+                    />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Copy style={{ fontWeight: '500' }}>{song.title}</Copy>
+                      <Meta>{song.artist}</Meta>
+                    </View>
+                  </Pressable>
                   <ActionButton compact onPress={() => navigate('practice', { id: song.id })}>
                     연습하기
                   </ActionButton>
