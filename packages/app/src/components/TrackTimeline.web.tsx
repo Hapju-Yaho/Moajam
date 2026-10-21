@@ -1,4 +1,6 @@
 import './StudioConfirm.web.css';
+import { DawHelp } from './DawHelp.web';
+import { AppIcon } from './icons';
 import { soundfontInstruments, type SoundfontInstrumentId } from '../lib/soundfontCatalog';
 import {
   useEffect,
@@ -332,6 +334,7 @@ export function TrackTimeline({
       onReorder(current.ids);
   };
   const [collapsedTracks, setCollapsedTracks] = useState<string[]>([]);
+  const [dawHelpOpen, setDawHelpOpen] = useState(false);
   const [zoom, setZoom] = useState(48);
   const [zoomDraft, setZoomDraft] = useState('100');
   useEffect(() => setZoomDraft(String(Math.round((zoom / 48) * 100))), [zoom]);
@@ -606,9 +609,26 @@ export function TrackTimeline({
     <section className={`track-studio ${expanded ? 'is-expanded' : ''}`} aria-label="트랙 편집기">
       <header className="studio-heading">
         <div>
-          <h2>
-            사운드 트랙 <span>{tracks.length}</span>
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h2>사운드 트랙</h2>
+            <button
+              type="button"
+              aria-label="DAW 도움말 열기"
+              title="DAW 도움말"
+              className="studio-help-button"
+              onClick={() => setDawHelpOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 34,
+                height: 34,
+                padding: 0,
+              }}
+            >
+              <AppIcon name="help" size={19} color="#416bd1" />
+            </button>
+          </div>
           <p aria-live="polite">{saveLabel}</p>
         </div>
         <input
@@ -816,33 +836,38 @@ export function TrackTimeline({
             ))}
           </select>
           <div className="studio-tools-end">
-            <button
-              className={follow ? 'active' : ''}
-              aria-label="커서 따라가기"
-              aria-pressed={follow}
-              title="재생 시 커서가 화면 밖으로 나가면 타임라인이 자동으로 커서를 따라갑니다."
-              onClick={() => setFollow(!follow)}
+            <div
+              className="studio-move-options"
+              style={{ display: 'inline-flex', gap: 7, flexWrap: 'wrap' }}
             >
-              커서 따라가기
-            </button>
-            <button
-              className={magnetic ? 'active' : ''}
-              aria-label="클립 붙이기"
-              aria-pressed={magnetic}
-              title="드래그하는 클립의 시작 끝을 가까운 다른 클립의 시작 끝에 맞춥니다."
-              onClick={() => setMagnetic(!magnetic)}
-            >
-              클립 붙이기
-            </button>
-            <button
-              className={snap ? 'active' : ''}
-              aria-label="박자에 맞추기"
-              aria-pressed={snap}
-              title="클립 및 커서 이동 위치를 박자 단위 위치로 맞춥니다."
-              onClick={() => setSnap(!snap)}
-            >
-              박자 맞춤
-            </button>
+              <button
+                className={`studio-follow ${follow ? 'active' : ''}`}
+                aria-label="커서 따라가기"
+                aria-pressed={follow}
+                title="재생 시 커서가 화면 밖으로 나가면 타임라인이 자동으로 커서를 따라갑니다."
+                onClick={() => setFollow(!follow)}
+              >
+                커서 따라가기
+              </button>
+              <button
+                className={`studio-magnetic ${magnetic ? 'active' : ''}`}
+                aria-label="클립 붙이기"
+                aria-pressed={magnetic}
+                title="드래그하는 클립의 시작 끝을 가까운 다른 클립의 시작 끝에 맞춥니다."
+                onClick={() => setMagnetic(!magnetic)}
+              >
+                클립 붙이기
+              </button>
+              <button
+                className={`studio-snap ${snap ? 'active' : ''}`}
+                aria-label="박자에 맞추기"
+                aria-pressed={snap}
+                title="클립 및 커서 이동 위치를 박자 단위 위치로 맞춥니다."
+                onClick={() => setSnap(!snap)}
+              >
+                박자 맞춤
+              </button>
+            </div>
             <button
               aria-label="타임라인 축소"
               disabled={zoom <= 12}
@@ -926,15 +951,24 @@ export function TrackTimeline({
           )}
           <button
             disabled={locked || !canSplit}
+            className="studio-edit-action"
             onClick={() => selected && onSplitClip(selected.id, t.position)}
             title="클립 안에 재생 커서를 놓고 자르세요"
           >
             ✂ 커서에서 자르기
           </button>
-          <button disabled={locked || !selectedClips.length} onClick={deleteClips}>
+          <button
+            className="studio-edit-action"
+            disabled={locked || !selectedClips.length}
+            onClick={deleteClips}
+          >
             클립 삭제
           </button>
-          <button disabled={locked || !selectedClips.length} onClick={copyClips}>
+          <button
+            className="studio-edit-action"
+            disabled={locked || !selectedClips.length}
+            onClick={copyClips}
+          >
             클립 복사하기
           </button>
           {selectedClips.length > 1 ? (
@@ -955,7 +989,11 @@ export function TrackTimeline({
               </button>
             </span>
           ) : (
-            <button disabled={locked || !clipboard.length || !onPasteClips} onClick={pasteClips}>
+            <button
+              className="studio-edit-action"
+              disabled={locked || !clipboard.length || !onPasteClips}
+              onClick={pasteClips}
+            >
               클립 붙여넣기
             </button>
           )}
@@ -987,7 +1025,11 @@ export function TrackTimeline({
             </button>
           )}
           {selected && onPublish && (
-            <button disabled={!!publishing} onClick={() => onPublish(selected)}>
+            <button
+              className="studio-publish-clip"
+              disabled={!!publishing}
+              onClick={() => onPublish(selected)}
+            >
               {publishing === selected.id ? '보관 중…' : '클립 보관하기'}
             </button>
           )}
@@ -1836,6 +1878,7 @@ export function TrackTimeline({
   return (
     <>
       {expanded ? createPortal(editor, document.body) : editor}
+      {dawHelpOpen && <DawHelp onClose={() => setDawHelpOpen(false)} />}
       {addingTrack && (
         <TrackTypePicker
           anchor={addTrackButton.current?.getBoundingClientRect()}

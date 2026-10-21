@@ -93,6 +93,22 @@ export class PersonalController {
     private readonly db: PrismaService,
     private readonly photos: ProfilePhotoService,
   ) {}
+  @Put('help-visits/:screen')
+  @ApiOperation({ summary: '화면 첫 방문을 기록하고 최초 방문 여부 반환' })
+  async visitHelp(@CurrentUser() user: AuthenticatedUser, @Param('screen') screen: string) {
+    if (!['main-home', 'band-home', 'practice'].includes(screen))
+      throw new BadRequestException('지원하지 않는 도움말 화면입니다.');
+    const key = `help-visit/${screen}`;
+    try {
+      const saved = await this.db.personalDocument.create({
+        data: { ownerId: user.id, key, value: { visitedAt: new Date().toISOString() } },
+      });
+      return { firstVisit: true, visitedAt: (saved.value as { visitedAt: string }).visitedAt };
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'P2002') throw error;
+      return { firstVisit: false };
+    }
+  }
   @Get('onboarding')
   @ApiOperation({ summary: '내 첫 로그인 설정과 완료 여부 조회' })
   @ApiOkResponse({ type: OnboardingStateDto })

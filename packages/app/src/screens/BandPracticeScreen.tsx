@@ -1,3 +1,4 @@
+import { ScreenHelpButton } from '../components/ScreenHelpButton';
 import { useIdentity } from '../state/Identity';
 import { loadPreferences, savePreferences } from '../state/preferencesStorage';
 import { useEffect, useRef } from 'react';
@@ -7,6 +8,7 @@ import { AppShell } from '../components/AppShell';
 import {
   ActionButton,
   FlexBetween,
+  FlexRow,
   Heading,
   Meta,
   PageHeading,
@@ -52,8 +54,11 @@ export function BandPracticeScreen({ navigate, entityId, feedback }: ScreenProps
   }, [selectedSongId, selectionKey]);
   return (
     <AppShell activeRoute="practice" onNavigate={navigate}>
-      <PageHeading>연습실</PageHeading>
-      <Surface style={{ padding: 12, gap: 8 }}>
+      <FlexRow>
+        <PageHeading>연습실</PageHeading>
+        <ScreenHelpButton />
+      </FlexRow>
+      <Surface nativeID="practice-song-list" style={{ padding: 12, gap: 8 }}>
         <FlexBetween>
           <Heading>연습할 곡</Heading>{' '}
           <ActionButton

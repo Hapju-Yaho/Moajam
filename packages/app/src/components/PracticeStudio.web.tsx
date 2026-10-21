@@ -1205,7 +1205,7 @@ export function PracticeStudio({
             </div>
           )}
         </ScheduleDialog>
-        <div ref={feedbackRef} tabIndex={-1} aria-label="세부 피드백">
+        <div id="practice-feedback" ref={feedbackRef} tabIndex={-1} aria-label="세부 피드백">
           <Surface>
             <FlexRow>
               <Heading>세부 피드백</Heading>

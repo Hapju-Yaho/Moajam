@@ -1,3 +1,5 @@
+import { uploadMime } from './uploadMime';
+
 type Storage = {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
@@ -421,21 +423,7 @@ export async function uploadRemoteFile(
   if (!user) throw new Error('로그인이 필요합니다.');
   if (expectedUser && user !== expectedUser)
     throw new Error('계정이 변경되어 업로드를 중단했습니다.');
-  const extension = name.split('.').at(-1)?.toLowerCase() ?? '';
-  const mime = (
-    blob.type ||
-    {
-      xml: 'application/xml',
-      musicxml: 'application/xml',
-      wav: 'audio/wav',
-      mp3: 'audio/mpeg',
-      m4a: 'audio/mp4',
-      pdf: 'application/pdf',
-      png: 'image/png',
-      jpg: 'image/jpeg',
-    }[extension] ||
-    'application/octet-stream'
-  ).split(';')[0];
+  const mime = uploadMime(blob.type, name);
   if (blob.size > 104857600) throw new Error('100MB 이하 파일을 선택해주세요.');
   const upload = await api<UploadRequest>(
     '/assets/uploads',

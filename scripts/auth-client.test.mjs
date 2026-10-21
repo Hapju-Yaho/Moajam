@@ -88,7 +88,8 @@ async function fixture({
   };
   const source =
     `const { fetch } = globalThis[${JSON.stringify(key)}];\n` +
-    readFileSync(new URL('../packages/app/src/lib/remote-client.ts', import.meta.url), 'utf8');
+    readFileSync(new URL('../packages/app/src/lib/remote-client.ts', import.meta.url), 'utf8')
+      .replace("import { uploadMime } from './uploadMime';", readFileSync(new URL('../packages/app/src/lib/uploadMime.ts', import.meta.url), 'utf8'));
   const { outputText } = ts.transpileModule(source, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   });

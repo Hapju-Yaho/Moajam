@@ -1,3 +1,4 @@
+import { ScreenHelpButton } from '../components/ScreenHelpButton';
 import { useState } from 'react';
 import { useIdentity } from '../state/Identity';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
@@ -140,7 +141,12 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
           </PageDescription>
         </PageTop>
         {home && (
-          <ActionButton onPress={() => navigate('personal-practice')}>연습하러 가기 →</ActionButton>
+          <FlexRow>
+            <ScreenHelpButton />
+            <ActionButton onPress={() => navigate('personal-practice')}>
+              연습하러 가기 →
+            </ActionButton>
+          </FlexRow>
         )}
       </FlexBetween>
       {conflictingRehearsals(upcoming).length ? (
@@ -196,7 +202,10 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
             <StatTile icon="songs" label="참여 곡" value={`${allSongs.length}곡`} />
           </FlexRow>
           <Heading>내 밴드</Heading>
-          <View onLayout={(event) => setBandWidth(event.nativeEvent.layout.width)}>
+          <View
+            nativeID="tour-home-bands"
+            onLayout={(event) => setBandWidth(event.nativeEvent.layout.width)}
+          >
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator
@@ -240,10 +249,12 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
         </Meta>
       )}
       {home || calendar ? (
-        <ScheduleDashboard events={events} navigate={navigate} compact={home} />
+        <View nativeID="tour-home-calendar">
+          <ScheduleDashboard events={events} navigate={navigate} compact={home} />
+        </View>
       ) : null}
       {!calendar && (
-        <Surface>
+        <Surface nativeID="tour-home-songs">
           <FlexBetween>
             <Heading>{home ? '연습할 곡' : `전체 ${songs.length}곡`}</Heading>
             {home && (

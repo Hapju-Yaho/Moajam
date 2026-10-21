@@ -1,3 +1,4 @@
+import { ScreenHelpButton } from '../components/ScreenHelpButton';
 import { AppIcon } from '../components/icons';
 import { BandSettings } from '../components/BandSettings';
 import { useIdentity } from '../state/Identity';
@@ -88,25 +89,28 @@ export function HomeScreen({ navigate }: ScreenProps) {
           <PageDescription>{workspace?.description}</PageDescription>
         </PageTop>
         <FlexRow style={{ flexShrink: 0 }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="밴드 설정"
-            onPress={() => setSettingsOpen(true)}
-            style={{
-              width: 40,
-              height: 40,
-              borderWidth: 1,
-              borderColor: '#dce3ed',
-              borderRadius: 8,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <AppIcon name="settings" size={20} color="#52647b" />
-          </Pressable>
-          <ActionButton secondary onPress={() => navigate('members')}>
-            멤버 보기
-          </ActionButton>
+          <ScreenHelpButton />
+          <FlexRow nativeID="tour-band-manage">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="밴드 설정"
+              onPress={() => setSettingsOpen(true)}
+              style={{
+                width: 40,
+                height: 40,
+                borderWidth: 1,
+                borderColor: '#dce3ed',
+                borderRadius: 8,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <AppIcon name="settings" size={20} color="#52647b" />
+            </Pressable>
+            <ActionButton secondary onPress={() => navigate('members')}>
+              멤버 보기
+            </ActionButton>
+          </FlexRow>
           <ActionButton
             secondary
             danger
@@ -121,7 +125,7 @@ export function HomeScreen({ navigate }: ScreenProps) {
         </FlexRow>
       </FlexBetween>
       <ResponsiveGrid stacked={width < 1050}>
-        <Surface style={{ flex: 1.6 }}>
+        <Surface nativeID="tour-band-next" style={{ flex: 1.6 }}>
           <FlexBetween>
             <Heading>다음 합주</Heading>
             {next && (
@@ -167,22 +171,24 @@ export function HomeScreen({ navigate }: ScreenProps) {
       </ResponsiveGrid>
       <Heading>밴드 일정</Heading>
       <Meta>이 밴드의 모든 멤버가 함께 확인하는 팀 일정이에요.</Meta>
-      <ScheduleDashboard
-        events={rehearsals
-          .filter((event) => !event.cancelled)
-          .map((event) => ({
-            ...event,
-            workspaceId: workspace!.id,
-            bandName: workspace!.name,
-            bandColor: workspace!.color,
-          }))}
-        navigate={navigate}
-        workspaceId={workspace?.id}
-        compact
-      />
+      <View nativeID="tour-home-calendar">
+        <ScheduleDashboard
+          events={rehearsals
+            .filter((event) => !event.cancelled)
+            .map((event) => ({
+              ...event,
+              workspaceId: workspace!.id,
+              bandName: workspace!.name,
+              bandColor: workspace!.color,
+            }))}
+          navigate={navigate}
+          workspaceId={workspace?.id}
+          compact
+        />
+      </View>
       <ResponsiveGrid stacked={width < 1050}>
         <Stack style={{ flex: 1.4 }}>
-          <Surface>
+          <Surface nativeID="tour-home-songs">
             <FlexBetween>
               <Heading>함께 연습할 곡</Heading>
               <ActionButton secondary compact onPress={() => navigate('songs')}>
@@ -233,21 +239,34 @@ export function HomeScreen({ navigate }: ScreenProps) {
           </Surface>
         </Stack>
         <Stack style={{ flex: 1 }}>
-          <Surface>
+          <Surface nativeID="tour-band-candidates">
             <Heading>다음 채택 후보</Heading>
             {candidates.length ? (
               candidates.slice(0, 3).map((song) => (
-                <View key={song.id} style={{ gap: 8 }}>
+                <View
+                  key={song.id}
+                  style={{
+                    gap: 8,
+                    padding: 14,
+                    borderWidth: 1,
+                    borderColor: '#dce4f0',
+                    borderRadius: 12,
+                    backgroundColor: '#f7f9fc',
+                  }}
+                >
                   <Copy style={{ fontWeight: '500' }}>{song.title}</Copy>
-                  <Meta>
-                    {song.artist} · 좋아요 {song.likes} · 채택 추천 {song.votes}
-                  </Meta>
-                  <ActionButton
-                    secondary
-                    onPress={() => navigate('recommendation', { id: song.id })}
-                  >
-                    후보 상세 보기
-                  </ActionButton>
+                  <FlexRow wrap gap={8}>
+                    <Meta>
+                      {song.artist} · 좋아요 {song.likes} · 채택 추천 {song.votes}
+                    </Meta>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={song.title + ' 후보 상세 보기'}
+                      onPress={() => navigate('recommendation', { id: song.id })}
+                    >
+                      <Meta style={{ color: '#416bd1', fontWeight: '500' }}>후보 상세 보기 →</Meta>
+                    </Pressable>
+                  </FlexRow>
                 </View>
               ))
             ) : (
