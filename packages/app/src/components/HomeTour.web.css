@@ -1,0 +1,121 @@
+.home-tour {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  background: transparent;
+  color: #20354a;
+}
+.home-tour::backdrop {
+  background: transparent;
+}
+.home-tour-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.home-tour-card {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 24px;
+  background: white;
+  border: 1px solid #dce4f0;
+  border-radius: 18px;
+  box-shadow: 0 16px 48px #101d5340;
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  outline: none;
+}
+.home-tour-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #6e8199;
+  font-size: 12px;
+}
+.home-tour button {
+  cursor: pointer;
+  font: inherit;
+  border: 1px solid #dce4f0;
+  background: #f7f9ff;
+  color: #416bd1;
+  border-radius: 9px;
+  padding: 9px 12px;
+}
+.home-tour button:focus-visible {
+  outline: 3px solid #84b0ff;
+  outline-offset: 2px;
+}
+.home-tour-progress button {
+  background: transparent;
+  border: 0;
+  font-size: 24px;
+  padding: 0 4px;
+}
+.home-tour h2 {
+  font-size: 21px;
+  line-height: 1.4;
+  margin: 16px 0 12px;
+}
+.home-tour p {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #56657c;
+  margin: 0 0 18px;
+  word-break: keep-all;
+}
+.home-tour footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 20px;
+}
+.home-tour footer > div,
+.home-tour-start {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.daw-midi-help-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+@media (max-width: 799px) {
+  .daw-midi-help-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+}
+.home-tour .home-tour-link {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  color: #6e8199;
+}
+.home-tour .home-tour-next {
+  color: white;
+  background: #1d60ee;
+  border-color: #1d60ee;
+}
+.home-tour-start {
+  margin-bottom: 12px;
+}
+@media (max-width: 599px) {
+  .home-tour-card {
+    padding: 18px;
+    max-height: 48dvh;
+  }
+  .home-tour h2 {
+    font-size: 18px;
+  }
+}

@@ -1,0 +1,15 @@
+<html>
+  <body>
+    <div id="root"></div>
+    <pre id="target"></pre>
+    <pre id="result">RUNNING</pre>
+    <script type="module">
+      import RefreshRuntime from '/@react-refresh';
+      RefreshRuntime.injectIntoGlobalHook(window);
+      window.$RefreshReg$ = () => {};
+      window.$RefreshSig$ = () => (type) => type;
+      window.__vite_plugin_react_preamble_installed__ = true;
+    </script>
+    <script type="module" src="./home-tour.browser.tsx"></script>
+  </body>
+</html>

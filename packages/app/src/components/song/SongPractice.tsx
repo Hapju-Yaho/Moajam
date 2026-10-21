@@ -49,10 +49,11 @@ export function SongPractice({
             </Meta>
             <PageHeading style={{ fontSize: 28 }}>{song.title}</PageHeading>
             <Copy style={{ color: '#75847b' }}>{song.artist}</Copy>
-            <FlexRow wrap>
+            <FlexRow nativeID="practice-score-actions" wrap>
               <SongPdfLibrary songId={song.id} title={song.title} />
               {navigate && (
                 <ActionButton
+                  nativeID="practice-score-edit"
                   secondary
                   compact
                   onPress={() =>

@@ -975,3 +975,11 @@
 .studio-ruler-row > .studio-track-head {
   border-bottom: 1px solid #667267;
 }
+
+.track-studio .studio-heading button.studio-help-button {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 9px;
+  min-height: 34px;
+}

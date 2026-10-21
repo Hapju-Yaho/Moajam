@@ -160,7 +160,7 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
   };
   return (
     <>
-      <ActionButton secondary compact onPress={() => setOpen(true)}>
+      <ActionButton nativeID="practice-pdf-open" secondary compact onPress={() => setOpen(true)}>
         악보 열기
       </ActionButton>
       {open &&

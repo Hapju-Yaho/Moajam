@@ -386,6 +386,7 @@ export function Toggle({ on, onPress }: { on: boolean; onPress: () => void }) {
 
 export function ActionButton({
   children,
+  nativeID,
   onPress,
   secondary,
   danger,
@@ -393,6 +394,7 @@ export function ActionButton({
   disabled,
   accessibilityState,
 }: PropsWithChildren<{
+  nativeID?: string;
   onPress?: () => void;
   secondary?: boolean;
   danger?: boolean;
@@ -403,6 +405,7 @@ export function ActionButton({
   if (secondary) {
     return (
       <OutlineButton
+        nativeID={nativeID}
         danger={danger}
         compact={compact}
         onPress={onPress}
@@ -422,6 +425,7 @@ export function ActionButton({
   }
   return (
     <PrimaryButton
+      nativeID={nativeID}
       danger={danger}
       compact={compact}
       onPress={onPress}
