@@ -80,9 +80,10 @@ export function ScoreEditorScreen({
   entityId,
   bandScore = false,
   scoreView,
+  scorePart,
 }: ScreenProps & { bandScore?: boolean }) {
   const userId = useIdentity();
-  const { workspaceId, adoptedSongs } = useMockAppState();
+  const { workspaceId, workspace, adoptedSongs } = useMockAppState();
   const song = adoptedSongs.find((item) => item.id === entityId);
   const defaultTitle = useRef('나의 악보');
   defaultTitle.current = song?.title ?? '나의 악보';
@@ -330,11 +331,11 @@ export function ScoreEditorScreen({
               });
           libraryRef.current = library;
           setVersionLibrary(library);
-          setVersionId(library.parts[0].appliedVersionId);
+          const first = library.parts.find((group) => group.part === scorePart) ?? library.parts[0];
+          setVersionId(first.appliedVersionId);
           setPreviewApplied(scoreView === 'applied');
           setPendingVersion(null);
           setImportedVersion(null);
-          const first = library.parts[0];
           const document =
             scoreView === 'applied'
               ? library.applied
@@ -353,7 +354,7 @@ export function ScoreEditorScreen({
           setAudioUrl(document.referenceAudio ? URL.createObjectURL(document.referenceAudio) : '');
           setAudioPosition(0);
           setScore(document.score);
-          setPart(document.score.parts[0]);
+          setPart(first.part);
           setSavedDocument(document);
           loadedKey.current = key;
           setLoaded(true);
@@ -383,7 +384,7 @@ export function ScoreEditorScreen({
       void context.current?.close();
       context.current = null;
     };
-  }, [key, userId, bandStore, bandScore, reload, scoreView]);
+  }, [key, userId, bandStore, bandScore, reload, scoreView, scorePart]);
   useEffect(() => {
     const flush = () => pendingSave.current?.();
     window.addEventListener('pagehide', flush);
@@ -922,7 +923,11 @@ export function ScoreEditorScreen({
     }
   };
   return (
-    <AppShell activeRoute={bandScore ? 'band-score-editor' : 'score-editor'} onNavigate={navigate}>
+    <AppShell
+      activeRoute={bandScore ? 'band-score-editor' : 'score-editor'}
+      onNavigate={navigate}
+      entityId={entityId}
+    >
       <ScoreEditorViewport
         initiallyExpanded={scoreView === 'expanded'}
         title={score.title}
@@ -930,20 +935,26 @@ export function ScoreEditorScreen({
         status={bandDirty ? '저장하지 않은 변경사항' : status}
         heading={
           <div className="score-editor-heading">
+            <Meta>
+              합주 도구 · {bandScore ? `${workspace?.name} / ${song?.title}` : '내 작업 · 비공개'}
+            </Meta>
             <PageHeading>{bandScore ? '밴드 악보 편집' : '악보 편집'}</PageHeading>
+            <ActionButton secondary compact onPress={() => navigate('tools')}>
+              작업 목록
+            </ActionButton>
             {song && (
               <ActionButton
                 secondary
                 compact
                 onPress={() =>
-                  navigate(bandScore ? 'practice' : 'song', {
+                  navigate('song', {
                     id: song.id,
                     workspaceId,
-                    songTab: 'resources',
+                    songTab: 'scores',
                   })
                 }
               >
-                ← {song.title} {bandScore ? '연습실' : '자료'}로 돌아가기
+                ← {song.title} 악보 보기로 돌아가기
               </ActionButton>
             )}
           </div>
@@ -1100,7 +1111,7 @@ export function ScoreEditorScreen({
                     disabled={fileBusy || bandSaving}
                   >
                     <option value="song">이 곡의 개인 악보</option>
-                    <option value="personal">개인 연습실의 나의 악보</option>
+                    <option value="personal">내 작업의 개인 악보</option>
                   </select>
                 </label>
                 <button

@@ -122,14 +122,19 @@ export function SettingsScreen({ navigate }: ScreenProps) {
         </FlexRow>
       </Surface>
       <Surface>
-        <Heading>알림 수신 설정</Heading>
-        <Meta>수신 선호를 저장합니다. 서버 알림 채널이 연결되면 적용됩니다.</Meta>
-        {(['push', 'email', 'reminder'] as const).map((key, index) => (
-          <FlexRow key={key}>
-            <Copy style={{ flex: 1 }}>
-              {['푸시 알림', '이메일 요약', '합주 하루 전 알림'][index]}
-            </Copy>
-            <Toggle on={draft[key]} onPress={() => setDraft({ ...draft, [key]: !draft[key] })} />
+        <Heading>알림 수신</Heading>
+        <FlexRow>
+          <Copy style={{ flex: 1 }}>서비스 안 알림함</Copy>
+          <Meta style={{ color: '#386ce4' }}>사용 중</Meta>
+        </FlexRow>
+        <Meta>
+          참여곡과 합주의 소식은 헤더의 종 아이콘에서 확인할 수 있어요. 알림함에서 밴드별·읽지 않음
+          필터를 사용할 수 있어요.
+        </Meta>
+        {['기기 푸시', '이메일 요약', '합주 자동 리마인드'].map((label) => (
+          <FlexRow key={label}>
+            <Copy style={{ flex: 1 }}>{label}</Copy>
+            <Meta>준비 중</Meta>
           </FlexRow>
         ))}
       </Surface>

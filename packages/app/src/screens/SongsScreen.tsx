@@ -66,7 +66,7 @@ export function SongsScreen({ navigate }: ScreenProps) {
 }
 
 function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps['navigate'] }) {
-  const { members, rehearsals } = useMockAppState();
+  const { members, rehearsals, workspaceId } = useMockAppState();
   const participants = members.filter((member) => song.participants?.[member.id]);
   const nextSession = rehearsals
     .filter(
@@ -78,61 +78,51 @@ function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps
     .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`))[0];
   const { width } = useWindowDimensions();
   return (
-    <Surface style={{ gap: 8, paddingVertical: 12 }}>
-      <FlexRow gap={16} style={{ alignItems: 'flex-start' }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${song.title} 상세 보기`}
-          onPress={() => navigate('song', { id: song.id })}
-        >
-          <SongCover
-            id={song.id}
-            thumbnailUrl={song.thumbnailUrl}
-            referenceUrl={song.referenceUrl}
-            size={width < 650 ? 64 : 80}
-          />
-        </Pressable>
-        <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
-          <FlexBetween>
-            <Pressable
-              style={{ flex: 1, minWidth: 0 }}
-              accessibilityRole="button"
-              accessibilityLabel={`${song.title} 상세 보기`}
-              onPress={() => navigate('song', { id: song.id })}
-            >
-              <Heading>{song.title}</Heading>
-            </Pressable>
-            <ActionButton
-              compact
-              onPress={() =>
-                navigate(song.archived ? 'song' : 'practice', { id: song.id, songTab: 'overview' })
-              }
-            >
-              {song.archived ? '보관곡 보기' : '연습하기'}
-            </ActionButton>
-          </FlexBetween>
+    <Pressable
+      style={{ width: '100%', alignSelf: 'stretch', minWidth: 0 }}
+      accessibilityRole="button"
+      accessibilityLabel={`${song.title} 상세 보기`}
+      onPress={() => navigate('song', { id: song.id, workspaceId })}
+    >
+      <Surface style={{ width: '100%', gap: 8, paddingVertical: 12 }}>
+        <FlexRow gap={16} style={{ alignItems: 'flex-start' }}>
+          <View>
+            <SongCover
+              id={song.id}
+              thumbnailUrl={song.thumbnailUrl}
+              referenceUrl={song.referenceUrl}
+              size={width < 650 ? 64 : 80}
+            />
+          </View>
+          <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
+            <FlexBetween>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Heading>{song.title}</Heading>
+              </View>
+            </FlexBetween>
+            <Meta>
+              {song.artist} · {song.year}
+            </Meta>
+            <FlexBetween>
+              <FlexRow>
+                {participants.slice(0, 3).map((member) => (
+                  <Avatar key={member.id} size={28} color={member.color}>
+                    <AvatarText>{member.initials}</AvatarText>
+                  </Avatar>
+                ))}
+                {participants.length > 3 && <Meta>+{participants.length - 3}</Meta>}
+                {!participants.length && <Meta>참여자 미배정</Meta>}
+              </FlexRow>
+              <Meta>의견 {song.comments}</Meta>
+            </FlexBetween>
+          </View>
+        </FlexRow>
+        {nextSession && (
           <Meta>
-            {song.artist} · {song.year}
+            다음 합주 · {nextSession.date} {nextSession.start}
           </Meta>
-          <FlexBetween>
-            <FlexRow>
-              {participants.slice(0, 3).map((member) => (
-                <Avatar key={member.id} size={28} color={member.color}>
-                  <AvatarText>{member.initials}</AvatarText>
-                </Avatar>
-              ))}
-              {participants.length > 3 && <Meta>+{participants.length - 3}</Meta>}
-              {!participants.length && <Meta>참여자 미배정</Meta>}
-            </FlexRow>
-            <Meta>의견 {song.comments}</Meta>
-          </FlexBetween>
-        </View>
-      </FlexRow>
-      {nextSession && (
-        <Meta>
-          다음 합주 · {nextSession.date} {nextSession.start}
-        </Meta>
-      )}
-    </Surface>
+        )}
+      </Surface>
+    </Pressable>
   );
 }

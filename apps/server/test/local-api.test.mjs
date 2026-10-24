@@ -443,13 +443,20 @@ test('SQLite HTTP: authentication, isolation, atomic sync, conflicts, invitation
       sync([{ key: 'rehearsals', revision: revision + 1, value: { data: [] } }]),
       a.token,
     );
-    for (const member of [a, b]) {
+    assert.equal(
+      (await call('/notifications', 'GET', undefined, a.token)).filter(
+        (item) => item.kind === 'REHEARSAL_CANCELLED',
+      ).length,
+      0,
+      'the actor does not receive their own cancellation',
+    );
+    for (const member of [b]) {
       const cancellations = (await call('/notifications', 'GET', undefined, member.token)).filter(
         (item) => item.kind === 'REHEARSAL_CANCELLED',
       );
       assert.equal(cancellations.length, 1);
       assert.equal(cancellations[0].entityId, session.id);
-      assert.ok(cancellations[0].message.includes(session.title));
+      assert.equal(cancellations[0].metadata.title, session.title);
     }
     const beforeBulk = await call('/notifications', 'GET', undefined, b.token);
     assert.ok(beforeBulk.some((item) => !item.readAt));

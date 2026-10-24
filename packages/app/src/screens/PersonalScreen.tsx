@@ -75,9 +75,19 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
     </FlexRow>
   );
   const songRows = (home ? songs.slice(0, 4) : songs).map((song) => (
-    <View
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${song.bandName} ${song.title} 상세 보기`}
+      onPress={() => navigate('song', { id: song.id, workspaceId: song.workspaceId })}
       key={`${song.workspaceId}/${song.id}`}
-      style={{ paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#edf1f6', gap: 10 }}
+      style={{
+        width: '100%',
+        alignSelf: 'stretch',
+        paddingVertical: 14,
+        borderTopWidth: 1,
+        borderTopColor: '#edf1f6',
+        gap: 10,
+      }}
     >
       <FlexRow gap={12} style={{ alignItems: 'flex-start' }}>
         <SongCover
@@ -88,42 +98,15 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
         />
         <View style={{ flex: 1, gap: 3 }}>
           <Meta style={{ color: song.bandColor, fontWeight: '500' }}>{song.bandName}</Meta>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => navigate('song', { id: song.id, workspaceId: song.workspaceId })}
-          >
-            <Copy style={{ fontWeight: '500' }}>{song.title}</Copy>
-          </Pressable>
+
+          <Copy style={{ fontWeight: '500' }}>{song.title}</Copy>
+
           <Meta>
             {song.artist} · 내 파트 {song.myPart || '미배정'}
           </Meta>
         </View>
-        {width >= 650 && (
-          <ActionButton
-            secondary
-            compact
-            onPress={() =>
-              navigate('personal-practice', { id: song.id, workspaceId: song.workspaceId })
-            }
-          >
-            연습하기 →
-          </ActionButton>
-        )}
       </FlexRow>
-      <FlexRow wrap>
-        {width < 650 && (
-          <ActionButton
-            secondary
-            compact
-            onPress={() =>
-              navigate('personal-practice', { id: song.id, workspaceId: song.workspaceId })
-            }
-          >
-            연습하기
-          </ActionButton>
-        )}
-      </FlexRow>
-    </View>
+    </Pressable>
   ));
   return (
     <AppShell activeRoute={route} onNavigate={navigate}>
@@ -143,9 +126,7 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
         {home && (
           <FlexRow>
             <ScreenHelpButton />
-            <ActionButton onPress={() => navigate('personal-practice')}>
-              연습하러 가기 →
-            </ActionButton>
+            <ActionButton onPress={() => navigate('personal-songs')}>참여곡 보기 →</ActionButton>
           </FlexRow>
         )}
       </FlexBetween>

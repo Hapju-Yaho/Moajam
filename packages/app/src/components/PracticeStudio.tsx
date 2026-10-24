@@ -9,12 +9,13 @@ import {
   setAudioModeAsync,
 } from 'expo-audio';
 import { getDocumentAsync } from 'expo-document-picker';
-import { ActionButton, Heading, Meta, Surface, FlexRow } from './ProductUI';
+import { ActionButton, Copy, Heading, Meta, Surface, FlexRow } from './ProductUI';
 import { Input } from '../styles/layout';
 import { readMedia, writeMedia } from '../lib/mediaStore';
 import { keepNativeFile } from '../lib/nativeStorage';
 import { usePreferences } from '../state/preferences';
 import { serverConfigured } from '../lib/remote';
+import { useWorkspaceValue, useMockAppState } from '../state/MockAppState';
 import { TrackPartPicker } from './TrackPartPicker';
 import { trackPartLabel, validateAudioFile, type TrackPart } from '../lib/trackParts';
 type Track = {
@@ -24,6 +25,7 @@ type Track = {
   part?: TrackPart;
   sourceStart?: number;
   duration?: number;
+  offset?: number;
   trimmed?: boolean;
   clips?: Track[];
 };
@@ -31,8 +33,12 @@ function NativeTrack({
   track,
   onDelete,
   onPartChange,
+  readOnly = false,
+  seekRequest,
 }: {
   track: Track;
+  readOnly?: boolean;
+  seekRequest?: { time: number };
   onDelete: () => void;
   onPartChange: (part: TrackPart) => void;
 }) {
@@ -48,13 +54,20 @@ function NativeTrack({
   useEffect(() => {
     player.volume = preferences.volume;
   }, [player, preferences.volume]);
+  useEffect(() => {
+    if (!seekRequest || !status.isLoaded) return;
+    const target = Math.max(start, Math.min(end, start + seekRequest.time - (track.offset ?? 0)));
+    void player.seekTo(target).catch(() => {});
+  }, [seekRequest, status.isLoaded, start, end, track.offset, player]);
   return (
     <Surface>
       <Heading>{track.name}</Heading>
-      <ActionButton secondary compact onPress={() => setEditingPart(!editingPart)}>
-        {trackPartLabel(track.part)} · 세션 변경
-      </ActionButton>
-      {editingPart && (
+      {!readOnly && (
+        <ActionButton secondary compact onPress={() => setEditingPart(!editingPart)}>
+          {trackPartLabel(track.part)} · 세션 변경
+        </ActionButton>
+      )}
+      {editingPart && !readOnly && (
         <TrackPartPicker
           value={track.part ?? 'UNASSIGNED'}
           onChange={(part) => {
@@ -85,9 +98,11 @@ function NativeTrack({
         <ActionButton secondary disabled={!track.uri} onPress={() => void player.seekTo(start)}>
           처음으로
         </ActionButton>
-        <ActionButton secondary onPress={onDelete}>
-          목록에서 삭제
-        </ActionButton>
+        {!readOnly && (
+          <ActionButton secondary onPress={onDelete}>
+            목록에서 삭제
+          </ActionButton>
+        )}
       </FlexRow>
     </Surface>
   );
@@ -95,11 +110,29 @@ function NativeTrack({
 export function PracticeStudio({
   scopeKey,
   feedback,
+  readOnly = false,
+  onOpenEditor,
+  focusId,
+  focusTime,
 }: {
   scopeKey: string;
   bpm?: number;
   feedback?: boolean;
+  readOnly?: boolean;
+  onOpenEditor?: () => void;
+  focusId?: string;
+  focusTime?: number;
 }) {
+  const { members } = useMockAppState();
+  const [sharedNotes] = useWorkspaceValue<
+    { id: string; time: number; text: string; authorId: string }[]
+  >(`song/${scopeKey.split('/').at(-1)}/feedback`, []);
+  const [seekRequest, setSeekRequest] = useState(
+    focusTime === undefined ? undefined : { time: focusTime },
+  );
+  useEffect(() => {
+    if (focusTime !== undefined) setSeekRequest({ time: focusTime });
+  }, [focusTime, focusId]);
   const feedbackInput = useRef<import('react-native').TextInput>(null);
   const [uploadPart, setUploadPart] = useState<TrackPart>('UNASSIGNED');
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -138,6 +171,7 @@ export function PracticeStudio({
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState('');
   async function saveChanges() {
+    if (readOnly) return;
     if (!ready || saving || recording.isRecording || busy) return;
     setSaving(true);
     setSavedMessage('');
@@ -192,42 +226,63 @@ export function PracticeStudio({
   }
   return (
     <Surface>
-      <FlexRow wrap>
-        <Heading>세션별 트랙</Heading>
-        <ActionButton
-          disabled={!ready || saving || busy || recording.isRecording}
-          onPress={() => void saveChanges()}
-        >
-          {saving ? '저장 중…' : '변경사항 공유하기'}
-        </ActionButton>
-      </FlexRow>
-      <Meta>{savedMessage || '변경 후 화면을 이동하기 전에 변경사항 공유하기를 눌러주세요.'}</Meta>
-      <Meta>
-        악기 파트를 고른 뒤 음원을 추가하세요. {serverConfigured ? '내 계정' : '이 기기'}에 비공개로
-        저장합니다. 변경사항 공유하기를 눌렀을 때 저장돼요. 녹음을 중지한 후 화면을 이동해주세요.
-      </Meta>
-      <TrackPartPicker
-        value={uploadPart}
-        onChange={setUploadPart}
-        disabled={busy || recording.isRecording}
-      />
-      <FlexRow wrap>
-        <ActionButton
-          disabled={!ready || busy || recording.isRecording}
-          onPress={() => void upload()}
-        >
-          음원 추가
-        </ActionButton>
-        <ActionButton disabled={!ready || busy} onPress={() => void record()}>
-          {recording.isRecording
-            ? `녹음 중지 · ${Math.floor(recording.durationMillis / 1000)}초`
-            : '녹음 시작'}
-        </ActionButton>
-      </FlexRow>
+      {readOnly && onOpenEditor && (
+        <ActionButton onPress={onOpenEditor}>사운드 트랙 편집</ActionButton>
+      )}
+      {!readOnly && (
+        <>
+          <FlexRow wrap>
+            <Heading>세션별 트랙</Heading>
+            <ActionButton
+              disabled={!ready || saving || busy || recording.isRecording}
+              onPress={() => void saveChanges()}
+            >
+              {saving ? '저장 중…' : '변경사항 공유하기'}
+            </ActionButton>
+          </FlexRow>
+          <Meta>
+            {savedMessage || '변경 후 화면을 이동하기 전에 변경사항 공유하기를 눌러주세요.'}
+          </Meta>
+          <Meta>
+            악기 파트를 고른 뒤 음원을 추가하세요. {serverConfigured ? '내 계정' : '이 기기'}에
+            비공개로 저장합니다. 변경사항 공유하기를 눌렀을 때 저장돼요. 녹음을 중지한 후 화면을
+            이동해주세요.
+          </Meta>
+          <TrackPartPicker
+            value={uploadPart}
+            onChange={setUploadPart}
+            disabled={busy || recording.isRecording}
+          />
+          <FlexRow wrap>
+            <ActionButton
+              disabled={!ready || busy || recording.isRecording}
+              onPress={() => void upload()}
+            >
+              음원 추가
+            </ActionButton>
+            <ActionButton disabled={!ready || busy} onPress={() => void record()}>
+              {recording.isRecording
+                ? `녹음 중지 · ${Math.floor(recording.durationMillis / 1000)}초`
+                : '녹음 시작'}
+            </ActionButton>
+          </FlexRow>
+        </>
+      )}
+      {readOnly && (
+        <Meta>
+          {ready
+            ? tracks.length
+              ? '저장된 트랙 · 재생 전용'
+              : '저장된 트랙이 없어요.'
+            : '트랙 불러오는 중…'}
+        </Meta>
+      )}
       {error ? <Meta accessibilityRole="alert">{error}</Meta> : null}
       {tracks.flatMap((track) =>
         (track.clips?.length ? track.clips : [track]).map((clip) => (
           <NativeTrack
+            readOnly={readOnly}
+            seekRequest={seekRequest}
             key={clip.id}
             track={
               clip === track
@@ -253,16 +308,38 @@ export function PracticeStudio({
           />
         )),
       )}
-      <Heading>세부 피드백</Heading>
-      <Input
-        multiline
-        ref={feedbackInput}
-        accessibilityLabel="세부 피드백"
-        placeholder="세부 피드백"
-        value={memo}
-        onChangeText={setMemo}
-        editable={ready}
-      />
+      {readOnly && (
+        <>
+          <Heading>트랙 피드백</Heading>
+          {sharedNotes.map((note) => (
+            <Surface key={note.id} tint={focusId === note.id ? '#e4efff' : undefined}>
+              <Meta>
+                {members.find((member) => member.id === note.authorId)?.name ?? '밴드 멤버'}
+              </Meta>
+              <Copy>{note.text}</Copy>
+              <ActionButton secondary compact onPress={() => setSeekRequest({ time: note.time })}>
+                {Math.floor(note.time / 60)}:{String(Math.floor(note.time % 60)).padStart(2, '0')}{' '}
+                위치로 이동
+              </ActionButton>
+            </Surface>
+          ))}
+          {!sharedNotes.length && <Meta>아직 트랙 피드백이 없어요.</Meta>}
+        </>
+      )}
+      {!readOnly && (
+        <>
+          <Heading>세부 피드백</Heading>
+          <Input
+            multiline
+            ref={feedbackInput}
+            accessibilityLabel="세부 피드백"
+            placeholder="세부 피드백"
+            value={memo}
+            onChangeText={setMemo}
+            editable={ready}
+          />
+        </>
+      )}
     </Surface>
   );
 }

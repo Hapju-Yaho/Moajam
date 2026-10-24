@@ -216,8 +216,8 @@ export function InstrumentExtractorScreen({ navigate }: ScreenProps) {
         ))}
       </Surface>
       <MediaLibrary scopeKey="extraction" />
-      <ActionButton secondary onPress={() => navigate('personal-practice')}>
-        연습실로 이동
+      <ActionButton secondary onPress={() => navigate('track-editor')}>
+        사운드 트랙 편집으로 이동
       </ActionButton>
     </AppShell>
   );

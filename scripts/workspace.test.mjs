@@ -129,9 +129,8 @@ test('practice links retain both song and band on reload', () => {
     { route: 'personal-songs', workspaceId: 'a' },
   );
   const url = new URL(path, 'https://example.test');
-  assert.equal(url.pathname, '/me/practice');
-  assert.equal(url.searchParams.get('workspaceId'), 'band 2');
-  assert.equal(url.searchParams.get('songId'), 'song / 1');
+  assert.equal(url.pathname, '/workspaces/band%202/songs/song%20%2F%201');
+  assert.equal(url.searchParams.get('tab'), 'tracks');
 });
 test('band switching clears previous entity context', () => {
   assert.equal(
@@ -146,18 +145,15 @@ test('band switching clears previous entity context', () => {
 test('practice entered from a song preserves that song and has a return path', () => {
   assert.equal(
     buildAppPath('practice', undefined, { route: 'song', workspaceId: 'b', entityId: 'same-song' }),
-    '/workspaces/b/songs/same-song/practice',
+    '/workspaces/b/songs/same-song?tab=tracks',
   );
   assert.equal(
     buildAppPath('song', undefined, { route: 'practice', workspaceId: 'b', entityId: 'same-song' }),
     '/workspaces/b/songs/same-song',
   );
 });
-test('a practice link without a selected song opens the band practice picker', () => {
-  assert.equal(
-    buildAppPath('practice', undefined, { route: 'home', workspaceId: 'b' }),
-    '/workspaces/b/practice',
-  );
+test('a practice link without a selected song opens music tools', () => {
+  assert.equal(buildAppPath('practice', undefined, { route: 'home', workspaceId: 'b' }), '/tools');
 });
 test('personal home never inherits the band URL', () => {
   assert.equal(
@@ -177,6 +173,89 @@ test('feedback links retain the selected band and song and target the feedback s
       { id: 'song-a', workspaceId: 'band-a', feedback: true },
       { route: 'song', workspaceId: 'band-b' },
     ),
-    '/workspaces/band-a/songs/song-a/practice?feedback=true',
+    '/workspaces/band-a/songs/song-a?tab=tracks&feedback=true',
   );
+});
+
+test('tool links retain explicit band/song context and return to the correct detail tab', () => {
+  const context = { route: 'song', workspaceId: 'other band', entityId: 'other song' };
+  for (const [route, pathname] of [
+    ['band-score-editor', '/tools/scores'],
+    ['track-editor', '/tools/tracks'],
+    ['score-editor', '/tools/scores/personal'],
+  ]) {
+    const url = new URL(
+      buildAppPath(route, { workspaceId: 'band / a', id: 'song / b' }, context),
+      'https://example.test',
+    );
+    assert.equal(url.pathname, pathname);
+    assert.equal(url.searchParams.get('workspaceId'), 'band / a');
+    assert.equal(url.searchParams.get('songId'), 'song / b');
+    const back = new URL(
+      buildAppPath(
+        'song',
+        {
+          workspaceId: url.searchParams.get('workspaceId'),
+          id: url.searchParams.get('songId'),
+          songTab: route === 'track-editor' ? 'tracks' : 'scores',
+        },
+        { route, workspaceId: 'other' },
+      ),
+      'https://example.test',
+    );
+    assert.equal(back.pathname, '/workspaces/band%20%2F%20a/songs/song%20%2F%20b');
+    assert.equal(back.searchParams.get('tab'), route === 'track-editor' ? 'tracks' : 'scores');
+  }
+});
+
+test('tool picker clears the previous edit target and personal work stays separate', () => {
+  const context = { route: 'track-editor', workspaceId: 'band', entityId: 'song' };
+  assert.equal(buildAppPath('track-editor', undefined, context), '/tools/tracks');
+  assert.equal(buildAppPath('tools', undefined, context), '/tools');
+  assert.equal(buildAppPath('score-editor', undefined, context), '/tools/scores/personal');
+});
+
+test('score viewer opens the selected part and retains expanded view on reload', () => {
+  const path = buildAppPath(
+    'band-score-editor',
+    { id: 'song', workspaceId: 'band', scorePart: 'Bass / 베이스', scoreView: 'expanded' },
+    { route: 'song', workspaceId: 'other' },
+  );
+  const url = new URL(path, 'https://example.test');
+  assert.equal(url.searchParams.get('part'), 'Bass / 베이스');
+  assert.equal(url.searchParams.get('view'), 'expanded');
+});
+
+test('notification deep links retain exact opinion, PDF and track timestamp targets', () => {
+  const url = new URL(
+    buildAppPath(
+      'song',
+      {
+        workspaceId: 'band',
+        id: 'song',
+        songTab: 'tracks',
+        focusId: 'feedback-1',
+        focusTime: 42.5,
+        assetId: 'pdf-1',
+        feedback: true,
+      },
+      { route: 'song', workspaceId: 'band' },
+    ),
+    'http://localhost',
+  );
+  assert.equal(url.searchParams.get('focus'), 'feedback-1');
+  assert.equal(url.searchParams.get('at'), '42.5');
+  assert.equal(url.searchParams.get('asset'), 'pdf-1');
+  assert.equal(url.searchParams.get('tab'), 'tracks');
+  for (const focusTime of [-1, NaN, Infinity]) {
+    const invalid = new URL(
+      buildAppPath(
+        'song',
+        { id: 'song', workspaceId: 'band', focusTime },
+        { route: 'song', workspaceId: 'band' },
+      ),
+      'http://localhost',
+    );
+    assert.equal(invalid.searchParams.has('at'), false);
+  }
 });

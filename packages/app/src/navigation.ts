@@ -1,4 +1,6 @@
 export type AppRoute =
+  | 'tools'
+  | 'track-editor'
   | 'personal-home'
   | 'personal-rehearsals'
   | 'personal-songs'
@@ -24,13 +26,19 @@ export const songTabs = [
   'resources',
   'practice',
   'history',
+  'scores',
+  'tracks',
 ] as const;
 export type SongTab = (typeof songTabs)[number];
 export function parseSongTab(value?: string | null): SongTab {
   return songTabs.includes(value as SongTab) ? (value as SongTab) : 'main';
 }
 export interface NavigationOptions {
+  focusId?: string;
+  focusTime?: number;
+  assetId?: string;
   scoreView?: 'applied' | 'expanded';
+  scorePart?: string;
   id?: string;
   workspaceId?: string;
   songTab?: SongTab;
@@ -38,7 +46,11 @@ export interface NavigationOptions {
 }
 
 export interface ScreenProps {
+  focusId?: string;
+  focusTime?: number;
+  assetId?: string;
   scoreView?: 'applied' | 'expanded';
+  scorePart?: string;
   navigate: (route: AppRoute, options?: NavigationOptions) => void;
   entityId?: string;
   songTab?: SongTab;
@@ -57,26 +69,42 @@ export function buildAppPath(
     (['song', 'practice', 'personal-practice'].includes(context.route)
       ? context.entityId
       : undefined);
+  const params = id
+    ? new URLSearchParams({ workspaceId: bandId, songId: id })
+    : new URLSearchParams();
+  if (id && options?.scorePart) params.set('part', options.scorePart);
+  if (id && options?.scoreView) params.set('view', options.scoreView);
+  const query = id ? `?${params}` : '';
   const personalPaths: Partial<Record<AppRoute, string>> = {
     'personal-home': '/me',
     'personal-rehearsals': '/me/rehearsals',
     'personal-songs': '/me/songs',
-    instrument: '/me/instrument-extractor',
-    'score-editor': id
-      ? `/me/score-editor?${new URLSearchParams({ workspaceId: bandId, songId: id })}`
-      : '/me/score-editor',
+    tools: '/tools',
+    'track-editor': `/tools/tracks${query}`,
+    instrument: '/tools/instrument-extractor',
+    'score-editor': `/tools/scores/personal${query}`,
+    'band-score-editor': id ? `/tools/scores${query}` : '/tools',
     settings: '/settings',
     help: '/help',
   };
   if (personalPaths[next]) return personalPaths[next]!;
-  if (next === 'personal-practice')
+  if (next === 'practice' || next === 'personal-practice')
     return id
-      ? `/me/practice?${new URLSearchParams({ workspaceId: bandId, songId: id })}`
-      : '/me/practice';
+      ? `${base}/songs/${encodeURIComponent(id)}?tab=tracks${options?.feedback ? '&feedback=true' : ''}`
+      : '/tools';
+  const songParams = new URLSearchParams();
+  if (options?.songTab && options.songTab !== 'main') songParams.set('tab', options.songTab);
+  if (options?.feedback) songParams.set('feedback', 'true');
+  if (options?.focusId) songParams.set('focus', options.focusId);
+  if (
+    options?.focusTime !== undefined &&
+    Number.isFinite(options.focusTime) &&
+    options.focusTime >= 0
+  )
+    songParams.set('at', String(options.focusTime));
+  if (options?.assetId) songParams.set('asset', options.assetId);
+  const songQuery = songParams.size ? `?${songParams}` : '';
   const paths: Partial<Record<AppRoute, string>> = {
-    'band-score-editor': id
-      ? `${base}/songs/${encodeURIComponent(id)}/score${options?.scoreView ? `?view=${options.scoreView}` : ''}`
-      : `${base}/practice`,
     home: base,
     recommendations: `${base}/songs`,
     songs: `${base}/songs`,
@@ -85,12 +113,7 @@ export function buildAppPath(
     recommendation: options?.id
       ? `${base}/recommendations/${encodeURIComponent(options.id)}`
       : `${base}/recommendations`,
-    song: id
-      ? `${base}/songs/${encodeURIComponent(id)}${options?.songTab && options.songTab !== 'main' ? `?tab=${options.songTab}` : ''}`
-      : `${base}/songs`,
-    practice: id
-      ? `${base}/songs/${encodeURIComponent(id)}/practice${options?.feedback ? '?feedback=true' : ''}`
-      : `${base}/practice`,
+    song: id ? `${base}/songs/${encodeURIComponent(id)}${songQuery}` : `${base}/songs`,
   };
   return paths[next] ?? '/me';
 }

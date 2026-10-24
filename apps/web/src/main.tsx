@@ -52,6 +52,15 @@ function RoutedScreen({ route }: { route: AppRoute }) {
       entityId={entityId}
       songTab={parseSongTab(search.get('tab'))}
       feedback={search.get('feedback') === 'true'}
+      focusId={search.get('focus') ?? undefined}
+      assetId={search.get('asset') ?? undefined}
+      focusTime={
+        search.has('at') &&
+        Number.isFinite(Number(search.get('at'))) &&
+        Number(search.get('at')) >= 0
+          ? Number(search.get('at'))
+          : undefined
+      }
       scoreView={
         search.get('view') === 'applied'
           ? 'applied'
@@ -59,6 +68,7 @@ function RoutedScreen({ route }: { route: AppRoute }) {
             ? 'expanded'
             : undefined
       }
+      scorePart={search.get('part') ?? undefined}
       navigate={go}
     />
   );
@@ -107,6 +117,11 @@ function HistoryNavigationGuard() {
   return null;
 }
 const routes: Array<[string, AppRoute]> = [
+  ['/tools', 'tools'],
+  ['/tools/tracks', 'track-editor'],
+  ['/tools/scores', 'band-score-editor'],
+  ['/tools/scores/personal', 'score-editor'],
+  ['/tools/instrument-extractor', 'instrument'],
   ['/me', 'personal-home'],
   ['/me/rehearsals', 'personal-rehearsals'],
   ['/me/songs', 'personal-songs'],

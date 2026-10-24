@@ -9,7 +9,7 @@
     "postinstall": "node scripts/database.mjs --generate",
     "start": "node scripts/database.mjs && node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/health/health.controller.spec.ts src/personal/help-visits.spec.ts src/workspaces/workspaces.controller.spec.ts src/config/database-url.spec.ts src/common/auth/kakao.client.spec.ts src/common/auth/auth.service.spec.ts src/media/r2-bucket.spec.ts",
+    "test": "node --import tsx --test src/health/health.controller.spec.ts src/personal/help-visits.spec.ts src/workspaces/workspaces.controller.spec.ts src/workspaces/notification-events.spec.ts src/config/database-url.spec.ts src/common/auth/kakao.client.spec.ts src/common/auth/auth.service.spec.ts src/media/r2-bucket.spec.ts",
     "prisma:generate": "node scripts/database.mjs --generate",
     "prisma:migrate": "node scripts/database.mjs --migrate",
     "prisma:deploy": "node scripts/database.mjs --deploy",
@@ -17,7 +17,7 @@
     "db:local": "node scripts/database.mjs",
     "band-photos:migrate": "node scripts/migrate-band-photos.mjs",
     "profiles:migrate": "node scripts/migrate-profile-photos.mjs",
-    "test:integration": "npm run build && node --test --test-concurrency=1 test/local-api.test.mjs test/sqlite-defaults.test.mjs"
+    "test:integration": "npm run build && node --test --test-concurrency=1 test/local-api.test.mjs test/sqlite-defaults.test.mjs test/notifications.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",

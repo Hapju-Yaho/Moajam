@@ -21,6 +21,12 @@ import type { AppRoute, ScreenProps } from '../navigation';
 import { Input } from '../styles/layout';
 
 const guides: { title: string; detail: string; route: AppRoute }[] = [
+  { title: '악보 편집', detail: '개인 악보와 밴드 악보 작성·버전 관리', route: 'tools' },
+  {
+    title: '참여곡 상세',
+    detail: '곡 의견, PDF·제작 악보 보기와 사운드 트랙 재생',
+    route: 'personal-songs',
+  },
   { title: '개인 홈', detail: '내 밴드의 일정과 참여 곡을 모아보기', route: 'personal-home' },
   {
     title: '곡 추천과 채택',
@@ -28,9 +34,9 @@ const guides: { title: string; detail: string; route: AppRoute }[] = [
     route: 'recommendations',
   },
   {
-    title: '멀티트랙 연습',
+    title: '사운드 트랙 편집',
     detail: '파일을 올리고 함께 재생하거나 내 연주 녹음하기',
-    route: 'personal-practice',
+    route: 'track-editor',
   },
   {
     title: '내 악기 추출',
@@ -40,12 +46,12 @@ const guides: { title: string; detail: string; route: AppRoute }[] = [
 ];
 const faqs = [
   [
-    '연습실에서 어떤 파일을 사용할 수 있나요?',
+    '사운드 트랙 편집에서 어떤 파일을 사용할 수 있나요?',
     '기기에서 재생할 수 있는 100MB 이하 오디오를 추가할 수 있습니다. 악기 분리는 웹의 내 악기 추출에서 요청하며, 로그인과 분리 작업 서버 연결이 필요합니다.',
   ],
   [
     '내 녹음이 다른 멤버에게 공개되나요?',
-    '로그인 상태의 개인 녹음과 악보는 내 계정에 비공개로 저장되어 다른 기기에서 불러올 수 있습니다. 밴드 공개를 선택한 파일만 멤버에게 공유됩니다. 데모 모드의 파일은 해당 기기에만 저장됩니다.',
+    '개인 악보는 비공개입니다. 밴드 곡의 악보를 저장하거나 사운드 트랙 변경사항을 공유하면 해당 밴드 멤버가 볼 수 있어요. 데모 모드의 트랙 파일은 해당 브라우저 계정에만 저장됩니다.',
   ],
   [
     '개인 화면과 밴드 화면은 어떻게 다른가요?',
@@ -91,7 +97,7 @@ export function HelpScreen({ navigate }: ScreenProps) {
                   <SoftIcon>
                     <AppIcon
                       name={
-                        route === 'personal-practice'
+                        route === 'track-editor'
                           ? 'songs'
                           : route === 'instrument'
                             ? 'guitar'

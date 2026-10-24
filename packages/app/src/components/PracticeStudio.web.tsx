@@ -1,3 +1,4 @@
+import { useNotificationFocus } from '../lib/useNotificationFocus';
 import { useUndoState } from '../lib/useUndoState';
 import { mergeClips } from '../lib/clipMerge.web';
 import { MidiClipEditor } from './MidiClipEditor.web';
@@ -59,10 +60,18 @@ export function PracticeStudio({
   scopeKey,
   bpm,
   feedback,
+  readOnly = false,
+  onOpenEditor,
+  focusId,
+  focusTime,
 }: {
   scopeKey: string;
   bpm?: number;
   feedback?: boolean;
+  readOnly?: boolean;
+  onOpenEditor?: () => void;
+  focusId?: string;
+  focusTime?: number;
 }) {
   const feedbackRef = useRef<HTMLDivElement>(null);
   const userId = useIdentity();
@@ -103,9 +112,9 @@ export function PracticeStudio({
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   useEffect(() => {
-    if (feedback && loaded)
+    if (feedback && loaded && !focusId)
       feedbackRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }, [feedback, loaded]);
+  }, [feedback, loaded, focusId]);
   const loadedScope = useRef('');
   const sessionExtras = useRef<{ memo?: string }>({});
   const [savedSnapshot, setSavedSnapshot] = useState<Session | null>(null);
@@ -121,6 +130,24 @@ export function PracticeStudio({
   const [saveFailed, setSaveFailed] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
+  const appliedFocus = useRef('');
+  useNotificationFocus(
+    focusId ? `track-feedback-${focusId}` : undefined,
+    loaded && sharedNotes.some((note) => note.id === focusId),
+  );
+  useEffect(() => {
+    const key = `${scopeKey}/${focusId ?? ''}/${focusTime ?? ''}`;
+    if (
+      !loaded ||
+      appliedFocus.current === key ||
+      focusTime === undefined ||
+      !Number.isFinite(focusTime)
+    )
+      return;
+    appliedFocus.current = key;
+    positionRef.current = Math.max(0, focusTime);
+    setPosition(Math.max(0, focusTime));
+  }, [loaded, scopeKey, focusId, focusTime]);
   const [solo, setSolo] = useState<string | null>(null);
   const [loop, setLoop] = useState(false);
   const [loopStart, setLoopStart] = useState(0);
@@ -239,7 +266,7 @@ export function PracticeStudio({
     return next === document.tracks ? document : { ...document, tracks: next };
   };
   const saved = samePractice(withDecodedDurations(savedSnapshot), withDecodedDurations(snapshot));
-  const dirty = loaded && savedSnapshot !== null && !saved;
+  const dirty = !readOnly && loaded && savedSnapshot !== null && !saved;
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -367,7 +394,7 @@ export function PracticeStudio({
       setDialog({
         title: '떠나실건가요?',
         message:
-          '연습실 사운드 트랙 변경사항이 서버에 저장되지 않았습니다. 변경사항을 서버에 저장하려면 변경사항 공유하기 버튼을 눌러주세요.',
+          '사운드 트랙 변경사항이 서버에 저장되지 않았습니다. 변경사항을 서버에 저장하려면 변경사항 공유하기 버튼을 눌러주세요.',
         choices: [
           { label: '계속 작업하기', run: () => setDialog(null) },
           {
@@ -386,6 +413,7 @@ export function PracticeStudio({
     return () => window.removeEventListener('moajam:before-navigate', listener);
   }, [dirty]);
   const saveChanges = async () => {
+    if (readOnly) return;
     if (
       !loaded ||
       refreshing ||
@@ -842,6 +870,8 @@ export function PracticeStudio({
       </ScheduleDialog>
       <div inert={!!dialog || refreshing} style={{ display: 'contents' }}>
         <TrackTimeline
+          readOnly={readOnly}
+          onOpenEditor={onOpenEditor}
           tracks={tracks}
           loaded={loaded && !refreshing && !dialog}
           saveLabel={
@@ -849,15 +879,17 @@ export function PracticeStudio({
               ? loadFailed
                 ? '불러오기 실패'
                 : '불러오는 중…'
-              : saveFailed
-                ? '저장 실패 · 파일을 내려받아 보관해주세요'
-                : saving
-                  ? '저장 중…'
-                  : !saved
-                    ? '저장하지 않은 변경사항 · 이동 전에 변경사항 공유하기를 눌러주세요'
-                    : serverConfigured
-                      ? '서버에 저장됨'
-                      : '이 브라우저에 저장됨 · 비공개'
+              : readOnly
+                ? '재생 전용 · 음량과 반복 설정은 나에게만 적용돼요'
+                : saveFailed
+                  ? '저장 실패 · 파일을 내려받아 보관해주세요'
+                  : saving
+                    ? '저장 중…'
+                    : !saved
+                      ? '저장하지 않은 변경사항 · 이동 전에 변경사항 공유하기를 눌러주세요'
+                      : serverConfigured
+                        ? '서버에 저장됨'
+                        : '이 브라우저에 저장됨 · 비공개'
           }
           error={error}
           onUpload={(files, targetId) => {
@@ -1012,7 +1044,14 @@ export function PracticeStudio({
             if (source && solo === source.id) setSolo(newId);
             if (source && armed === source.id) setArmed(newId);
           }}
-          onRefresh={requestRefresh}
+          onRefresh={
+            readOnly
+              ? () => {
+                  stop();
+                  setLoadAttempt((value) => value + 1);
+                }
+              : requestRefresh
+          }
           refreshing={refreshing}
           onSave={() => void saveChanges()}
           saving={saving || merging}
@@ -1141,6 +1180,11 @@ export function PracticeStudio({
               key={clip.id}
               src={clip.url}
               preload="metadata"
+              onLoadedMetadata={
+                readOnly
+                  ? (event) => hydrateDuration(clip.id, event.currentTarget.duration)
+                  : undefined
+              }
               onError={() => setError(`${clip.name} 파일을 읽을 수 없어요.`)}
             />
           ))}
@@ -1178,7 +1222,7 @@ export function PracticeStudio({
             }}
           />
         )}
-        <ClipLibrary version={libraryVersion} />
+        {!readOnly && <ClipLibrary version={libraryVersion} />}
         <ScheduleDialog
           visible={!!importTrack}
           label="클립 가져오기"
@@ -1259,7 +1303,21 @@ export function PracticeStudio({
               const name = member?.name ?? '탈퇴한 멤버';
               const photo = note.authorId === userId ? preferences.photo : member?.photo;
               return (
-                <FlexRow key={note.id}>
+                <FlexRow
+                  key={note.id}
+                  nativeID={`track-feedback-${note.id}`}
+                  style={
+                    focusId === note.id
+                      ? {
+                          backgroundColor: '#e4efff',
+                          borderRadius: 10,
+                          padding: 10,
+                          borderWidth: 1,
+                          borderColor: '#5986ed',
+                        }
+                      : undefined
+                  }
+                >
                   <span
                     title={name}
                     aria-label={name}

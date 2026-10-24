@@ -116,14 +116,14 @@ test('band and personal editor links remain separate and preserve song context',
   const context = { route: 'practice', workspaceId: 'band', entityId: 'song' };
   assert.equal(
     buildAppPath('band-score-editor', undefined, context),
-    '/workspaces/band/songs/song/score',
+    '/tools/scores?workspaceId=band&songId=song',
   );
   assert.equal(
     buildAppPath('score-editor', undefined, context),
-    '/me/score-editor?workspaceId=band&songId=song',
+    '/tools/scores/personal?workspaceId=band&songId=song',
   );
   assert.equal(
     buildAppPath('practice', { workspaceId: 'band', id: 'song' }, context),
-    '/workspaces/band/songs/song/practice',
+    '/workspaces/band/songs/song?tab=tracks',
   );
 });

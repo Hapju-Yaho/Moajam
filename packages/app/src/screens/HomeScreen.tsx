@@ -229,9 +229,6 @@ export function HomeScreen({ navigate }: ScreenProps) {
                       <Meta>{song.artist}</Meta>
                     </View>
                   </Pressable>
-                  <ActionButton compact onPress={() => navigate('practice', { id: song.id })}>
-                    연습하기
-                  </ActionButton>
                 </FlexRow>
               </View>
             ))}

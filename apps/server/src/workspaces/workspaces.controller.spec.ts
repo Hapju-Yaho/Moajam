@@ -120,7 +120,10 @@ describe('band scores', () => {
   function scoreFixture() {
     let document: { revision: number; value: unknown; updatedBy: string } | null = null;
     const tx = {
+      profile: { findUnique: async () => ({ displayName: 'Musician' }) },
+      notification: { createMany: async () => ({ count: 1 }) },
       workspaceMember: {
+        findMany: async () => [{ userId: 'user' }, { userId: 'member' }],
         findUnique: async ({
           where,
         }: {

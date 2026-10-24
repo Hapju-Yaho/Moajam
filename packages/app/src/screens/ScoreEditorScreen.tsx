@@ -116,7 +116,7 @@ export function ScoreEditorScreen({ navigate, entityId }: ScreenProps) {
     });
   }
   return (
-    <AppShell activeRoute="score-editor" onNavigate={navigate}>
+    <AppShell activeRoute="score-editor" onNavigate={navigate} entityId={entityId}>
       <Heading>악보 편집</Heading>
       {entityId && (
         <ActionButton

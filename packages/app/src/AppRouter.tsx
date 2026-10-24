@@ -8,9 +8,9 @@ import { HomeScreen } from './screens/HomeScreen';
 import { HelpScreen } from './screens/HelpScreen';
 import { InstrumentExtractorScreen } from './screens/InstrumentExtractorScreen';
 import { MembersScreen } from './screens/MembersScreen';
-import { PracticeScreen } from './screens/PracticeScreen';
+import { MusicToolsScreen } from './screens/MusicToolsScreen';
+import { TrackEditorScreen } from './screens/TrackEditorScreen';
 import { RecommendationDetailScreen } from './screens/RecommendationDetailScreen';
-import { BandPracticeScreen } from './screens/BandPracticeScreen';
 import { RehearsalsScreen } from './screens/RehearsalsScreen';
 import { ScoreEditorScreen } from './screens/ScoreEditorScreen';
 import { BandScoreEditorScreen } from './screens/BandScoreEditorScreen';
@@ -19,7 +19,11 @@ import { SongsScreen } from './screens/SongsScreen';
 import { SongWorkspaceScreen } from './screens/SongWorkspaceScreen';
 
 interface AppScreenProps {
+  focusId?: string;
+  focusTime?: number;
+  assetId?: string;
   scoreView?: 'applied' | 'expanded';
+  scorePart?: string;
   route: AppRoute;
   navigate: (route: AppRoute, options?: NavigationOptions) => void;
   entityId?: string;
@@ -37,7 +41,7 @@ export function AppScreen(props: AppScreenProps) {
   return (
     <WorkspaceScopeProvider id={props.workspaceId}>
       <ScopedScreen
-        key={`${props.workspaceId ?? 'personal'}/${props.route}/${props.entityId ?? ''}/${props.scoreView ?? ''}`}
+        key={`${props.workspaceId ?? 'personal'}/${props.route}/${props.entityId ?? ''}/${props.scoreView ?? ''}/${props.scorePart ?? ''}/${props.focusId ?? ''}/${props.assetId ?? ''}`}
         {...props}
       />
     </WorkspaceScopeProvider>
@@ -49,8 +53,12 @@ function ScopedScreen({
   entityId,
   workspaceId,
   songTab,
-  feedback,
   scoreView,
+  scorePart,
+  feedback,
+  focusId,
+  focusTime,
+  assetId,
 }: AppScreenProps) {
   const { workspaces, workspace } = useMockAppState();
   if (workspaceId && !workspace)
@@ -83,8 +91,25 @@ function ScopedScreen({
     case 'personal-rehearsals':
     case 'personal-songs':
       return <PersonalScreen route={route} navigate={navigate} />;
+    case 'tools':
+      return <MusicToolsScreen navigate={navigate} />;
+    case 'track-editor':
+      return <TrackEditorScreen navigate={navigate} entityId={entityId} />;
     case 'personal-practice':
-      return <PracticeScreen navigate={navigate} entityId={entityId} />;
+    case 'practice':
+      return entityId ? (
+        <SongWorkspaceScreen
+          navigate={navigate}
+          entityId={entityId}
+          songTab="tracks"
+          feedback={feedback}
+          focusId={focusId}
+          focusTime={focusTime}
+          assetId={assetId}
+        />
+      ) : (
+        <MusicToolsScreen navigate={navigate} />
+      );
     case 'recommendations':
       return <SongsScreen navigate={navigate} />;
     case 'recommendation':
@@ -92,13 +117,17 @@ function ScopedScreen({
     case 'songs':
       return <SongsScreen navigate={navigate} />;
     case 'song':
-      return songTab === 'practice' ? (
-        <BandPracticeScreen navigate={navigate} entityId={entityId} feedback={feedback} />
-      ) : (
-        <SongWorkspaceScreen navigate={navigate} entityId={entityId} songTab={songTab} />
+      return (
+        <SongWorkspaceScreen
+          navigate={navigate}
+          entityId={entityId}
+          songTab={songTab}
+          feedback={feedback}
+          focusId={focusId}
+          focusTime={focusTime}
+          assetId={assetId}
+        />
       );
-    case 'practice':
-      return <BandPracticeScreen navigate={navigate} entityId={entityId} feedback={feedback} />;
     case 'rehearsals':
       return <RehearsalsScreen navigate={navigate} entityId={entityId} />;
     case 'members':
@@ -106,10 +135,16 @@ function ScopedScreen({
     case 'instrument':
       return <InstrumentExtractorScreen navigate={navigate} />;
     case 'score-editor':
-      return <ScoreEditorScreen navigate={navigate} entityId={entityId} />;
+      return <ScoreEditorScreen navigate={navigate} entityId={entityId} scorePart={scorePart} />;
     case 'band-score-editor':
+      if (!entityId) return <MusicToolsScreen navigate={navigate} />;
       return (
-        <BandScoreEditorScreen navigate={navigate} entityId={entityId} scoreView={scoreView} />
+        <BandScoreEditorScreen
+          navigate={navigate}
+          entityId={entityId}
+          scoreView={scoreView}
+          scorePart={scorePart}
+        />
       );
     case 'settings':
       return <SettingsScreen navigate={navigate} />;
@@ -128,6 +163,10 @@ export function MoajamApp() {
     songTab?: SongTab;
     feedback?: boolean;
     scoreView?: 'applied' | 'expanded';
+    scorePart?: string;
+    focusId?: string;
+    focusTime?: number;
+    assetId?: string;
   }>({
     route: 'personal-home',
   });
@@ -139,6 +178,10 @@ export function MoajamApp() {
       workspaceId={location.workspaceId}
       songTab={location.songTab}
       feedback={location.feedback}
+      focusId={location.focusId}
+      focusTime={location.focusTime}
+      assetId={location.assetId}
+      scorePart={location.scorePart}
       scoreView={location.scoreView}
       navigate={(route, options) =>
         setLocation({
@@ -146,10 +189,17 @@ export function MoajamApp() {
           id: options?.id,
           songTab: options?.songTab,
           feedback: options?.feedback,
+          focusId: options?.focusId,
+          focusTime: options?.focusTime,
+          assetId: options?.assetId,
+          scorePart: options?.scorePart,
           scoreView: options?.scoreView,
           workspaceId:
             options?.workspaceId ??
-            (route.startsWith('personal-') ? undefined : selectedWorkspaceId),
+            (route.startsWith('personal-') ||
+            ['tools', 'track-editor', 'score-editor', 'instrument'].includes(route)
+              ? undefined
+              : selectedWorkspaceId),
         })
       }
     />

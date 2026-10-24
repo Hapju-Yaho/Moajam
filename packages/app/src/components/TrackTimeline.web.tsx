@@ -196,6 +196,7 @@ function Waveform({
 }
 
 export function TrackTimeline({
+  readOnly = false,
   tracks,
   loaded,
   saveLabel,
@@ -220,6 +221,7 @@ export function TrackTimeline({
   onMoveToNewTrack,
   onSave,
   onRefresh,
+  onOpenEditor,
   refreshing,
   saving,
   dirty,
@@ -235,6 +237,8 @@ export function TrackTimeline({
   publishing,
   transport: t,
 }: {
+  readOnly?: boolean;
+  onOpenEditor?: () => void;
   tracks: TimelineTrack[];
   loaded: boolean;
   saveLabel: string;
@@ -402,8 +406,9 @@ export function TrackTimeline({
     return () => observer.disconnect();
   }, [expanded]);
   const lanes = useRef(new Map<string, HTMLDivElement>());
-  const locked =
+  const playbackBusy =
     !loaded || refreshing || saving || t.preparing || t.playing || t.recording || t.requesting;
+  const locked = readOnly || playbackBusy;
   const step = beatSeconds(t.bpm, t.signature);
   const perBar = Number(t.signature.split('/')[0]);
   const barSeconds = step * perBar;
@@ -606,28 +611,33 @@ export function TrackTimeline({
     seekPosition(x / zoom, event.altKey);
   };
   const editor = (
-    <section className={`track-studio ${expanded ? 'is-expanded' : ''}`} aria-label="트랙 편집기">
+    <section
+      className={`track-studio ${expanded ? 'is-expanded' : ''} ${readOnly ? 'is-readonly' : ''}`}
+      aria-label={readOnly ? '사운드 트랙 플레이어' : '트랙 편집기'}
+    >
       <header className="studio-heading">
-        <div>
+        <div className="studio-heading-info">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <h2>사운드 트랙</h2>
-            <button
-              type="button"
-              aria-label="DAW 도움말 열기"
-              title="DAW 도움말"
-              className="studio-help-button"
-              onClick={() => setDawHelpOpen(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 34,
-                height: 34,
-                padding: 0,
-              }}
-            >
-              <AppIcon name="help" size={19} color="#416bd1" />
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                aria-label="DAW 도움말 열기"
+                title="DAW 도움말"
+                className="studio-help-button"
+                onClick={() => setDawHelpOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 34,
+                  height: 34,
+                  padding: 0,
+                }}
+              >
+                <AppIcon name="help" size={19} color="#416bd1" />
+              </button>
+            )}
           </div>
           <p aria-live="polite">{saveLabel}</p>
         </div>
@@ -637,8 +647,10 @@ export function TrackTimeline({
           type="file"
           accept="audio/*,.mid,.midi"
           multiple
+          disabled={readOnly || locked}
           hidden
           onChange={(event) => {
+            if (locked) return;
             setFilter('ALL');
             if (uploadTarget.current)
               onUpload(Array.from(event.target.files ?? []), uploadTarget.current);
@@ -646,22 +658,28 @@ export function TrackTimeline({
             uploadTarget.current = undefined;
           }}
         />
-        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-          <button
-            type="button"
-            disabled={!loaded || saving || refreshing || locked}
-            onClick={onRefresh}
-          >
+        <div
+          className="studio-heading-actions"
+          style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}
+        >
+          <button type="button" disabled={playbackBusy} onClick={onRefresh}>
             {refreshing ? '새로고침 중…' : '새로고침'}
           </button>
-          <button
-            type="button"
-            className="studio-share"
-            onClick={onSave}
-            disabled={!loaded || saving || refreshing || !dirty || t.recording || t.requesting}
-          >
-            {saving ? '저장 중…' : '변경사항 공유하기'}
-          </button>
+          {readOnly && onOpenEditor && (
+            <button type="button" className="studio-open-editor" onClick={onOpenEditor}>
+              사운드 트랙 편집 <span aria-hidden="true">↗</span>
+            </button>
+          )}
+          {!readOnly && (
+            <button
+              type="button"
+              className="studio-share"
+              onClick={onSave}
+              disabled={!loaded || saving || refreshing || !dirty || t.recording || t.requesting}
+            >
+              {saving ? '저장 중…' : '변경사항 공유하기'}
+            </button>
+          )}
         </div>
       </header>
       <div className="studio-console">
@@ -687,15 +705,17 @@ export function TrackTimeline({
             >
               <Icon name={t.playing ? 'pause' : 'play'} />
             </button>
-            <button
-              className={`studio-record ${t.recording ? 'active' : ''}`}
-              title={t.recording ? '녹음 완료' : '녹음 시작'}
-              aria-label={t.recording ? '녹음 완료' : '녹음 시작'}
-              disabled={!loaded || t.requesting || t.preparing}
-              onClick={t.onRecord}
-            >
-              <Icon name="record" />
-            </button>
+            {!readOnly && (
+              <button
+                className={`studio-record ${t.recording ? 'active' : ''}`}
+                title={t.recording ? '녹음 완료' : '녹음 시작'}
+                aria-label={t.recording ? '녹음 완료' : '녹음 시작'}
+                disabled={!loaded || t.requesting || t.preparing}
+                onClick={t.onRecord}
+              >
+                <Icon name="record" />
+              </button>
+            )}
           </div>
           <div className="studio-time" aria-label="현재 재생 시간">
             <strong>
@@ -795,19 +815,21 @@ export function TrackTimeline({
               onChange={(event) => t.onClickVolume(Number(event.target.value))}
             />
           </label>
-          <label>
-            카운트인{' '}
-            <select
-              aria-label="녹음 전 카운트인"
-              value={t.countInBars}
-              disabled={t.requesting || t.recording}
-              onChange={(event) => t.onCountIn(Number(event.target.value))}
-            >
-              <option value="0">없음</option>
-              <option value="1">1마디</option>
-              <option value="2">2마디</option>
-            </select>
-          </label>
+          {!readOnly && (
+            <label>
+              카운트인{' '}
+              <select
+                aria-label="녹음 전 카운트인"
+                value={t.countInBars}
+                disabled={t.requesting || t.recording}
+                onChange={(event) => t.onCountIn(Number(event.target.value))}
+              >
+                <option value="0">없음</option>
+                <option value="1">1마디</option>
+                <option value="2">2마디</option>
+              </select>
+            </label>
+          )}
           <label className="studio-master">
             전체 음량{' '}
             <input
@@ -849,15 +871,17 @@ export function TrackTimeline({
               >
                 커서 따라가기
               </button>
-              <button
-                className={`studio-magnetic ${magnetic ? 'active' : ''}`}
-                aria-label="클립 붙이기"
-                aria-pressed={magnetic}
-                title="드래그하는 클립의 시작 끝을 가까운 다른 클립의 시작 끝에 맞춥니다."
-                onClick={() => setMagnetic(!magnetic)}
-              >
-                클립 붙이기
-              </button>
+              {!readOnly && (
+                <button
+                  className={`studio-magnetic ${magnetic ? 'active' : ''}`}
+                  aria-label="클립 붙이기"
+                  aria-pressed={magnetic}
+                  title="드래그하는 클립의 시작 끝을 가까운 다른 클립의 시작 끝에 맞춥니다."
+                  onClick={() => setMagnetic(!magnetic)}
+                >
+                  클립 붙이기
+                </button>
+              )}
               <button
                 className={`studio-snap ${snap ? 'active' : ''}`}
                 aria-label="박자에 맞추기"
@@ -911,129 +935,131 @@ export function TrackTimeline({
             </button>
           </div>
         </div>
-        <div className="studio-clip-tools">
-          {selectedClips.length > 1 ? (
-            <button disabled>{selectedClips.length}개 클립 선택</button>
-          ) : selected ? (
-            naming ? (
-              <input
-                aria-label="클립 이름"
-                className="studio-clip-name-input"
-                style={{ ...nameSize, flexShrink: 0, boxSizing: 'border-box' }}
-                autoFocus
-                value={clipName}
-                onChange={(event) => setClipName(event.target.value)}
-                onBlur={() => {
-                  if (clipName.trim()) onPatchClip(selected.id, { name: clipName.trim() });
-                  setNaming(false);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') event.currentTarget.blur();
-                  if (event.key === 'Escape') setNaming(false);
-                }}
-              />
+        {!readOnly && (
+          <div className="studio-clip-tools">
+            {selectedClips.length > 1 ? (
+              <button disabled>{selectedClips.length}개 클립 선택</button>
+            ) : selected ? (
+              naming ? (
+                <input
+                  aria-label="클립 이름"
+                  className="studio-clip-name-input"
+                  style={{ ...nameSize, flexShrink: 0, boxSizing: 'border-box' }}
+                  autoFocus
+                  value={clipName}
+                  onChange={(event) => setClipName(event.target.value)}
+                  onBlur={() => {
+                    if (clipName.trim()) onPatchClip(selected.id, { name: clipName.trim() });
+                    setNaming(false);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur();
+                    if (event.key === 'Escape') setNaming(false);
+                  }}
+                />
+              ) : (
+                <button
+                  disabled={locked}
+                  title="클립 이름 수정"
+                  onClick={(event) => {
+                    const { width, height } = event.currentTarget.getBoundingClientRect();
+                    setNameSize({ width, height });
+                    setClipName(selected.name);
+                    setNaming(true);
+                  }}
+                >
+                  {selected.name}
+                </button>
+              )
             ) : (
-              <button
-                disabled={locked}
-                title="클립 이름 수정"
-                onClick={(event) => {
-                  const { width, height } = event.currentTarget.getBoundingClientRect();
-                  setNameSize({ width, height });
-                  setClipName(selected.name);
-                  setNaming(true);
-                }}
-              >
-                {selected.name}
-              </button>
-            )
-          ) : (
-            <span>편집할 클립을 선택하세요</span>
-          )}
-          <button
-            disabled={locked || !canSplit}
-            className="studio-edit-action"
-            onClick={() => selected && onSplitClip(selected.id, t.position)}
-            title="클립 안에 재생 커서를 놓고 자르세요"
-          >
-            ✂ 커서에서 자르기
-          </button>
-          <button
-            className="studio-edit-action"
-            disabled={locked || !selectedClips.length}
-            onClick={deleteClips}
-          >
-            클립 삭제
-          </button>
-          <button
-            className="studio-edit-action"
-            disabled={locked || !selectedClips.length}
-            onClick={copyClips}
-          >
-            클립 복사하기
-          </button>
-          {selectedClips.length > 1 ? (
-            <span
-              title={
-                !canMerge ? '선택된 클립들이 하나의 트랙에서 모두 붙어있어야합니다.' : undefined
-              }
+              <span>편집할 클립을 선택하세요</span>
+            )}
+            <button
+              disabled={locked || !canSplit}
+              className="studio-edit-action"
+              onClick={() => selected && onSplitClip(selected.id, t.position)}
+              title="클립 안에 재생 커서를 놓고 자르세요"
             >
-              <button
-                disabled={locked || !canMerge || !onMergeClips}
-                onClick={() => {
-                  void onMergeClips?.(selectedClips.map((clip) => clip.id)).then(() =>
-                    setSelectedIds([]),
-                  );
-                }}
-              >
-                클립 합치기
-              </button>
-            </span>
-          ) : (
+              ✂ 커서에서 자르기
+            </button>
             <button
               className="studio-edit-action"
-              disabled={locked || !clipboard.length || !onPasteClips}
-              onClick={pasteClips}
+              disabled={locked || !selectedClips.length}
+              onClick={deleteClips}
             >
-              클립 붙여넣기
+              클립 삭제
             </button>
-          )}
-          {selected && (
-            <label>
-              시작{' '}
-              <input
-                aria-label="선택한 클립 시작 위치"
-                type="number"
-                min="0"
-                max="600"
-                step="0.01"
-                value={Math.round(selected.offset * 100) / 100}
-                disabled={locked}
-                onChange={(event) => {
-                  const offset = Number(event.target.value);
-                  if (Number.isFinite(offset))
-                    onPatchClip(selected.id, {
-                      offset: snapOffset(offset, t.bpm, t.signature, false),
-                    });
-                }}
-              />{' '}
-              초
-            </label>
-          )}
-          {selected?.midi && (
-            <button disabled={locked} onClick={() => onEditMidi(selected)}>
-              미디 악보 편집
-            </button>
-          )}
-          {selected && onPublish && (
             <button
-              className="studio-publish-clip"
-              disabled={!!publishing}
-              onClick={() => onPublish(selected)}
+              className="studio-edit-action"
+              disabled={locked || !selectedClips.length}
+              onClick={copyClips}
             >
-              {publishing === selected.id ? '보관 중…' : '클립 보관하기'}
+              클립 복사하기
             </button>
-          )}
-        </div>
+            {selectedClips.length > 1 ? (
+              <span
+                title={
+                  !canMerge ? '선택된 클립들이 하나의 트랙에서 모두 붙어있어야합니다.' : undefined
+                }
+              >
+                <button
+                  disabled={locked || !canMerge || !onMergeClips}
+                  onClick={() => {
+                    void onMergeClips?.(selectedClips.map((clip) => clip.id)).then(() =>
+                      setSelectedIds([]),
+                    );
+                  }}
+                >
+                  클립 합치기
+                </button>
+              </span>
+            ) : (
+              <button
+                className="studio-edit-action"
+                disabled={locked || !clipboard.length || !onPasteClips}
+                onClick={pasteClips}
+              >
+                클립 붙여넣기
+              </button>
+            )}
+            {selected && (
+              <label>
+                시작{' '}
+                <input
+                  aria-label="선택한 클립 시작 위치"
+                  type="number"
+                  min="0"
+                  max="600"
+                  step="0.01"
+                  value={Math.round(selected.offset * 100) / 100}
+                  disabled={locked}
+                  onChange={(event) => {
+                    const offset = Number(event.target.value);
+                    if (Number.isFinite(offset))
+                      onPatchClip(selected.id, {
+                        offset: snapOffset(offset, t.bpm, t.signature, false),
+                      });
+                  }}
+                />{' '}
+                초
+              </label>
+            )}
+            {selected?.midi && (
+              <button disabled={locked} onClick={() => onEditMidi(selected)}>
+                미디 악보 편집
+              </button>
+            )}
+            {selected && onPublish && (
+              <button
+                className="studio-publish-clip"
+                disabled={!!publishing}
+                onClick={() => onPublish(selected)}
+              >
+                {publishing === selected.id ? '보관 중…' : '클립 보관하기'}
+              </button>
+            )}
+          </div>
+        )}
         <div
           className="studio-timeline"
           ref={viewport}
@@ -1186,61 +1212,67 @@ export function TrackTimeline({
                 >
                   <div className="studio-track-head">
                     <div className="studio-track-title">
-                      <button
-                        type="button"
-                        disabled={locked}
-                        aria-label={`${track.name} 트랙 순서 변경`}
-                        title="드래그 또는 위·아래 방향키로 순서 변경"
-                        style={{
-                          cursor: locked ? 'default' : 'grab',
-                          padding: '2px 4px',
-                          flexShrink: 0,
-                          touchAction: 'none',
-                        }}
-                        onPointerDown={(event) => {
-                          if (locked || event.button !== 0) return;
-                          event.preventDefault();
-                          const row = trackRows.current.get(track.id)!;
-                          row.getAnimations().forEach((animation) => animation.cancel());
-                          movingTrack.current = {
-                            id: track.id,
-                            ids: tracks.map((item) => item.id),
-                            startY: event.clientY,
-                            top: row.offsetTop,
-                            scrollTop: viewport.current?.scrollTop ?? 0,
-                          };
-                          setLiftedTrack({ id: track.id, delta: 0 });
-                          viewport.current?.setPointerCapture(event.pointerId);
-                        }}
-                        onKeyDown={(event) => {
-                          if (locked || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
-                          event.preventDefault();
-                          const target = orderedTracks[index + (event.key === 'ArrowUp' ? -1 : 1)];
-                          if (target) onReorder(reorderTrack(track.id, target.id));
-                        }}
-                      >
-                        ⠿
-                      </button>
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          disabled={locked}
+                          aria-label={`${track.name} 트랙 순서 변경`}
+                          title="드래그 또는 위·아래 방향키로 순서 변경"
+                          style={{
+                            cursor: locked ? 'default' : 'grab',
+                            padding: '2px 4px',
+                            flexShrink: 0,
+                            touchAction: 'none',
+                          }}
+                          onPointerDown={(event) => {
+                            if (locked || event.button !== 0) return;
+                            event.preventDefault();
+                            const row = trackRows.current.get(track.id)!;
+                            row.getAnimations().forEach((animation) => animation.cancel());
+                            movingTrack.current = {
+                              id: track.id,
+                              ids: tracks.map((item) => item.id),
+                              startY: event.clientY,
+                              top: row.offsetTop,
+                              scrollTop: viewport.current?.scrollTop ?? 0,
+                            };
+                            setLiftedTrack({ id: track.id, delta: 0 });
+                            viewport.current?.setPointerCapture(event.pointerId);
+                          }}
+                          onKeyDown={(event) => {
+                            if (locked || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+                            event.preventDefault();
+                            const target =
+                              orderedTracks[index + (event.key === 'ArrowUp' ? -1 : 1)];
+                            if (target) onReorder(reorderTrack(track.id, target.id));
+                          }}
+                        >
+                          ⠿
+                        </button>
+                      )}
                       <span>{String(index + 1).padStart(2, '0')}</span>
                       <input
                         aria-label={`${track.name} 트랙 이름`}
                         value={track.name}
                         maxLength={120}
-                        disabled={locked}
+                        readOnly={readOnly}
+                        disabled={playbackBusy}
                         onChange={(event) => onPatch(track.id, { name: event.target.value })}
                         onBlur={() => {
-                          if (!track.name.trim())
+                          if (!readOnly && !track.name.trim())
                             onPatch(track.id, { name: trackPartLabel(track.part) });
                         }}
                       />
-                      <button
-                        aria-label={`${track.name} 트랙 삭제`}
-                        title="트랙 삭제"
-                        disabled={locked}
-                        onClick={() => onRemove(track.id)}
-                      >
-                        <Icon name="trash" />
-                      </button>
+                      {!readOnly && (
+                        <button
+                          aria-label={`${track.name} 트랙 삭제`}
+                          title="트랙 삭제"
+                          disabled={locked}
+                          onClick={() => onRemove(track.id)}
+                        >
+                          <Icon name="trash" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="studio-track-collapse"
@@ -1328,7 +1360,7 @@ export function TrackTimeline({
                         <select
                           aria-label={`${track.name} 세션`}
                           value={track.part ?? 'UNASSIGNED'}
-                          disabled={t.recording || t.requesting}
+                          disabled={readOnly || t.recording || t.requesting}
                           onChange={(event) =>
                             onPatch(track.id, { part: event.target.value as TrackPart })
                           }
@@ -1342,18 +1374,22 @@ export function TrackTimeline({
                       </>
                     )}
                     <div className="studio-track-mix">
-                      <button
-                        className={armed === track.id ? 'record-active' : ''}
-                        aria-label={`${track.name} 녹음 대상`}
-                        aria-pressed={armed === track.id}
-                        title={
-                          track.kind === 'midi' ? '미디 트랙은 악보 창에서 편집하세요' : '녹음 대상'
-                        }
-                        disabled={locked || track.kind === 'midi'}
-                        onClick={() => onArm(track.id)}
-                      >
-                        <Icon name="record" />
-                      </button>
+                      {!readOnly && (
+                        <button
+                          className={armed === track.id ? 'record-active' : ''}
+                          aria-label={`${track.name} 녹음 대상`}
+                          aria-pressed={armed === track.id}
+                          title={
+                            track.kind === 'midi'
+                              ? '미디 트랙은 악보 창에서 편집하세요'
+                              : '녹음 대상'
+                          }
+                          disabled={locked || track.kind === 'midi'}
+                          onClick={() => onArm(track.id)}
+                        >
+                          <Icon name="record" />
+                        </button>
+                      )}
                       <button
                         className={track.muted ? 'active' : ''}
                         aria-label={`${track.name} 음소거`}
@@ -1385,29 +1421,33 @@ export function TrackTimeline({
                         }
                       />
                     </div>
-                    {track.kind === 'midi' && (
+                    {!readOnly && track.kind === 'midi' && (
                       <button disabled={locked} onClick={() => onCreateMidi(track.id)}>
                         + 미디 클립
                       </button>
                     )}
                     <div className="studio-track-offset">
                       <span>{clips.length}개 클립</span>
-                      <button
-                        aria-label={`${track.name} 파일 추가`}
-                        title="파일 추가"
-                        disabled={locked}
-                        onClick={() => openFile(track.id)}
-                      >
-                        <Icon name="upload" />
-                        파일 추가
-                      </button>
-                      <button
-                        disabled={locked}
-                        onClick={() => onImportClip(track.id)}
-                        title="클립 보관함에서 가져오기"
-                      >
-                        클립 가져오기
-                      </button>
+                      {!readOnly && (
+                        <button
+                          aria-label={`${track.name} 파일 추가`}
+                          title="파일 추가"
+                          disabled={locked}
+                          onClick={() => openFile(track.id)}
+                        >
+                          <Icon name="upload" />
+                          파일 추가
+                        </button>
+                      )}
+                      {!readOnly && (
+                        <button
+                          disabled={locked}
+                          onClick={() => onImportClip(track.id)}
+                          title="클립 보관함에서 가져오기"
+                        >
+                          클립 가져오기
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div
@@ -1421,7 +1461,7 @@ export function TrackTimeline({
                       minHeight: collapsed
                         ? Math.max(40, slotEnds.length * 28 + 12)
                         : Math.max(116, slotEnds.length * 100 + 16),
-                      touchAction: 'none',
+                      touchAction: readOnly ? 'pan-x pan-y' : 'none',
                     }}
                     onPointerDown={(event) => {
                       if ((event.target as HTMLElement).closest('button, .studio-clip') || locked)
@@ -1458,7 +1498,11 @@ export function TrackTimeline({
                         tabIndex={0}
                         aria-label={`${clip.name} ${clip.midi ? '미디' : '오디오'} 클립`}
                         aria-pressed={selectedIds.includes(clip.id)}
-                        title="좌우로 위치 이동 · 위아래로 트랙 이동 · 커서를 놓고 자르기"
+                        title={
+                          readOnly
+                            ? '클릭한 위치부터 재생'
+                            : '좌우로 위치 이동 · 위아래로 트랙 이동 · 커서를 놓고 자르기'
+                        }
                         style={{
                           left:
                             (drag?.group.some((item) => item.clip.id === clip.id)
@@ -1652,7 +1696,7 @@ export function TrackTimeline({
                         }}
                         onClick={(event) => {
                           event.stopPropagation();
-                          if (t.playing && !t.recording && !t.requesting)
+                          if ((readOnly || t.playing) && !t.recording && !t.requesting)
                             seekPosition(
                               clip.offset +
                                 (event.clientX - event.currentTarget.getBoundingClientRect().left) /
@@ -1663,7 +1707,8 @@ export function TrackTimeline({
                         onKeyDown={(event) => {
                           if (event.key === 'Enter') {
                             event.preventDefault();
-                            setSelectedId(clip.id);
+                            if (readOnly) seekPosition(clip.offset);
+                            else setSelectedId(clip.id);
                           }
                           if (locked) return;
                           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
@@ -1694,7 +1739,7 @@ export function TrackTimeline({
                           }
                         }}
                       >
-                        {clip.midi && (
+                        {!readOnly && clip.midi && (
                           <span className="studio-midi-resize-handle" aria-hidden="true" />
                         )}
                         <div className="studio-clip-label">
@@ -1768,7 +1813,7 @@ export function TrackTimeline({
                           여기로 이동
                         </div>
                       )}
-                    {!clips.length && (
+                    {!readOnly && !clips.length && (
                       <button
                         className="studio-empty-clip"
                         disabled={locked}
@@ -1793,28 +1838,32 @@ export function TrackTimeline({
               className={`studio-add-track-row ${drag?.targetId === '__new-track__' ? 'drop-target' : ''}`}
               style={{ width: viewportWidth }}
             >
-              <div className="studio-add-track-control">
-                <button
-                  type="button"
-                  ref={addTrackButton}
-                  aria-haspopup="dialog"
-                  aria-expanded={addingTrack}
-                  aria-label="트랙 추가"
-                  title="트랙 추가"
-                  disabled={!loaded || locked}
-                  onClick={() => {
-                    setFilter('ALL');
-                    setAddingTrack(true);
-                  }}
-                >
-                  <Icon name="plus" />
-                </button>
-              </div>
+              {!readOnly && (
+                <div className="studio-add-track-control">
+                  <button
+                    type="button"
+                    ref={addTrackButton}
+                    aria-haspopup="dialog"
+                    aria-expanded={addingTrack}
+                    aria-label="트랙 추가"
+                    title="트랙 추가"
+                    disabled={!loaded || locked}
+                    onClick={() => {
+                      setFilter('ALL');
+                      setAddingTrack(true);
+                    }}
+                  >
+                    <Icon name="plus" />
+                  </button>
+                </div>
+              )}
               <div className="studio-add-track-message">
                 {!visible.length
                   ? tracks.length
                     ? '이 세션의 트랙이 없어요'
-                    : '트랙을 추가해 주세요'
+                    : readOnly
+                      ? '저장된 트랙이 없어요. 사운드 트랙 편집에서 음원을 추가해주세요.'
+                      : '트랙을 추가해 주세요'
                   : ''}
               </div>
             </div>
@@ -1879,7 +1928,7 @@ export function TrackTimeline({
     <>
       {expanded ? createPortal(editor, document.body) : editor}
       {dawHelpOpen && <DawHelp onClose={() => setDawHelpOpen(false)} />}
-      {addingTrack && (
+      {!readOnly && addingTrack && (
         <TrackTypePicker
           anchor={addTrackButton.current?.getBoundingClientRect()}
           onClose={() => setAddingTrack(false)}

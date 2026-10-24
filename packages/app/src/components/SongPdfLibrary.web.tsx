@@ -16,14 +16,23 @@ type FileEntry = {
   blob?: Blob;
   ownerId?: string;
 };
-export function SongPdfLibrary({ songId, title }: { songId: string; title: string }) {
+export function SongPdfLibrary({
+  songId,
+  title,
+  assetId,
+}: {
+  songId: string;
+  title: string;
+  assetId?: string;
+}) {
   const { workspaceId, currentUserId } = useMockAppState();
   const [parts, setParts] = useWorkspaceValue<Record<string, string>>(
     'song/' + songId + '/pdf-parts',
     {},
   );
   const scope = 'song/' + workspaceId + '/' + songId;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!assetId);
+  const [preview, setPreview] = useState<{ name: string; url: string } | null>(null);
   const [deleting, setDeleting] = useState<FileEntry | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [error, setError] = useState('');
@@ -51,7 +60,23 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
       : readMedia<FileEntry[]>('library/' + scope).then((items) => items ?? []);
     void pending
       .then((items) => {
-        if (generation.current === request) setFiles(items);
+        if (generation.current === request) {
+          setFiles(items);
+          if (assetId) {
+            const file = items.find((item) => item.id === assetId);
+            if (!file) setError('해당 PDF가 삭제되었거나 접근할 수 없어요.');
+            else if (serverConfigured) {
+              void api<{ url: string }>('/assets/' + file.id + '/download')
+                .then(({ url }) => {
+                  if (generation.current === request) setPreview({ name: file.name, url });
+                })
+                .catch(() => {
+                  if (generation.current === request)
+                    setError('PDF를 열지 못했어요. 목록에서 다시 선택해주세요.');
+                });
+            }
+          }
+        }
       })
       .catch((e: Error) => {
         if (generation.current === request) setError(e.message);
@@ -63,7 +88,7 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
     return () => {
       requests.current++;
     };
-  }, [open, scope, workspaceId]);
+  }, [open, scope, workspaceId, assetId]);
   const pdfs = files.filter(
     (file) =>
       file.mime === 'application/pdf' ||
@@ -123,6 +148,7 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
         );
       if (request !== generation.current) return;
       setDeleting(null);
+      setPreview(null);
       setFiles((current) => current.filter((item) => item.id !== file.id));
       setParts((current) => {
         const next = { ...current };
@@ -137,12 +163,9 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
     }
   };
   const showPdf = async (file: FileEntry) => {
-    const viewer = window.open('', '_blank', 'popup,width=1100,height=850');
-    if (!viewer) {
-      setError('PDF를 열려면 브라우저 팝업을 허용해주세요.');
-      return;
-    }
-    viewer.opener = null;
+    const request = generation.current;
+    setBusy(true);
+    setError('');
     try {
       let url: string;
       if (serverConfigured)
@@ -152,16 +175,18 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
         url = URL.createObjectURL(file.blob);
         urls.current.push(url);
       }
-      if (!viewer.closed) viewer.location.replace(url);
+      if (request === generation.current) setPreview({ name: file.name, url });
     } catch (e) {
-      viewer.close();
-      setError(e instanceof Error ? e.message : 'PDF를 열지 못했어요.');
+      if (request === generation.current)
+        setError(e instanceof Error ? e.message : 'PDF를 열지 못했어요.');
+    } finally {
+      if (request === generation.current) setBusy(false);
     }
   };
   return (
     <>
       <ActionButton nativeID="practice-pdf-open" secondary compact onPress={() => setOpen(true)}>
-        악보 열기
+        PDF 추가·보기
       </ActionButton>
       {open &&
         createPortal(
@@ -189,7 +214,33 @@ export function SongPdfLibrary({ songId, title }: { songId: string; title: strin
                 </ActionButton>
               </header>
               <div className="song-pdf-body">
-                <p className="song-pdf-description">세션별 악보를 선택하면 새 창에서 열립니다.</p>
+                {preview && (
+                  <section aria-label="선택한 PDF 악보" style={{ marginBottom: 20 }}>
+                    <h3>{preview.name}</h3>
+                    <div
+                      style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 12 }}
+                    >
+                      <a href={preview.url} target="_blank" rel="noopener noreferrer">
+                        새 창에서 크게 보기
+                      </a>
+                      <button onClick={() => setPreview(null)}>미리보기 닫기</button>
+                    </div>
+                    <iframe
+                      title={preview.name + ' PDF 미리보기'}
+                      src={preview.url}
+                      style={{
+                        width: '100%',
+                        height: '60vh',
+                        border: '1px solid #dce4ef',
+                        borderRadius: 8,
+                      }}
+                    />
+                    <p>PDF가 표시되지 않으면 새 창에서 열어주세요.</p>
+                  </section>
+                )}
+                <p className="song-pdf-description">
+                  파트별 PDF를 추가하거나 선택해 바로 볼 수 있어요.
+                </p>
                 {error && <p role="alert">{error}</p>}
                 {busy && <p>파일 처리 중…</p>}
                 <div className="song-pdf-sessions">

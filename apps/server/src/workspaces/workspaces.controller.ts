@@ -1,3 +1,4 @@
+import { documentEvents, writeNotificationEvents } from './notification-events.js';
 import { ApiProperty, ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   Body,
@@ -152,6 +153,97 @@ export class WorkspacesController {
       take: 50,
     });
   }
+  private async notificationScope(userId: string, workspaceId?: string) {
+    const memberships = await this.db.workspaceMember.findMany({
+      where: { userId, ...(workspaceId ? { workspaceId } : {}) },
+      select: { workspaceId: true },
+    });
+    return { userId, workspaceId: { in: memberships.map((item) => item.workspaceId) } };
+  }
+  @Get('notifications/summary') async notificationSummary(@CurrentUser() user: AuthenticatedUser) {
+    const where = await this.notificationScope(user.id);
+    const groups = await this.db.notification.groupBy({
+      by: ['workspaceId'],
+      where: { ...where, readAt: null },
+      _count: { _all: true },
+    });
+    return {
+      unreadCount: groups.reduce((sum, item) => sum + item._count._all, 0),
+      workspaceCounts: Object.fromEntries(
+        groups.map((item) => [item.workspaceId, item._count._all]),
+      ),
+    };
+  }
+  @Get('notifications/inbox') async notificationInbox(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('workspaceId') workspaceId?: string,
+    @Query('unread') unread?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    const where: Prisma.NotificationWhereInput = {
+      ...(await this.notificationScope(user.id, workspaceId)),
+      ...(unread === 'true' ? { readAt: null } : {}),
+    };
+    if (cursor) {
+      try {
+        const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
+          date: string;
+          id: string;
+        };
+        const date = new Date(decoded.date);
+        if (
+          !Number.isFinite(date.getTime()) ||
+          typeof decoded.id !== 'string' ||
+          decoded.id.length > 80
+        )
+          throw new Error();
+        where.OR = [{ createdAt: { lt: date } }, { createdAt: date, id: { lt: decoded.id } }];
+      } catch {
+        throw new BadRequestException('알림 페이지 정보를 확인해주세요.');
+      }
+    }
+    const rows = await this.db.notification.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 31,
+    });
+    const items = rows.slice(0, 30),
+      last = items.at(-1);
+    return {
+      items,
+      nextCursor:
+        rows.length > 30 && last
+          ? Buffer.from(
+              JSON.stringify({ date: last.createdAt.toISOString(), id: last.id }),
+            ).toString('base64url')
+          : null,
+    };
+  }
+  @Get('notifications/:id/target') async notificationTarget(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    const item = await this.db.notification.findFirst({
+      where: { ...(await this.notificationScope(user.id)), id },
+    });
+    if (!item) throw new NotFoundException('이 알림에 접근할 수 없어요.');
+    if (item.kind === 'NOTICE' || item.kind === 'REHEARSAL_CANCELLED') return { available: true };
+    const key =
+      item.kind === 'RECOMMENDATION'
+        ? 'recommendations'
+        : item.kind.startsWith('REHEARSAL')
+          ? 'rehearsals'
+          : 'songs';
+    const doc = await this.db.workspaceDocument.findUnique({
+      where: { workspaceId_key: { workspaceId: item.workspaceId, key } },
+    });
+    const values = (doc?.value as { data?: { id: string; cancelled?: boolean }[] } | null)?.data;
+    return {
+      available:
+        Array.isArray(values) &&
+        values.some((value) => value.id === item.entityId && !value.cancelled),
+    };
+  }
   @Post('notifications/read-all') async readAllNotifications(
     @CurrentUser() user: AuthenticatedUser,
     @Query('workspaceId') workspaceId?: string,
@@ -186,7 +278,7 @@ export class WorkspacesController {
     @Param('id') id: string,
   ) {
     return this.db.notification.updateMany({
-      where: { id, userId: user.id },
+      where: { ...(await this.notificationScope(user.id)), id, readAt: null },
       data: { readAt: new Date() },
     });
   }
@@ -208,7 +300,9 @@ export class WorkspacesController {
       throw new ConflictException('같은 알림을 방금 보냈습니다. 잠시 후 다시 시도해주세요.');
     const members = await this.db.workspaceMember.findMany({ where: { workspaceId } });
     return this.db.notification.createMany({
-      data: members.map((member) => ({ workspaceId, userId: member.userId, message: dto.message })),
+      data: members
+        .filter((member) => member.userId !== user.id)
+        .map((member) => ({ workspaceId, userId: member.userId, message: dto.message })),
     });
   }
   @Put('me') async profile(@CurrentUser() user: AuthenticatedUser, @Body() dto: ProfileDto) {
@@ -443,15 +537,36 @@ export class WorkspacesController {
             })) !== ids.length
           )
             throw new BadRequestException('이 밴드에 공유된 파일만 연결할 수 있습니다.');
-          if (dto.revision === 0)
-            return tx.workspaceDocument.create({
+          const previous = await tx.workspaceDocument.findUnique({
+            where: { workspaceId_key: { workspaceId, key } },
+          });
+          if (dto.revision === 0) {
+            const saved = await tx.workspaceDocument.create({
               data: { workspaceId, key, value, updatedBy: user.id },
             });
+            await writeNotificationEvents(
+              tx,
+              workspaceId,
+              user.id,
+              documentEvents(key, undefined, dto.value.data),
+            );
+            return saved;
+          }
           const changed = await tx.workspaceDocument.updateMany({
             where: { workspaceId, key, revision: dto.revision },
             data: { value, revision: { increment: 1 }, updatedBy: user.id },
           });
           if (!changed.count) throw new ConflictException(conflict);
+          await writeNotificationEvents(
+            tx,
+            workspaceId,
+            user.id,
+            documentEvents(
+              key,
+              (previous?.value as { data?: unknown } | null)?.data,
+              dto.value.data,
+            ),
+          );
           return tx.workspaceDocument.findUniqueOrThrow({
             where: { workspaceId_key: { workspaceId, key } },
           });
@@ -578,10 +693,21 @@ export class WorkspacesController {
           })) !== ids.length
         )
           throw new BadRequestException('이 밴드에 공유된 파일만 연결할 수 있습니다.');
-        if (dto.revision === 0)
-          return tx.workspaceDocument.create({
+        const previous = await tx.workspaceDocument.findUnique({
+          where: { workspaceId_key: { workspaceId, key } },
+        });
+        if (dto.revision === 0) {
+          const saved = await tx.workspaceDocument.create({
             data: { workspaceId, key, value: { data: value }, updatedBy: user.id },
           });
+          await writeNotificationEvents(
+            tx,
+            workspaceId,
+            user.id,
+            documentEvents(key, undefined, value),
+          );
+          return saved;
+        }
         const changed = await tx.workspaceDocument.updateMany({
           where: { workspaceId, key, revision: dto.revision },
           data: { value: { data: value }, revision: { increment: 1 }, updatedBy: user.id },
@@ -590,6 +716,12 @@ export class WorkspacesController {
           throw new ConflictException(
             '서버에 변경사항이 존재합니다. 새로고침 후 공유하기를 눌러주세요.',
           );
+        await writeNotificationEvents(
+          tx,
+          workspaceId,
+          user.id,
+          documentEvents(key, (previous?.value as { data?: unknown } | null)?.data, value),
+        );
         return tx.workspaceDocument.findUniqueOrThrow({
           where: { workspaceId_key: { workspaceId, key } },
         });
@@ -626,7 +758,7 @@ export class WorkspacesController {
         throw new ForbiddenException('문서 형식이나 변경 권한을 확인해주세요.');
       if (dto.revision === 0) {
         try {
-          return await tx.workspaceDocument.create({
+          const saved = await tx.workspaceDocument.create({
             data: {
               workspaceId,
               key,
@@ -634,6 +766,13 @@ export class WorkspacesController {
               updatedBy: user.id,
             },
           });
+          await writeNotificationEvents(
+            tx,
+            workspaceId,
+            user.id,
+            documentEvents(key, previous, dto.value.data),
+          );
+          return saved;
         } catch (error) {
           if ((error as { code?: string }).code === 'P2002')
             throw new ConflictException(
@@ -654,6 +793,12 @@ export class WorkspacesController {
         throw new ConflictException(
           '다른 멤버의 변경 내용이 있습니다. 새로 불러온 뒤 다시 시도해주세요.',
         );
+      await writeNotificationEvents(
+        tx,
+        workspaceId,
+        user.id,
+        documentEvents(key, previous, dto.value.data),
+      );
       return tx.workspaceDocument.findUniqueOrThrow({
         where: { workspaceId_key: { workspaceId, key } },
       });

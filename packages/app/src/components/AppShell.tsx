@@ -11,13 +11,15 @@ import { useEffect, useState, type PropsWithChildren } from 'react';
 import { useIdentity } from '../state/Identity';
 import { Image, Modal, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import moajamLogo from '../../assets/logo.png';
-import type { AppRoute, ScreenProps } from '../navigation';
+import type { AppRoute, ScreenProps, SongTab } from '../navigation';
 import { BandJoinModal } from './BandJoinModal';
-import { Notifications } from './Notifications';
+import { NotificationPanel } from './NotificationPanel';
+import { useNotificationSummary } from '../state/notifications';
+import { WorkspaceSyncControls } from './WorkspaceSyncControls';
 import { usePreferences } from '../state/preferences';
 import { useMockAppState } from '../state/MockAppState';
 import { Avatar, AvatarText, Main, PageScroll, Shell } from '../styles/layout';
-import { ActionButton, Copy, FlexRow, Heading, Meta, Surface } from './ProductUI';
+import { ActionButton, Copy, Heading, Meta, Surface } from './ProductUI';
 import { Input } from '../styles/layout';
 import { AppIcon, type AppIconName } from './icons';
 
@@ -171,7 +173,6 @@ const BottomLabel = styled.Text<{ active?: boolean }>`
 const bandItems: Array<{ icon: AppIconName; label: string; route: AppRoute }> = [
   { icon: 'home', label: '홈', route: 'home' },
   { icon: 'songs', label: '참여 곡', route: 'songs' },
-  { icon: 'rehearsal', label: '연습실', route: 'practice' },
   { icon: 'calendar', label: '합주', route: 'rehearsals' },
   { icon: 'users', label: '멤버', route: 'members' },
 ];
@@ -179,9 +180,14 @@ const personalItems: typeof bandItems = [
   { icon: 'home', label: '홈', route: 'personal-home' },
   { icon: 'calendar', label: '합주 일정', route: 'personal-rehearsals' },
   { icon: 'songs', label: '참여 곡', route: 'personal-songs' },
-  { icon: 'rehearsal', label: '연습실', route: 'personal-practice' },
+];
+const toolItems: typeof bandItems = [
+  { icon: 'songs', label: '악보 편집', route: 'tools' },
+  { icon: 'rehearsal', label: '사운드 트랙 편집', route: 'track-editor' },
 ];
 const pageTitles: Record<AppRoute, string> = {
+  tools: '악보 편집',
+  'track-editor': '사운드 트랙 편집',
   'personal-home': '홈',
   'personal-rehearsals': '합주 일정',
   'personal-songs': '참여 곡',
@@ -202,7 +208,8 @@ const pageTitles: Record<AppRoute, string> = {
 };
 
 const activeGroup = (current: AppRoute, target: AppRoute) => {
-  if (target === 'practice') return current === target || current === 'band-score-editor';
+  if (target === 'tools') return ['tools', 'score-editor', 'band-score-editor'].includes(current);
+  if (target === 'track-editor') return ['track-editor', 'instrument'].includes(current);
   if (target === 'recommendations') return current === target || current === 'recommendation';
   if (target === 'songs')
     return ['songs', 'song', 'recommendations', 'recommendation'].includes(current);
@@ -213,9 +220,21 @@ const activeGroup = (current: AppRoute, target: AppRoute) => {
 interface AppShellProps {
   activeRoute: AppRoute;
   onNavigate: ScreenProps['navigate'];
+  entityId?: string;
+  songTab?: SongTab;
+  hideSyncControls?: boolean;
 }
-export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildren<AppShellProps>) {
+export function AppShell({
+  children,
+  activeRoute,
+  onNavigate,
+  entityId,
+  songTab,
+  hideSyncControls = false,
+}: PropsWithChildren<AppShellProps>) {
   const profile = usePreferences();
+  const notificationSummary = useNotificationSummary();
+  const unreadCount = notificationSummary.data?.unreadCount ?? 0;
   const currentUserId = useIdentity();
   const { width } = useWindowDimensions();
   const desktop = width >= 900;
@@ -232,9 +251,6 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
     storageError,
     actionError,
     clearActionError,
-    syncStatus,
-    serverConfigured,
-    reloadRemote,
   } = useMockAppState();
   const [tourOpen, setTourOpen] = useState(false);
   useEffect(() => {
@@ -271,16 +287,70 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
   const [name, setName] = useState('');
   const [creatingBusy, setCreatingBusy] = useState(false);
   const [createError, setCreateError] = useState('');
-  const [confirmReload, setConfirmReload] = useState(false);
-  const personal =
-    activeRoute.startsWith('personal-') || ['instrument', 'score-editor'].includes(activeRoute);
+  const personal = activeRoute.startsWith('personal-');
+  const toolsPage = [
+    'tools',
+    'track-editor',
+    'instrument',
+    'score-editor',
+    'band-score-editor',
+  ].includes(activeRoute);
   const accountPage = activeRoute === 'settings' || activeRoute === 'help';
   const scoreEditorPage = activeRoute === 'score-editor' || activeRoute === 'band-score-editor';
   const spaceLabel = accountPage
     ? 'Moajam'
-    : personal
-      ? '개인 공간'
-      : (workspace?.name ?? '밴드 공간');
+    : toolsPage
+      ? '합주 도구'
+      : personal
+        ? '개인 공간'
+        : (workspace?.name ?? '밴드 공간');
+  const currentSong = adoptedSongs.find((song) => song.id === entityId);
+  const crumbs: Array<{ label: string; onPress?: () => void }> = [];
+  if (toolsPage) {
+    crumbs.push({ label: '개인 공간', onPress: () => onNavigate('personal-home') });
+    crumbs.push({ label: '합주 도구', onPress: () => onNavigate('tools') });
+  } else {
+    crumbs.push({
+      label: spaceLabel,
+      onPress: () =>
+        onNavigate(personal || accountPage ? 'personal-home' : 'home', {
+          workspaceId: workspace?.id,
+        }),
+    });
+  }
+  if (activeRoute === 'song') {
+    crumbs.push({
+      label: '참여 곡',
+      onPress: () => onNavigate('songs', { workspaceId: workspace?.id }),
+    });
+    crumbs.push({
+      label: currentSong?.title ?? '곡 상세',
+      onPress: songTab
+        ? () =>
+            onNavigate('song', { id: entityId, workspaceId: workspace?.id, songTab: 'discussion' })
+        : undefined,
+    });
+    const tabLabels: Partial<Record<SongTab, string>> = {
+      discussion: '곡 의견',
+      scores: '악보 보기',
+      tracks: '사운드 트랙',
+      overview: '곡 정보·합주 기록',
+    };
+    if (songTab && tabLabels[songTab]) crumbs.push({ label: tabLabels[songTab]! });
+  } else {
+    if (activeRoute === 'recommendations' || activeRoute === 'recommendation')
+      crumbs.push({ label: '참여 곡', onPress: () => onNavigate('songs') });
+    if (activeRoute === 'recommendation')
+      crumbs.push({ label: '곡 추천', onPress: () => onNavigate('recommendations') });
+    crumbs.push({
+      label: pageTitles[activeRoute],
+      onPress:
+        toolsPage && currentSong
+          ? () => onNavigate(activeRoute === 'track-editor' ? 'track-editor' : 'tools')
+          : undefined,
+    });
+    if (toolsPage && currentSong) crumbs.push({ label: currentSong.title });
+  }
   const choose = (id: string) => {
     selectWorkspace(id);
     setSwitcherOpen(false);
@@ -425,6 +495,8 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
               <Stack nativeID="tour-personal-menu" gap={2}>
                 {nav(personalItems)}
               </Stack>
+              <NavGroupLabel nativeID="tour-music-tools">합주 도구</NavGroupLabel>
+              <Stack gap={2}>{nav(toolItems)}</Stack>
               <NavGroupLabel nativeID="tour-band-space">밴드 공간</NavGroupLabel>
               <WorkspaceCard nativeID="tour-band-switcher">
                 {workspaces.length ? switcher : emptyBand}
@@ -516,49 +588,82 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                   />
                 </BrandButton>
               )}
-              <View
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  flexDirection: desktop ? 'row' : 'column',
-                  alignItems: desktop ? 'center' : 'flex-start',
-                  gap: desktop ? 12 : 2,
-                }}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ flex: 1, minWidth: 0 }}
+                contentContainerStyle={{ alignItems: 'center', gap: 10 }}
               >
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={accountPage ? '개인 홈으로 이동' : '공간 변경'}
-                  onPress={() => {
-                    setCreateContent(false);
-                    if (accountPage) onNavigate('personal-home');
-                    else setSwitcherOpen(true);
-                  }}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 6,
-                    maxWidth: desktop ? 260 : '100%',
-                  }}
-                >
-                  <Meta numberOfLines={1} style={{ flexShrink: 1 }}>
-                    {spaceLabel}
-                  </Meta>
-                  {!accountPage && (
-                    <AppIcon name="chevron-down" size={13} color={theme.colors.textMuted} />
-                  )}
-                </Pressable>
-                {desktop && <AppIcon name="chevron-right" size={14} color="#b3bdcc" />}
-                <TopbarTitle numberOfLines={1}>{pageTitles[activeRoute]}</TopbarTitle>
-              </View>
+                {crumbs.map((crumb, index) => (
+                  <View
+                    key={`${index}-${crumb.label}`}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+                  >
+                    {index > 0 && <AppIcon name="chevron-right" size={14} color="#b3bdcc" />}
+                    {crumb.onPress ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`${crumb.label}${index === 0 ? ' 홈' : ''}으로 이동`}
+                        onPress={crumb.onPress}
+                        style={{ paddingVertical: 10 }}
+                      >
+                        <Meta numberOfLines={1}>{crumb.label}</Meta>
+                      </Pressable>
+                    ) : (
+                      <TopbarTitle numberOfLines={1}>{crumb.label}</TopbarTitle>
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 12 }}>
-              <ActionButton
-                secondary
-                compact
+              {!desktop && (
+                <TopbarAction
+                  accessibilityRole="button"
+                  accessibilityLabel="밴드 선택"
+                  onPress={() => {
+                    setCreateContent(false);
+                    setSwitcherOpen(true);
+                  }}
+                >
+                  <AppIcon name="users" size={19} color="#72819a" />
+                </TopbarAction>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`알림${unreadCount ? `, 읽지 않은 알림 ${unreadCount}개` : ''}`}
+                accessibilityState={{ expanded: notificationsOpen }}
                 onPress={() => setNotificationsOpen(!notificationsOpen)}
+                style={{
+                  width: 38,
+                  height: 38,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 12,
+                  backgroundColor: notificationsOpen ? '#edf3ff' : '#f6f8fb',
+                }}
               >
-                알림
-              </ActionButton>
+                <AppIcon name="bell" size={21} color="#566b8c" />
+                {unreadCount > 0 && (
+                  <Meta
+                    style={{
+                      position: 'absolute',
+                      top: -5,
+                      right: -7,
+                      minWidth: 18,
+                      paddingHorizontal: 4,
+                      borderRadius: 10,
+                      backgroundColor: '#386ce4',
+                      color: 'white',
+                      fontSize: 10,
+                      lineHeight: 18,
+                      textAlign: 'center',
+                    }}
+                  >
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Meta>
+                )}
+              </Pressable>
 
               <TopbarAction
                 accessibilityRole="button"
@@ -589,35 +694,7 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
               alignSelf: 'center',
             }}
           >
-            {serverConfigured && !scoreEditorPage ? (
-              <FlexRow wrap>
-                <Meta>{syncStatus}</Meta>
-                <ActionButton secondary compact onPress={() => setConfirmReload(true)}>
-                  서버 기록 새로 불러오기
-                </ActionButton>
-                {confirmReload ? (
-                  <Surface>
-                    <Meta>
-                      저장되지 않은 화면 변경을 서버 기록으로 교체합니다. 필요한 기록은 설정에서
-                      먼저 백업해주세요.
-                    </Meta>
-                    <FlexRow>
-                      <ActionButton secondary onPress={() => setConfirmReload(false)}>
-                        취소
-                      </ActionButton>
-                      <ActionButton
-                        onPress={() => {
-                          setConfirmReload(false);
-                          void reloadRemote().catch(() => {});
-                        }}
-                      >
-                        서버 기록으로 교체
-                      </ActionButton>
-                    </FlexRow>
-                  </Surface>
-                ) : null}
-              </FlexRow>
-            ) : null}
+            {!scoreEditorPage && !hideSyncControls && <WorkspaceSyncControls />}
             {storageError && (
               <Meta accessibilityRole="alert" style={{ color: '#be3b4b' }}>
                 브라우저에 변경 내용을 저장하지 못했어요. 새로고침하면 변경 내용이 사라질 수
@@ -632,12 +709,24 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                 </ActionButton>
               </Surface>
             ) : null}
-            {notificationsOpen ? <Notifications navigate={onNavigate} /> : null}
+
             {children}
           </PageScroll>
           {!desktop && (
             <BottomNav>
-              {(personal ? personalItems : bandItems).map((item) => {
+              {[
+                ...(toolsPage
+                  ? [
+                      { icon: 'home' as const, label: '개인 홈', route: 'personal-home' as const },
+                      ...toolItems,
+                    ]
+                  : personal
+                    ? personalItems
+                    : bandItems),
+                ...(!toolsPage
+                  ? [{ icon: 'rehearsal' as const, label: '합주 도구', route: 'tools' as const }]
+                  : []),
+              ].map((item) => {
                 const active = activeGroup(activeRoute, item.route);
                 return (
                   <BottomItem
@@ -714,6 +803,15 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
                     }}
                   >
                     개인 공간 · 모든 밴드 모아보기
+                  </ActionButton>
+                  <ActionButton
+                    secondary
+                    onPress={() => {
+                      setSwitcherOpen(false);
+                      onNavigate('tools');
+                    }}
+                  >
+                    합주 도구 · 악보와 사운드 트랙 편집
                   </ActionButton>
                   {workspaces.length > 0 ? (
                     <>
@@ -863,6 +961,9 @@ export function AppShell({ children, activeRoute, onNavigate }: PropsWithChildre
               onNavigate('help');
             }}
           />
+        )}
+        {notificationsOpen && (
+          <NotificationPanel navigate={onNavigate} onClose={() => setNotificationsOpen(false)} />
         )}
         <BandJoinModal visible={joining} onClose={() => setJoining(false)} onJoined={choose} />
       </Shell>

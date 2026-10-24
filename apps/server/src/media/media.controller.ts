@@ -1,3 +1,4 @@
+import { writeNotificationEvents } from '../workspaces/notification-events.js';
 import { ApiProperty, ApiPropertyOptional, ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   Body,
@@ -176,7 +177,33 @@ export class MediaController {
         })))
     )
       throw new ForbiddenException();
-    return this.db.mediaAsset.update({ where: { id }, data: dto });
+    return this.db.$transaction(
+      async (tx) => {
+        const previous = await tx.mediaAsset.findUniqueOrThrow({ where: { id } });
+        const updated = await tx.mediaAsset.update({ where: { id }, data: dto });
+        const songId = asset.scope?.match(/^song\/[^/]+\/([\w-]+)$/)?.[1];
+        if (
+          songId &&
+          asset.scope === `song/${asset.workspaceId}/${songId}` &&
+          asset.workspaceId &&
+          previous.ready &&
+          asset.mime === 'application/pdf' &&
+          previous.visibility !== 'WORKSPACE' &&
+          dto.visibility === 'WORKSPACE'
+        ) {
+          await writeNotificationEvents(tx, asset.workspaceId, user.id, [
+            {
+              kind: 'PDF_SHARED',
+              entityId: songId,
+              message: 'PDF 악보를 공유했어요.',
+              metadata: { assetId: id, excerpt: asset.name },
+            },
+          ]);
+        }
+        return updated;
+      },
+      { isolationLevel: 'Serializable' },
+    );
   }
   @Patch('assets/:id/name') async rename(
     @CurrentUser() user: AuthenticatedUser,

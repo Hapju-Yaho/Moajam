@@ -1,4 +1,9 @@
 import {
+  documentEvents,
+  writeNotificationEvents,
+  type NotificationEvent,
+} from './notification-events.js';
+import {
   Body,
   Controller,
   Put,
@@ -97,6 +102,7 @@ export class WorkspaceSyncController {
           if (!(await tx.workspaceMember.count({ where: { workspaceId, role: 'OWNER' } })))
             throw new ConflictException('마지막 Owner는 제거할 수 없습니다.');
           const saved = [];
+          const events: NotificationEvent[] = [];
           for (const doc of dto.documents) {
             if (!isWorkspaceDocumentKey(doc.key) || doc.value.data === undefined)
               throw new BadRequestException('지원하지 않는 문서입니다.');
@@ -129,64 +135,15 @@ export class WorkspaceSyncController {
                 );
               saved.push(await tx.workspaceDocument.findUniqueOrThrow({ where }));
             }
-            if (doc.key === 'recommendations' || doc.key === 'rehearsals') {
-              type Event = {
-                id: string;
-                title: string;
-                cancelled?: boolean;
-                date?: string;
-                start?: string;
-              };
-              const previous = (before?.value as { data?: Event[] } | null)?.data ?? [];
-              const next = doc.value.data as Event[];
-              const added = next.filter((item) => !previous.some((old) => old.id === item.id));
-              const cancelled =
-                doc.key === 'rehearsals'
-                  ? previous.filter(
-                      (old) =>
-                        !old.cancelled &&
-                        (!next.some((item) => item.id === old.id) ||
-                          next.some((item) => item.id === old.id && item.cancelled)),
-                    )
-                  : [];
-              if (cancelled.length) {
-                const members = await tx.workspaceMember.findMany({ where: { workspaceId } });
-                await tx.notification.createMany({
-                  data: cancelled.flatMap((item) =>
-                    members.map((member) => ({
-                      workspaceId,
-                      userId: member.userId,
-                      kind: 'REHEARSAL_CANCELLED',
-                      entityId: item.id,
-                      message:
-                        `합주 일정 취소 · ${item.title}${item.date ? ` · ${item.date} ${item.start ?? ''}` : ''}`.slice(
-                          0,
-                          500,
-                        ),
-                    })),
-                  ),
-                });
-              }
-              if (added.length) {
-                const members = await tx.workspaceMember.findMany({ where: { workspaceId } });
-                await tx.notification.createMany({
-                  data: added.flatMap((item) =>
-                    members.map((member) => ({
-                      workspaceId,
-                      userId: member.userId,
-                      kind: doc.key === 'recommendations' ? 'RECOMMENDATION' : 'REHEARSAL',
-                      entityId: item.id,
-                      message:
-                        `${doc.key === 'recommendations' ? '새 추천 곡' : '새 합주 일정'} · ${item.title}`.slice(
-                          0,
-                          500,
-                        ),
-                    })),
-                  ),
-                });
-              }
-            }
+            events.push(
+              ...documentEvents(
+                doc.key,
+                (before?.value as { data?: unknown } | null)?.data,
+                doc.value.data,
+              ),
+            );
           }
+          await writeNotificationEvents(tx, workspaceId, user.id, events);
           return { documents: saved };
         },
         { isolationLevel: 'Serializable' },

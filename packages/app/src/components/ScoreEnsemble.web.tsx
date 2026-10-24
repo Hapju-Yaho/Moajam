@@ -7,9 +7,11 @@ import { scorePartOwner } from '../lib/scoreParts';
 export function ScoreEnsemble({
   parts,
   onPartSelect,
+  showPartLabels = true,
   ...props
 }: ComponentProps<typeof GuitarStaff> & {
   parts: string[];
+  showPartLabels?: boolean;
   onPartSelect?: (part: string, note?: string) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
@@ -58,14 +60,16 @@ export function ScoreEnsemble({
                   data-active={active}
                   data-keyboard={!!props.score.keyboardStaves?.[owner]}
                 >
-                  <button
-                    className="score-staff-name"
-                    disabled={!onPartSelect || !props.editable}
-                    onClick={() => onPartSelect?.(part)}
-                  >
-                    {label}
-                    {active && onPartSelect ? ' · 편집 중' : ''}
-                  </button>
+                  {showPartLabels && (
+                    <button
+                      className="score-staff-name"
+                      disabled={!onPartSelect || !props.editable}
+                      onClick={() => onPartSelect?.(part)}
+                    >
+                      {label}
+                      {active && onPartSelect ? ' · 편집 중' : ''}
+                    </button>
+                  )}
                   <GuitarStaff
                     {...props}
                     part={displayedPart}

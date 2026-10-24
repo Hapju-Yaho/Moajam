@@ -1,15 +1,13 @@
 import { Muted } from '@moajam/ui';
-import { useWindowDimensions, View } from 'react-native';
+import { View } from 'react-native';
 import { adoptedSongs } from '../../mocks/data';
-import type { AppRoute } from '../../navigation';
+import type { ScreenProps } from '../../navigation';
 import { ArtworkImage, Between, LinkText, SectionTitle } from '../../styles/layout';
-import { HomeCard, PracticeButton, PracticeButtonText, SongName, SongRow } from '../../styles/home';
+import { HomeCard, SongName, SongRow } from '../../styles/home';
 import { AppIcon } from '../icons';
 
 const homeSongs = [adoptedSongs[1], adoptedSongs[0], adoptedSongs[2]];
-export function ReadySongsCard({ navigate }: { navigate: (route: AppRoute) => void }) {
-  const { width } = useWindowDimensions();
-
+export function ReadySongsCard({ navigate }: { navigate: ScreenProps['navigate'] }) {
   return (
     <HomeCard>
       <Between>
@@ -18,7 +16,7 @@ export function ReadySongsCard({ navigate }: { navigate: (route: AppRoute) => vo
       </Between>
       <View>
         {homeSongs.map((song) => (
-          <SongRow key={song.id} onPress={() => navigate('song')}>
+          <SongRow key={song.id} onPress={() => navigate('song', { id: song.id })}>
             <ArtworkImage
               source={song.thumbnailUrl ? { uri: song.thumbnailUrl } : undefined}
               resizeMode="cover"
@@ -28,18 +26,7 @@ export function ReadySongsCard({ navigate }: { navigate: (route: AppRoute) => vo
               <SongName numberOfLines={1}>{song.title}</SongName>
               <Muted>{song.artist}</Muted>
             </View>
-            {width >= 700 ? (
-              <PracticeButton
-                onPress={(event) => {
-                  event.stopPropagation();
-                  navigate('practice');
-                }}
-              >
-                <PracticeButtonText>연습하기</PracticeButtonText>
-              </PracticeButton>
-            ) : (
-              <AppIcon name="chevron-right" color="#66738a" size={18} />
-            )}
+            <AppIcon name="chevron-right" color="#66738a" size={18} />
           </SongRow>
         ))}
       </View>

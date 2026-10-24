@@ -7,9 +7,17 @@ interface ReferenceVideoProps {
   referenceUrl?: string;
   thumbnailUrl?: string;
   title: string;
+  aspectRatio?: number;
+  showOriginalLink?: boolean;
 }
 
-export function ReferenceVideo({ referenceUrl, thumbnailUrl, title }: ReferenceVideoProps) {
+export function ReferenceVideo({
+  referenceUrl,
+  thumbnailUrl,
+  title,
+  aspectRatio = 16 / 9,
+  showOriginalLink = true,
+}: ReferenceVideoProps) {
   const video = parseVideoUrl(referenceUrl);
   const embedUrl = video?.embed;
   const [playing, setPlaying] = useState(false);
@@ -25,7 +33,7 @@ export function ReferenceVideo({ referenceUrl, thumbnailUrl, title }: ReferenceV
       <View
         style={{
           width: '100%',
-          aspectRatio: 16 / 9,
+          aspectRatio,
           overflow: 'hidden',
           borderRadius: 12,
           backgroundColor: '#182033',
@@ -90,9 +98,11 @@ export function ReferenceVideo({ referenceUrl, thumbnailUrl, title }: ReferenceV
           </Pressable>
         ) : null}
       </View>
-      <ActionButton secondary compact onPress={() => void Linking.openURL(video.url)}>
-        영상 원본 열기 ↗
-      </ActionButton>
+      {showOriginalLink && (
+        <ActionButton secondary compact onPress={() => void Linking.openURL(video.url)}>
+          영상 원본 열기 ↗
+        </ActionButton>
+      )}
     </>
   );
 }

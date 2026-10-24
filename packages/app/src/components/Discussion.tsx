@@ -1,3 +1,4 @@
+import { useNotificationFocus } from '../lib/useNotificationFocus';
 import { useState } from 'react';
 import { useIdentity } from '../state/Identity';
 import { View } from 'react-native';
@@ -12,10 +13,12 @@ export function Discussion({
   documentKey,
   onCreateTask,
   linkedOpinionIds = [],
+  focusId,
 }: {
   documentKey: string;
   onCreateTask?: (item: { id: string; text: string }) => void;
   linkedOpinionIds?: string[];
+  focusId?: string;
 }) {
   const currentUserId = useIdentity();
   const { members, canManage } = useMockAppState();
@@ -27,6 +30,10 @@ export function Discussion({
     replies: item.replies ?? [],
     resolved: item.resolved ?? false,
   }));
+  const focusExists = items.some(
+    (item) => item.id === focusId || item.replies.some((reply) => reply.id === focusId),
+  );
+  useNotificationFocus(focusId ? `discussion-${focusId}` : undefined, focusExists);
   const [draft, setDraft] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [editVideo, setEditVideo] = useState('');
@@ -72,8 +79,14 @@ export function Discussion({
         ))}
       </FlexRow>
       <Meta>표시 중 {visible.length}개</Meta>
+      {focusId && !focusExists && <Meta>해당 의견이 삭제되었거나 아직 불러오는 중이에요.</Meta>}
       {visible.map((item) => (
-        <Surface key={item.id}>
+        <Surface
+          key={item.id}
+          nativeID={`discussion-${item.id}`}
+          tint={focusId === item.id ? '#edf4ff' : undefined}
+          style={focusId === item.id ? { borderColor: '#5986ed', borderWidth: 2 } : undefined}
+        >
           <FlexRow wrap>
             <Copy>{author(item.authorId)}</Copy>
             <Meta>{new Date(item.date).toLocaleString('ko-KR')}</Meta>
@@ -180,7 +193,17 @@ export function Discussion({
             ) : null}
           </FlexRow>
           {item.replies.map((r) => (
-            <View key={r.id} style={{ padding: 12, backgroundColor: '#f5f7fb', borderRadius: 8 }}>
+            <View
+              key={r.id}
+              nativeID={`discussion-${r.id}`}
+              style={{
+                padding: 12,
+                backgroundColor: focusId === r.id ? '#e4efff' : '#f5f7fb',
+                borderRadius: 8,
+                borderWidth: focusId === r.id ? 2 : 0,
+                borderColor: '#5986ed',
+              }}
+            >
               <Meta>{author(r.authorId)}</Meta>
               <Copy>{r.text}</Copy>
               {r.videoUrl && (

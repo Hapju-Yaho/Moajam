@@ -1,0 +1,161 @@
+.song-score-reader {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e4e9f1;
+  border-radius: 14px;
+  background: #f5f7fb;
+  color: #24324a;
+}
+.song-score-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: #fff;
+  border-bottom: 1px solid #e4e9f1;
+  flex-wrap: wrap;
+}
+.song-score-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  min-height: 40px;
+  border: 1px solid #dce3ee;
+  border-radius: 10px;
+  background: #f8faff;
+  font-family: inherit;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.song-score-control > span {
+  color: #7c879b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.song-score-control select {
+  min-width: 72px;
+  max-width: 220px;
+  border: 0;
+  background: transparent;
+  color: #24324a;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 4px;
+  cursor: pointer;
+}
+.song-score-expand {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 8px 13px;
+  border: 1px solid #d8e2f3;
+  border-radius: 10px;
+  background: #edf3ff;
+  color: #3264c5;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.song-score-expand:hover {
+  background: #e0ebff;
+}
+.song-score-toolbar :focus-visible {
+  outline: 2px solid #477bec;
+  outline-offset: 3px;
+}
+.song-score-canvas {
+  padding: 24px;
+  overflow: auto;
+}
+.song-score-paper {
+  box-sizing: border-box;
+  min-width: 280px;
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  background: white;
+  border: 1px solid #e9edf3;
+  border-radius: 4px;
+  box-shadow: 0 4px 20px #22365509;
+}
+.song-score-title {
+  text-align: center;
+  margin-bottom: 24px;
+}
+.song-score-title > span {
+  color: #8c99a9;
+  font-size: 10px;
+  letter-spacing: 3px;
+}
+.song-score-title h2 {
+  margin: 10px 0;
+  color: #233347;
+  font-size: 28px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.song-score-title p {
+  margin: 0;
+  color: #7a8799;
+  font-size: 12px;
+}
+.song-score-reader .score-ensemble-staff {
+  padding-top: 0;
+}
+.song-score-fullscreen {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #f5f7fb;
+}
+.song-score-fullscreen::backdrop {
+  background: #f5f7fb;
+}
+.song-score-fullscreen .song-score-reader {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+.song-score-fullscreen .song-score-toolbar {
+  flex-shrink: 0;
+}
+.song-score-fullscreen .song-score-canvas {
+  flex: 1;
+  min-height: 0;
+}
+@media (max-width: 600px) {
+  .song-score-toolbar {
+    padding: 10px;
+    gap: 8px;
+  }
+  .song-score-control {
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .song-score-control select {
+    max-width: 130px;
+  }
+  .song-score-canvas {
+    padding: 12px;
+  }
+  .song-score-paper {
+    padding: 24px 12px;
+  }
+  .song-score-title h2 {
+    font-size: 23px;
+  }
+}

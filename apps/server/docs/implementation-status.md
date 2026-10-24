@@ -7,55 +7,59 @@ SQLite HTTP 통합 테스트로 임시 로그인·계정 복구·개인 데이�
 
 ## 실제 등록된 API
 
-| Method | 경로                                         | 현재 동작 / 차이                                                  |
-| ------ | -------------------------------------------- | ----------------------------------------------------------------- |
-| GET    | `/health`                                    | 공개 프로세스 상태. DB 준비 상태 아님                             |
-| GET    | `/me/onboarding`                             | 첫 로그인 프로필과 완료 여부 조회                                 |
-| PUT    | `/me/onboarding`                             | 이름·사진·복수 세션과 완료 시각 저장, 개인 설정 동시 반영         |
-| GET    | `/me`                                        | Profile 또는 null. 목표는 초기화 전 404                           |
-| PUT    | `/me`                                        | displayName upsert                                                |
-| GET    | `/me/schedules`                              | 개인 일정 value 배열, 날짜 범위·cursor 없음                       |
-| PUT    | `/me/schedules/{id}`                         | 클라이언트 ID JSON upsert. 목표 POST/PATCH와 다름                 |
-| DELETE | `/me/schedules/{id}`                         | count 반환. 목표 204와 다름                                       |
-| GET    | `/notifications`                             | 현재 멤버십 기준 최근 50개 배열                                   |
-| POST   | `/notifications/{id}/read`                   | count 반환. 목표 PUT read-state와 다름                            |
-| POST   | `/workspaces/{workspaceId}/reminders`        | Owner 앱 내 알림, 동일 문구 1분 제한                              |
-| GET    | `/workspaces`                                | 밴드 배열과 멤버·프로필                                           |
-| POST   | `/workspaces`                                | Profile + Workspace/OWNER 생성 트랜잭션                           |
-| PATCH  | `/workspaces/{workspaceId}/members/{userId}` | role/part 함께 변경, 마지막 Owner 보호                            |
-| DELETE | `/workspaces/{workspaceId}/members/{userId}` | 본인 탈퇴/Owner 제거, 아래 삭제 예외                              |
-| GET    | `/workspaces/{workspaceId}/documents`        | 모든 밴드 JSON 문서                                               |
-| PUT    | `/workspaces/{workspaceId}/documents/{key}`  | revision/value 저장, 충돌 409                                     |
-| POST   | `/workspaces/{workspaceId}/invitations`      | 7일 토큰 발급, 원문 1회 응답                                      |
-| GET    | `/workspaces/{workspaceId}/invitations`      | 안전한 초대 필드 조회                                             |
-| DELETE | `/workspaces/{workspaceId}/invitations/{id}` | revoked=true, count 반환                                          |
-| POST   | `/invitations/accept`                        | 토큰 검증·멤버십 upsert, workspaceId                              |
-| POST   | `/assets/uploads`                            | name/mime/size/scope/workspaceId로 서명 URL                       |
-| POST   | `/assets/{id}/complete`                      | 크기/MIME 확인 후 ready=true                                      |
-| GET    | `/assets`                                    | scope/workspaceId, 본인·공유 파일                                 |
-| GET    | `/profile-photos/{id}`                        | 현재 프로필 이미지의 고정 주소, R2 등 비공개 저장소 서명 URL로 연결 |
-| GET    | `/band-photos/{id}`                           | 현재 밴드 이미지의 고정 주소, R2 등 비공개 저장소 서명 URL로 연결 |
-| GET    | `/assets/{id}/download`                      | 권한 확인 후 5분 URL                                              |
-| PATCH  | `/assets/{id}/visibility`                    | 소유자 PRIVATE/WORKSPACE 변경                                     |
-| DELETE | `/assets/{id}`                               | 소유자 soft delete, 영구 정리 없음                                |
-| POST   | `/separation-jobs`                           | sourceId/instrument, worker 활성화 필요                           |
-| GET    | `/separation-jobs`                           | 본인 최근 30개                                                    |
-| POST   | `/separation-jobs/{id}/cancel`               | 본인 진행 중 작업 취소                                            |
-| GET    | `/config`                                    | 인증 방식·로그인 준비 여부·worker 상태. DB 주소와 비밀 키 제외    |
-| POST   | `/auth/kakao/authorize`                      | 허용된 redirect URI로 인가 URL·state 발급                         |
-| POST   | `/auth/kakao`                                | code·redirectUri를 받아 카카오 사용자 확인 후 Moajam JWT 발급     |
-| POST   | `/auth/logout`                               | 현재 서비스 세션 즉시 폐기                                        |
-| POST   | `/auth/temporary`                            | 개발용 임시 계정 생성/복구, 7일 세션 발급                         |
-| GET    | `/auth/session`                              | 검증된 임시 또는 카카오 사용자 정보                               |
-| POST   | `/auth/temporary/logout`                     | 현재 임시 세션 폐기, 복구 키 유지                                 |
-| GET    | `/me/documents/{key}`                        | 개인 악보·연습 세션, 없는 기록 null                               |
-| PUT    | `/me/documents/{key}`                        | 개인 JSON + 소유 파일 참조, revision 충돌 409                     |
-| GET    | `/me/preferences`                            | 개인 프로필·환경·알림 선호                                        |
-| PUT    | `/me/preferences`                            | 설정·프로필 이름 동시 저장                                        |
-| PUT    | `/workspaces/{workspaceId}/sync`             | 여러 문서·멤버 변경을 원자적으로 저장                             |
-| PUT    | `/local-files/{token}`                       | 로컬 서명 업로드, 100MB·크기/MIME 검증                            |
-| GET    | `/local-files/{token}`                       | 로컬 서명 다운로드, 5분 만료                                      |
-| GET    | `/integrations/youtube/{videoId}`            | 인증된 사용자의 제목·채널 조회, 고정 upstream·8초 제한·1시간 캐시 |
+| Method | 경로                                         | 현재 동작 / 차이                                                    |
+| ------ | -------------------------------------------- | ------------------------------------------------------------------- |
+| GET    | `/health`                                    | 공개 프로세스 상태. DB 준비 상태 아님                               |
+| GET    | `/me/onboarding`                             | 첫 로그인 프로필과 완료 여부 조회                                   |
+| PUT    | `/me/onboarding`                             | 이름·사진·복수 세션과 완료 시각 저장, 개인 설정 동시 반영           |
+| GET    | `/me`                                        | Profile 또는 null. 목표는 초기화 전 404                             |
+| PUT    | `/me`                                        | displayName upsert                                                  |
+| GET    | `/me/schedules`                              | 개인 일정 value 배열, 날짜 범위·cursor 없음                         |
+| PUT    | `/me/schedules/{id}`                         | 클라이언트 ID JSON upsert. 목표 POST/PATCH와 다름                   |
+| DELETE | `/me/schedules/{id}`                         | count 반환. 목표 204와 다름                                         |
+| GET    | `/notifications`                             | 현재 멤버십 기준 최근 50개 배열                                     |
+| GET    | `/notifications/summary`                     | 소속 밴드의 전체/밴드별 미읽음 수, 목록 제한과 독립                 |
+| GET    | `/notifications/inbox`                       | 밴드·미읽음 필터, 30개씩 커서 페이지                                |
+| GET    | `/notifications/{id}/target`                 | 수신자·멤버십 검사 후 대상 존재 여부                                |
+| POST   | `/notifications/{id}/read`                   | count 반환. 목표 PUT read-state와 다름                              |
+| POST   | `/workspaces/{workspaceId}/reminders`        | Owner 앱 내 알림, 동일 문구 1분 제한                                |
+| GET    | `/workspaces`                                | 밴드 배열과 멤버·프로필                                             |
+| POST   | `/workspaces`                                | Profile + Workspace/OWNER 생성 트랜잭션                             |
+| PATCH  | `/workspaces/{workspaceId}/members/{userId}` | role/part 함께 변경, 마지막 Owner 보호                              |
+| DELETE | `/workspaces/{workspaceId}/members/{userId}` | 본인 탈퇴/Owner 제거, 아래 삭제 예외                                |
+| GET    | `/workspaces/{workspaceId}/documents`        | 모든 밴드 JSON 문서                                                 |
+| PUT    | `/workspaces/{workspaceId}/documents/{key}`  | revision/value 저장, 충돌 409                                       |
+| POST   | `/workspaces/{workspaceId}/invitations`      | 7일 토큰 발급, 원문 1회 응답                                        |
+| GET    | `/workspaces/{workspaceId}/invitations`      | 안전한 초대 필드 조회                                               |
+| DELETE | `/workspaces/{workspaceId}/invitations/{id}` | revoked=true, count 반환                                            |
+| POST   | `/invitations/accept`                        | 토큰 검증·멤버십 upsert, workspaceId                                |
+| POST   | `/assets/uploads`                            | name/mime/size/scope/workspaceId로 서명 URL                         |
+| POST   | `/assets/{id}/complete`                      | 크기/MIME 확인 후 ready=true                                        |
+| GET    | `/assets`                                    | scope/workspaceId, 본인·공유 파일                                   |
+| GET    | `/profile-photos/{id}`                       | 현재 프로필 이미지의 고정 주소, R2 등 비공개 저장소 서명 URL로 연결 |
+| GET    | `/band-photos/{id}`                          | 현재 밴드 이미지의 고정 주소, R2 등 비공개 저장소 서명 URL로 연결   |
+| GET    | `/assets/{id}/download`                      | 권한 확인 후 5분 URL                                                |
+| PATCH  | `/assets/{id}/visibility`                    | 소유자 PRIVATE/WORKSPACE 변경                                       |
+| DELETE | `/assets/{id}`                               | 소유자 soft delete, 영구 정리 없음                                  |
+| POST   | `/separation-jobs`                           | sourceId/instrument, worker 활성화 필요                             |
+| GET    | `/separation-jobs`                           | 본인 최근 30개                                                      |
+| POST   | `/separation-jobs/{id}/cancel`               | 본인 진행 중 작업 취소                                              |
+| GET    | `/config`                                    | 인증 방식·로그인 준비 여부·worker 상태. DB 주소와 비밀 키 제외      |
+| POST   | `/auth/kakao/authorize`                      | 허용된 redirect URI로 인가 URL·state 발급                           |
+| POST   | `/auth/kakao`                                | code·redirectUri를 받아 카카오 사용자 확인 후 Moajam JWT 발급       |
+| POST   | `/auth/logout`                               | 현재 서비스 세션 즉시 폐기                                          |
+| POST   | `/auth/temporary`                            | 개발용 임시 계정 생성/복구, 7일 세션 발급                           |
+| GET    | `/auth/session`                              | 검증된 임시 또는 카카오 사용자 정보                                 |
+| POST   | `/auth/temporary/logout`                     | 현재 임시 세션 폐기, 복구 키 유지                                   |
+| GET    | `/me/documents/{key}`                        | 개인 악보·연습 세션, 없는 기록 null                                 |
+| PUT    | `/me/documents/{key}`                        | 개인 JSON + 소유 파일 참조, revision 충돌 409                       |
+| GET    | `/me/preferences`                            | 개인 프로필·환경·알림 선호                                          |
+| PUT    | `/me/help-visits/{screen}`                   | 사용자·화면별 최초 도움말 방문 기록                                 |
+| PUT    | `/me/preferences`                            | 설정·프로필 이름 동시 저장                                          |
+| PUT    | `/workspaces/{workspaceId}/sync`             | 여러 문서·멤버 변경을 원자적으로 저장                               |
+| PUT    | `/local-files/{token}`                       | 로컬 서명 업로드, 100MB·크기/MIME 검증                              |
+| GET    | `/local-files/{token}`                       | 로컬 서명 다운로드, 5분 만료                                        |
+| GET    | `/integrations/youtube/{videoId}`            | 인증된 사용자의 제목·채널 조회, 고정 upstream·8초 제한·1시간 캐시   |
 
 ## JSON 문서에 들어 있는 기능
 
@@ -119,3 +123,15 @@ Guitar Pro·고급 악보·품질 분석·자동 알림은 제품 목표와 실�
 5. 기존 클라이언트가 없어지면 호환 경로를 제거한다.
 
 로컬 실행과 화면별 API 연결은 [실행 안내](../../../docs/runtime-storage.md)를 참고한다.
+
+## 앱 내 알림 (2026-10-24)
+
+헤더 배지와 패널, 밴드 홈이 같은 조회 캐시와 서버 읽음 상태를 사용한다. 패널은 전체/읽지 않음, 밴드 필터, 모두 읽음, 추가 페이지를 지원하며 활성 화면에서 15초마다 갱신한다.
+
+문서 저장과 알림 생성을 같은 트랜잭션으로 처리한다. 곡 추천·채택, 의견·답글, 트랙 피드백, 공유 악보·트랙 변경, PDF 공유, 합주 생성·변경·취소를 알린다. 작성자는 제외하며 곡 관련 변경은 참여자, 답글은 원 의견 작성자, 합주는 지정 멤버에게 전달한다. 기존 참여자 정보가 없는 곡과 멤버 지정이 없는 합주는 밴드 멤버가 대상이다. 개인 초안, 읽기, 재생 옵션 변경은 알리지 않는다.
+
+알림은 곡 탭 및 의견/답글·PDF·트랙 시점을 연결한다. 취소와 공지는 패널에서 내용을 확인하고, 삭제된 대상은 안내와 목록 이동을 제공한다. 현재 멤버십이 없는 밴드의 알림은 조회·읽음·대상 확인에서 제외한다.
+
+푸시·이메일·예약 리마인더·알림 묶음·개별 수신 설정은 후속 범위다. 기존 환경 설정의 동작하지 않는 전송 채널 토글은 준비 중 표시로 교체했다.
+
+DB 변경: `20261024060000_notification_targets`는 notifications에 nullable metadata와 조회 인덱스를 추가한다. PostgreSQL은 배포 시 `npm run prisma:deploy --workspace @moajam/server`, 로컬 SQLite는 기존 db:local 초기화 경로로 적용한다.

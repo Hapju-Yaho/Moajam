@@ -11,8 +11,8 @@ export function BandScoreEditorScreen(props: ScreenProps) {
       <AppShell activeRoute="band-score-editor" onNavigate={props.navigate}>
         <Surface>
           <Meta>이 밴드에서 곡을 찾을 수 없어요.</Meta>
-          <ActionButton onPress={() => props.navigate('practice', { workspaceId })}>
-            연습실로 돌아가기
+          <ActionButton onPress={() => props.navigate('tools', { workspaceId })}>
+            돌아가기
           </ActionButton>
         </Surface>
       </AppShell>

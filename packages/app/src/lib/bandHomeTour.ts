@@ -35,7 +35,7 @@ export function bandHomeTourSteps({
     {
       title: '함께 연습할 곡',
       body: hasSongs
-        ? '곡을 누르면 상세 정보로, 연습하기를 누르면 연습실로 이동해요.'
+        ? '곡을 누르면 상세에서 의견을 나누고 악보와 트랙을 이용할 수 있어요.'
         : '함께 연주하고 싶은 곡을 먼저 추천해보세요.',
       target: 'tour-home-songs',
     },
@@ -54,9 +54,9 @@ export function bandHomeTourSteps({
       target: 'tour-band-nav-songs',
     },
     {
-      title: '연습실',
-      body: '악보를 열고 편집하거나, 팀원들과 녹음을 공유해보세요.',
-      target: 'tour-band-nav-practice',
+      title: '합주 도구',
+      body: '악보와 사운드 트랙 편집은 합주 도구에서 진행하세요.',
+      target: 'tour-music-tools',
     },
     {
       title: '설정과 멤버',
