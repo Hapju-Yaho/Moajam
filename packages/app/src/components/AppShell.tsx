@@ -1,4 +1,4 @@
-import { claimFirstHelpVisit, type HelpScreen } from '../lib/helpVisits';
+import { claimFirstHelpVisit, completeHelpVisit, type HelpScreen } from '../lib/helpVisits';
 import { PracticeHelp } from './PracticeHelp';
 import { ScreenHelpContext } from './ScreenHelpContext';
 import { HomeTour } from './HomeTour';
@@ -369,6 +369,14 @@ export function AppShell({
   const closeTour = () => {
     setTourOpen(false);
     setSwitcherOpen(false);
+  };
+  const completeTour = () => {
+    const screen: HelpScreen =
+      activeRoute === 'practice' ? 'practice' : activeRoute === 'home' ? 'band-home' : 'main-home';
+    void completeHelpVisit(screen, currentUserId).catch((error) => {
+      console.error('도움말 완료 기록을 저장하지 못했습니다.', error);
+    });
+    closeTour();
   };
   const bandActions = (
     <Stack
@@ -919,7 +927,9 @@ export function AppShell({
             </Surface>
           </View>
         </Modal>
-        {tourOpen && activeRoute === 'practice' && <PracticeHelp onClose={closeTour} />}
+        {tourOpen && activeRoute === 'practice' && (
+          <PracticeHelp onClose={closeTour} onComplete={completeTour} />
+        )}
         {tourOpen && activeRoute !== 'practice' && (
           <HomeTour
             hasBand={workspaces.length > 0}
@@ -935,6 +945,7 @@ export function AppShell({
               ),
             }}
             onClose={closeTour}
+            onComplete={completeTour}
             onStep={(target) => {
               setTourSidebar(
                 target.startsWith('tour-personal-') ||

@@ -29,7 +29,7 @@ export type HomeTourProps = {
   onJoin: () => void;
   onHelp: () => void;
 };
-export function HomeTour({ bandHome, onClose, onHelp }: HomeTourProps) {
+export function HomeTour({ bandHome, onClose, onHelp, onComplete }: HomeTourProps) {
   return (
     <Modal transparent visible onRequestClose={onClose}>
       <View
@@ -44,7 +44,7 @@ export function HomeTour({ bandHome, onClose, onHelp }: HomeTourProps) {
             함께 준비할 수 있어요.
           </Copy>
           <ActionButton onPress={onHelp}>도움말 보기</ActionButton>
-          <ActionButton secondary onPress={onClose}>
+          <ActionButton secondary onPress={onComplete ?? onClose}>
             시작하기
           </ActionButton>
         </Surface>
