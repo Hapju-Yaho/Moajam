@@ -1,7 +1,13 @@
 import { useRef, useState } from 'react';
 import { HomeTour } from './HomeTour.web';
 import { DawHelp } from './DawHelp.web';
-export function PracticeHelp({ onClose }: { onClose: () => void }) {
+export function PracticeHelp({
+  onClose,
+  onComplete,
+}: {
+  onClose: () => void;
+  onComplete?: () => void;
+}) {
   const [daw, setDaw] = useState(false);
   const [dawReady, setDawReady] = useState(false);
   const scrollPosition = useRef<{ element: Element; top: number; left: number }[]>([]);
@@ -66,6 +72,7 @@ export function PracticeHelp({ onClose }: { onClose: () => void }) {
           tourTitle="연습실 도움말"
           onStep={() => {}}
           onClose={onClose}
+          onComplete={onComplete}
           onHelp={onClose}
           onCreate={onClose}
           onJoin={onClose}
@@ -90,7 +97,7 @@ export function PracticeHelp({ onClose }: { onClose: () => void }) {
             setDawReady(false);
           }}
           onComplete={() => {
-            setResumeStep(steps.findIndex((step) => step.target === 'practice-feedback'));
+            setResumeStep(steps.findIndex((step) => step.target === '.studio-console'));
             setDaw(false);
             setDawReady(false);
           }}

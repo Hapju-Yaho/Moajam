@@ -9,15 +9,15 @@ import {
   setAudioModeAsync,
 } from 'expo-audio';
 import { getDocumentAsync } from 'expo-document-picker';
-import { ActionButton, Copy, Heading, Meta, Surface, FlexRow } from './ProductUI';
+import { ActionButton, Heading, Meta, Surface, FlexRow } from './ProductUI';
 import { Input } from '../styles/layout';
 import { readMedia, writeMedia } from '../lib/mediaStore';
 import { keepNativeFile } from '../lib/nativeStorage';
 import { usePreferences } from '../state/preferences';
 import { serverConfigured } from '../lib/remote';
-import { useWorkspaceValue, useMockAppState } from '../state/MockAppState';
 import { TrackPartPicker } from './TrackPartPicker';
 import { trackPartLabel, validateAudioFile, type TrackPart } from '../lib/trackParts';
+import { Discussion } from './Discussion';
 type Track = {
   id: string;
   name: string;
@@ -111,22 +111,26 @@ export function PracticeStudio({
   scopeKey,
   feedback,
   readOnly = false,
-  onOpenEditor,
   focusId,
   focusTime,
+  discussionOptions,
+  discussionInitiallyOpen = false,
 }: {
   scopeKey: string;
   bpm?: number;
   feedback?: boolean;
   readOnly?: boolean;
-  onOpenEditor?: () => void;
   focusId?: string;
   focusTime?: number;
+  discussionOptions?: import('./Discussion').DiscussionOptions;
+  discussionInitiallyOpen?: boolean;
 }) {
-  const { members } = useMockAppState();
-  const [sharedNotes] = useWorkspaceValue<
-    { id: string; time: number; text: string; authorId: string }[]
-  >(`song/${scopeKey.split('/').at(-1)}/feedback`, []);
+  const [discussionOpen, setDiscussionOpen] = useState(
+    discussionInitiallyOpen || !!feedback || !!focusId,
+  );
+  useEffect(() => {
+    if (discussionInitiallyOpen || feedback || focusId) setDiscussionOpen(true);
+  }, [discussionInitiallyOpen, feedback, focusId]);
   const [seekRequest, setSeekRequest] = useState(
     focusTime === undefined ? undefined : { time: focusTime },
   );
@@ -226,9 +230,6 @@ export function PracticeStudio({
   }
   return (
     <Surface>
-      {readOnly && onOpenEditor && (
-        <ActionButton onPress={onOpenEditor}>사운드 트랙 편집</ActionButton>
-      )}
       {!readOnly && (
         <>
           <FlexRow wrap>
@@ -308,32 +309,34 @@ export function PracticeStudio({
           />
         )),
       )}
-      {readOnly && (
-        <>
-          <Heading>트랙 피드백</Heading>
-          {sharedNotes.map((note) => (
-            <Surface key={note.id} tint={focusId === note.id ? '#e4efff' : undefined}>
-              <Meta>
-                {members.find((member) => member.id === note.authorId)?.name ?? '밴드 멤버'}
-              </Meta>
-              <Copy>{note.text}</Copy>
-              <ActionButton secondary compact onPress={() => setSeekRequest({ time: note.time })}>
-                {Math.floor(note.time / 60)}:{String(Math.floor(note.time % 60)).padStart(2, '0')}{' '}
-                위치로 이동
-              </ActionButton>
-            </Surface>
-          ))}
-          {!sharedNotes.length && <Meta>아직 트랙 피드백이 없어요.</Meta>}
-        </>
-      )}
+      <ActionButton
+        secondary
+        onPress={() => setDiscussionOpen((open) => !open)}
+        accessibilityState={{ expanded: discussionOpen }}
+      >
+        {discussionOpen ? '곡 의견 닫기' : '곡 의견 보기'}
+      </ActionButton>
+      {
+        <Discussion
+          showOpinions={discussionOpen}
+          documentKey={`song/${scopeKey.split('/').at(-1)}/discussion`}
+          legacyDocumentKey={`song/${scopeKey.split('/').at(-1)}/feedback`}
+          focusId={focusId}
+          timeline={{
+            position: seekRequest?.time ?? 0,
+            onSeek: (time) => setSeekRequest({ time }),
+          }}
+          {...discussionOptions}
+        />
+      }
       {!readOnly && (
         <>
-          <Heading>세부 피드백</Heading>
+          <Heading>개인 메모</Heading>
           <Input
             multiline
             ref={feedbackInput}
-            accessibilityLabel="세부 피드백"
-            placeholder="세부 피드백"
+            accessibilityLabel="개인 메모"
+            placeholder="개인 메모"
             value={memo}
             onChangeText={setMemo}
             editable={ready}

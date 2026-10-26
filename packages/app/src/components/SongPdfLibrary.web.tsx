@@ -20,10 +20,14 @@ export function SongPdfLibrary({
   songId,
   title,
   assetId,
+  buttonLabel = 'PDF 추가·보기',
+  initialOpen = false,
 }: {
   songId: string;
   title: string;
   assetId?: string;
+  buttonLabel?: string;
+  initialOpen?: boolean;
 }) {
   const { workspaceId, currentUserId } = useMockAppState();
   const [parts, setParts] = useWorkspaceValue<Record<string, string>>(
@@ -31,7 +35,10 @@ export function SongPdfLibrary({
     {},
   );
   const scope = 'song/' + workspaceId + '/' + songId;
-  const [open, setOpen] = useState(!!assetId);
+  const [open, setOpen] = useState(!!assetId || initialOpen);
+  useEffect(() => {
+    if (initialOpen || assetId) setOpen(true);
+  }, [initialOpen, assetId]);
   const [preview, setPreview] = useState<{ name: string; url: string } | null>(null);
   const [deleting, setDeleting] = useState<FileEntry | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -186,7 +193,7 @@ export function SongPdfLibrary({
   return (
     <>
       <ActionButton nativeID="practice-pdf-open" secondary compact onPress={() => setOpen(true)}>
-        PDF 추가·보기
+        {buttonLabel}
       </ActionButton>
       {open &&
         createPortal(

@@ -9,11 +9,11 @@ export function claimFirstHelpVisit(screen: HelpScreen, user: string): Promise<b
   if (visited.has(key)) return Promise.resolve(false);
   const request = (
     serverConfigured
-      ? api<{ firstVisit: boolean }>('/me/help-visits/' + screen, 'PUT', undefined, user)
+      ? api<{ firstVisit: boolean }>('/me/help-visits/' + screen, 'GET', undefined, user)
       : Promise.resolve({ firstVisit: true })
   )
     .then((result) => {
-      visited.add(key);
+      if (!result.firstVisit) visited.add(key);
       return result.firstVisit;
     })
     .finally(() => {
@@ -21,4 +21,8 @@ export function claimFirstHelpVisit(screen: HelpScreen, user: string): Promise<b
     });
   pending.set(key, request);
   return request;
+}
+export async function completeHelpVisit(screen: HelpScreen, user: string): Promise<void> {
+  if (serverConfigured) await api('/me/help-visits/' + screen, 'PUT', undefined, user);
+  visited.add(user + '/' + screen);
 }

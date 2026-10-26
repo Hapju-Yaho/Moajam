@@ -9,7 +9,6 @@ import { HelpScreen } from './screens/HelpScreen';
 import { InstrumentExtractorScreen } from './screens/InstrumentExtractorScreen';
 import { MembersScreen } from './screens/MembersScreen';
 import { MusicToolsScreen } from './screens/MusicToolsScreen';
-import { TrackEditorScreen } from './screens/TrackEditorScreen';
 import { RecommendationDetailScreen } from './screens/RecommendationDetailScreen';
 import { RehearsalsScreen } from './screens/RehearsalsScreen';
 import { ScoreEditorScreen } from './screens/ScoreEditorScreen';
@@ -94,7 +93,11 @@ function ScopedScreen({
     case 'tools':
       return <MusicToolsScreen navigate={navigate} />;
     case 'track-editor':
-      return <TrackEditorScreen navigate={navigate} entityId={entityId} />;
+      return entityId ? (
+        <SongWorkspaceScreen navigate={navigate} entityId={entityId} songTab="tracks" />
+      ) : (
+        <MusicToolsScreen navigate={navigate} mode="tracks" />
+      );
     case 'personal-practice':
     case 'practice':
       return entityId ? (

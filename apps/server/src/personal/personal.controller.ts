@@ -93,8 +93,18 @@ export class PersonalController {
     private readonly db: PrismaService,
     private readonly photos: ProfilePhotoService,
   ) {}
+  @Get('help-visits/:screen')
+  @ApiOperation({ summary: '화면 도움말 완료 여부 조회' })
+  async readHelpVisit(@CurrentUser() user: AuthenticatedUser, @Param('screen') screen: string) {
+    if (!['main-home', 'band-home', 'practice'].includes(screen))
+      throw new BadRequestException('지원하지 않는 도움말 화면입니다.');
+    const saved = await this.db.personalDocument.findUnique({
+      where: { ownerId_key: { ownerId: user.id, key: `help-visit/${screen}` } },
+    });
+    return { firstVisit: !saved };
+  }
   @Put('help-visits/:screen')
-  @ApiOperation({ summary: '화면 첫 방문을 기록하고 최초 방문 여부 반환' })
+  @ApiOperation({ summary: '화면 도움말을 끝까지 읽었음을 기록' })
   async visitHelp(@CurrentUser() user: AuthenticatedUser, @Param('screen') screen: string) {
     if (!['main-home', 'band-home', 'practice'].includes(screen))
       throw new BadRequestException('지원하지 않는 도움말 화면입니다.');

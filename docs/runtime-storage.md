@@ -3,10 +3,10 @@
 ## 화면별 첫 도움말
 
 로그인한 사용자가 개인 메인 홈, 밴드 홈, 밴드 연습실에 처음 들어오면 해당 도움말을 자동으로 표시한다.
-`PUT /v1/me/help-visits/:screen`은 `main-home`, `band-home`, `practice` 중 하나를 받고,
-기존 `PersonalDocument`에 `help-visit/<screen>` 키와 `visitedAt`을 저장한다.
-사용자·키의 DB 고유 제약으로 동시 접속에서도 한 요청만 `firstVisit: true`를 받는다.
-방문 이력은 밴드나 기기가 아닌 사용자·화면별이며, 건너뛰어도 방문으로 처리한다.
+`GET /v1/me/help-visits/:screen`은 `main-home`, `band-home`, `practice`의 도움말 완료 여부를 조회한다.
+마지막 단계에서 완료하면 `PUT` 요청으로 기존 `PersonalDocument`에 `help-visit/<screen>` 키와 `visitedAt`을 저장한다.
+사용자·키의 DB 고유 제약으로 완료 기록은 중복 생성되지 않는다.
+완료 이력은 밴드나 기기가 아닌 사용자·화면별이며, 중간에 닫거나 건너뛰면 다음 접속에도 자동 표시한다.
 물음표 버튼으로 다시 보는 동작은 방문 이력을 초기화하지 않는다. 별도 DB 마이그레이션은 필요 없다.
 목데이터 모드에서는 DB 요청 없이 사용자·화면별 메모리 기록을 사용한다.
 

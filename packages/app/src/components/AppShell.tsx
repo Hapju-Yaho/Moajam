@@ -1,4 +1,4 @@
-import { claimFirstHelpVisit, type HelpScreen } from '../lib/helpVisits';
+import { claimFirstHelpVisit, completeHelpVisit, type HelpScreen } from '../lib/helpVisits';
 import { PracticeHelp } from './PracticeHelp';
 import { ScreenHelpContext } from './ScreenHelpContext';
 import { HomeTour } from './HomeTour';
@@ -183,11 +183,11 @@ const personalItems: typeof bandItems = [
 ];
 const toolItems: typeof bandItems = [
   { icon: 'songs', label: '악보 편집', route: 'tools' },
-  { icon: 'rehearsal', label: '사운드 트랙 편집', route: 'track-editor' },
+  { icon: 'rehearsal', label: '작업실', route: 'track-editor' },
 ];
 const pageTitles: Record<AppRoute, string> = {
   tools: '악보 편집',
-  'track-editor': '사운드 트랙 편집',
+  'track-editor': '작업실',
   'personal-home': '홈',
   'personal-rehearsals': '합주 일정',
   'personal-songs': '참여 곡',
@@ -327,13 +327,13 @@ export function AppShell({
       label: currentSong?.title ?? '곡 상세',
       onPress: songTab
         ? () =>
-            onNavigate('song', { id: entityId, workspaceId: workspace?.id, songTab: 'discussion' })
+            onNavigate('song', { id: entityId, workspaceId: workspace?.id, songTab: 'main' })
         : undefined,
     });
     const tabLabels: Partial<Record<SongTab, string>> = {
       discussion: '곡 의견',
       scores: '악보 보기',
-      tracks: '사운드 트랙',
+      tracks: '작업실',
       overview: '곡 정보·합주 기록',
     };
     if (songTab && tabLabels[songTab]) crumbs.push({ label: tabLabels[songTab]! });
@@ -369,6 +369,14 @@ export function AppShell({
   const closeTour = () => {
     setTourOpen(false);
     setSwitcherOpen(false);
+  };
+  const completeTour = () => {
+    const screen: HelpScreen =
+      activeRoute === 'practice' ? 'practice' : activeRoute === 'home' ? 'band-home' : 'main-home';
+    void completeHelpVisit(screen, currentUserId).catch((error) => {
+      console.error('도움말 완료 기록을 저장하지 못했습니다.', error);
+    });
+    closeTour();
   };
   const bandActions = (
     <Stack
@@ -919,7 +927,9 @@ export function AppShell({
             </Surface>
           </View>
         </Modal>
-        {tourOpen && activeRoute === 'practice' && <PracticeHelp onClose={closeTour} />}
+        {tourOpen && activeRoute === 'practice' && (
+          <PracticeHelp onClose={closeTour} onComplete={completeTour} />
+        )}
         {tourOpen && activeRoute !== 'practice' && (
           <HomeTour
             hasBand={workspaces.length > 0}
@@ -935,6 +945,7 @@ export function AppShell({
               ),
             }}
             onClose={closeTour}
+            onComplete={completeTour}
             onStep={(target) => {
               setTourSidebar(
                 target.startsWith('tour-personal-') ||

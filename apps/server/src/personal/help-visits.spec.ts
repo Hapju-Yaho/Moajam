@@ -8,6 +8,14 @@ function fixture() {
   const controller = new PersonalController(
     {
       personalDocument: {
+        findUnique: async ({
+          where,
+        }: {
+          where: { ownerId_key: { ownerId: string; key: string } };
+        }) => {
+          const value = records.get(where.ownerId_key.ownerId + '/' + where.ownerId_key.key);
+          return value ? { value } : null;
+        },
         create: async ({
           data,
         }: {
@@ -25,6 +33,18 @@ function fixture() {
   return { controller, records };
 }
 describe('help first visits', () => {
+  it('keeps showing incomplete tours until completion is recorded', async () => {
+    const { controller, records } = fixture();
+    for (const screen of ['main-home', 'band-home', 'practice']) {
+      assert.equal((await controller.readHelpVisit({ id: 'alice' }, screen)).firstVisit, true);
+      assert.equal((await controller.readHelpVisit({ id: 'alice' }, screen)).firstVisit, true);
+      assert.equal(records.has('alice/help-visit/' + screen), false);
+      await controller.visitHelp({ id: 'alice' }, screen);
+      assert.equal((await controller.readHelpVisit({ id: 'alice' }, screen)).firstVisit, false);
+      assert.equal((await controller.readHelpVisit({ id: 'bob' }, screen)).firstVisit, true);
+    }
+    await assert.rejects(controller.readHelpVisit({ id: 'alice' }, 'other'));
+  });
   it('records each screen separately for each user', async () => {
     const { controller, records } = fixture();
     for (const screen of ['main-home', 'band-home', 'practice']) {

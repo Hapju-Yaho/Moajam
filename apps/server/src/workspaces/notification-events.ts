@@ -94,13 +94,15 @@ export function documentEvents(key: string, before: unknown, after: unknown): No
         const old = previous.find((value) => value.id === item.id);
         if (!old)
           add(
-            type === 'feedback' ? 'TRACK_FEEDBACK' : 'SONG_OPINION',
+            type === 'feedback' || typeof item.time === 'number'
+              ? 'TRACK_FEEDBACK'
+              : 'SONG_OPINION',
             { id: songId },
             type === 'feedback' ? '새로운 트랙 피드백을 남겼어요.' : '새로운 곡 의견을 남겼어요.',
             {
               focusId: text(item.id),
               excerpt: text(item.text).slice(0, 160),
-              ...(type === 'feedback' && typeof item.time === 'number' && Number.isFinite(item.time)
+              ...(typeof item.time === 'number' && Number.isFinite(item.time)
                 ? { time: Math.max(0, item.time) }
                 : {}),
             },

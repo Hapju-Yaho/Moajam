@@ -39,7 +39,7 @@ export function MusicToolsScreen({
     <AppShell activeRoute={mode === 'scores' ? 'tools' : 'track-editor'} onNavigate={navigate}>
       <View style={{ gap: 8 }}>
         <Meta>합주 도구</Meta>
-        <PageHeading>{mode === 'scores' ? '악보 편집' : '사운드 트랙 편집'}</PageHeading>
+        <PageHeading>{mode === 'scores' ? '악보 편집' : '작업실'}</PageHeading>
         <Copy>작업할 곡을 선택하세요. 저장한 결과는 곡 상세에서 함께 볼 수 있어요.</Copy>
       </View>
       <FlexRow wrap>
@@ -47,7 +47,7 @@ export function MusicToolsScreen({
           <PillText active={mode === 'scores'}>악보 편집</PillText>
         </Pill>
         <Pill active={mode === 'tracks'} onPress={() => navigate('track-editor')}>
-          <PillText active={mode === 'tracks'}>사운드 트랙 편집</PillText>
+          <PillText active={mode === 'tracks'}>작업실</PillText>
         </Pill>
       </FlexRow>
       {mode === 'scores' ? (
@@ -118,7 +118,7 @@ export function MusicToolsScreen({
                   })
                 }
               >
-                {mode === 'scores' ? '악보 편집' : '사운드 트랙 편집'}
+                {mode === 'scores' ? '악보 편집' : '작업실'}
               </ActionButton>
               {mode === 'scores' && (
                 <ActionButton

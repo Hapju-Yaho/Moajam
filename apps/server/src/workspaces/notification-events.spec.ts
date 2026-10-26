@@ -4,6 +4,14 @@ import { documentEvents, writeNotificationEvents } from './notification-events.j
 import type { Prisma } from '../generated/prisma/client.js';
 
 test('opinions, replies and feedback only notify on additions, retaining precise targets', () => {
+  const timedOpinion = documentEvents(
+    'song/song/discussion',
+    [],
+    [{ id: 'timed', text: 'intro', time: 12 }],
+  )[0];
+  assert.equal(timedOpinion.kind, 'TRACK_FEEDBACK');
+  assert.equal(timedOpinion.metadata.time, 12);
+  assert.equal(timedOpinion.metadata.focusId, 'timed');
   const opinion = { id: 'opinion', authorId: 'a', text: 'chorus', replies: [] };
   assert.equal(
     documentEvents('song/song/discussion', [], [opinion])[0].metadata.focusId,
