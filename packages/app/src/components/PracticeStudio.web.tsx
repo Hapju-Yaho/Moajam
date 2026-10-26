@@ -1224,9 +1224,10 @@ export function PracticeStudioSession({
           publishing={publishing}
           onImportClip={setImportTrack}
           onPublish={
-            workspaceId &&
-            (scopeKey.startsWith(`${workspaceId}/`) ||
-              scopeKey.startsWith(`session/${workspaceId}/`))
+            personalRecording ||
+            (workspaceId &&
+              (scopeKey.startsWith(`${workspaceId}/`) ||
+                scopeKey.startsWith(`session/${workspaceId}/`)))
               ? (track) => {
                   if (!track.blob) return;
                   setPublishing(track.id);

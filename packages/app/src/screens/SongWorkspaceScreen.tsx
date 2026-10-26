@@ -96,6 +96,7 @@ export function SongWorkspaceScreen({
                 title={song.title}
                 aspectRatio={1}
                 showOriginalLink={false}
+                openExternally
               />
             </View>
           )}

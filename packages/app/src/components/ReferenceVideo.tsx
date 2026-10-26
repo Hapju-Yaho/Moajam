@@ -1,4 +1,4 @@
-import { Linking, View } from 'react-native';
+import { Image, Linking, Pressable, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { parseVideoUrl } from '../lib/video';
 import { ActionButton, Meta } from './ProductUI';
@@ -9,12 +9,16 @@ interface ReferenceVideoProps {
   title: string;
   aspectRatio?: number;
   showOriginalLink?: boolean;
+  openExternally?: boolean;
 }
 
 export function ReferenceVideo({
   referenceUrl,
+  thumbnailUrl,
+  title,
   aspectRatio = 16 / 9,
   showOriginalLink = true,
+  openExternally = false,
 }: ReferenceVideoProps) {
   const video = parseVideoUrl(referenceUrl);
   const embedUrl = video?.embed;
@@ -36,7 +40,23 @@ export function ReferenceVideo({
           backgroundColor: '#182033',
         }}
       >
-        {embedUrl ? (
+        {openExternally ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${title} 레퍼런스 영상 새 창에서 열기`}
+            onPress={() => void Linking.openURL(video.url)}
+            style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+          >
+            {(thumbnailUrl || video.thumbnail) && (
+              <Image
+                source={{ uri: thumbnailUrl || video.thumbnail }}
+                style={{ position: 'absolute', width: '100%', height: '100%', opacity: 0.75 }}
+                resizeMode="cover"
+              />
+            )}
+            <Text style={{ color: 'white', fontSize: 32 }}>▶</Text>
+          </Pressable>
+        ) : embedUrl ? (
           <WebView
             source={{
               uri: embedUrl,

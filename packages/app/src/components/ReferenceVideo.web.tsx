@@ -9,6 +9,7 @@ interface ReferenceVideoProps {
   title: string;
   aspectRatio?: number;
   showOriginalLink?: boolean;
+  openExternally?: boolean;
 }
 
 export function ReferenceVideo({
@@ -17,6 +18,7 @@ export function ReferenceVideo({
   title,
   aspectRatio = 16 / 9,
   showOriginalLink = true,
+  openExternally = false,
 }: ReferenceVideoProps) {
   const video = parseVideoUrl(referenceUrl);
   const embedUrl = video?.embed;
@@ -48,7 +50,7 @@ export function ReferenceVideo({
               preload: 'metadata',
               style: { width: '100%', height: '100%' },
             })
-          : embedUrl && playing
+          : embedUrl && playing && !openExternally
             ? createElement('iframe', {
                 key: embedUrl,
                 src: `${embedUrl}${embedUrl.includes('?') ? '&' : '?'}autoplay=1`,
@@ -60,12 +62,15 @@ export function ReferenceVideo({
                 style: { width: '100%', height: '100%', border: 0 },
               })
             : null}
-        {video.kind !== 'file' && !playing ? (
+        {video.kind !== 'file' && (!playing || openExternally) ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`${title} 레퍼런스 영상 재생`}
+            accessibilityLabel={`${title} 레퍼런스 영상 ${openExternally ? '새 창에서 열기' : '재생'}`}
             disabled={!embedUrl}
-            onPress={() => setPlaying(true)}
+            onPress={() => {
+              if (openExternally) window.open(video.url, '_blank', 'noopener,noreferrer');
+              else setPlaying(true);
+            }}
             style={{
               position: 'absolute',
               top: 0,
