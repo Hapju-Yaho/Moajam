@@ -15,6 +15,9 @@ export type AppIconName =
   | 'message'
   | 'more'
   | 'rehearsal'
+  | 'studio'
+  | 'microphone'
+  | 'headphones'
   | 'settings'
   | 'songs'
   | 'sparkles'
@@ -44,6 +47,25 @@ export function AppIcon({
 
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" accessibilityElementsHidden>
+      {name === 'studio' && (
+        <>
+          <Rect {...common} x="3" y="4" width="18" height="16" rx="2" />
+          <Path {...common} d="M8 8v8M16 8v8M5 11h6M13 14h6" />
+        </>
+      )}
+      {name === 'microphone' && (
+        <>
+          <Rect {...common} x="9" y="2" width="6" height="12" rx="3" />
+          <Path {...common} d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
+        </>
+      )}
+      {name === 'headphones' && (
+        <>
+          <Path {...common} d="M3 14v-3a9 9 0 0 1 18 0v3" />
+          <Rect {...common} x="3" y="12" width="4" height="8" rx="2" />
+          <Rect {...common} x="17" y="12" width="4" height="8" rx="2" />
+        </>
+      )}
       {name === 'send' && <Path {...common} d="m22 2-7 20-4-9-9-4 20-7ZM22 2 11 13" />}
       {name === 'share' && (
         <Path

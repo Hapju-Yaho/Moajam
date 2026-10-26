@@ -2,7 +2,8 @@ import { ScreenHelpButton } from '../components/ScreenHelpButton';
 import { useContext, useState } from 'react';
 import { BandCreateContext } from '../components/BandCreateContext';
 import { useIdentity } from '../state/Identity';
-import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { Image, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { AppIcon } from '../components/icons';
 import { ScheduleDashboard } from '../components/ScheduleDashboard';
 import { AppShell } from '../components/AppShell';
 import {
@@ -55,7 +56,7 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
     .filter((event) => bandFilter === 'all' || event.workspaceId === bandFilter)
     .sort((a, b) => `${a.date}T${a.start}`.localeCompare(`${b.date}T${b.start}`));
   const upcoming = events.filter((event) => new Date(`${event.date}T${event.end}`) >= new Date());
-  const title = home ? '우리의 다음 합주' : calendar ? '내 캘린더' : '참여 곡';
+  const title = home ? '우리의 다음 합주' : calendar ? '내 캘린더' : '연습하기';
   const filtered = (
     <FlexRow wrap>
       <Pill active={bandFilter === 'all'} onPress={() => setBandFilter('all')}>
@@ -127,7 +128,9 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
         {home && (
           <FlexRow>
             <ScreenHelpButton />
-            <ActionButton onPress={() => navigate('personal-songs')}>참여곡 보기 →</ActionButton>
+            <ActionButton onPress={() => navigate('personal-practice')}>
+              연습하러 가기 →
+            </ActionButton>
           </FlexRow>
         )}
       </FlexBetween>
@@ -214,7 +217,31 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
                   >
                     <Meta style={{ color: band.color, fontWeight: '500' }}>MY BAND</Meta>
                     <FlexBetween>
-                      <Heading>{band.name}</Heading>
+                      <FlexRow gap={12} style={{ flex: 1, minWidth: 0 }}>
+                        {band.photo ? (
+                          <Image
+                            source={{ uri: band.photo }}
+                            accessibilityLabel={`${band.name} 밴드 이미지`}
+                            resizeMode="cover"
+                            style={{ width: 48, height: 48, borderRadius: 12, flexShrink: 0 }}
+                          />
+                        ) : (
+                          <View
+                            style={{
+                              width: 48,
+                              height: 48,
+                              borderRadius: 12,
+                              backgroundColor: '#edf3ff',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <AppIcon name="users" size={24} color={band.color} />
+                          </View>
+                        )}
+                        <Heading style={{ flex: 1 }}>{band.name}</Heading>
+                      </FlexRow>
                       <Copy>↗</Copy>
                     </FlexBetween>
                     <Meta>{band.description}</Meta>
@@ -248,7 +275,7 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
           <FlexBetween>
             <Heading>{home ? '연습할 곡' : `전체 ${songs.length}곡`}</Heading>
             {home && (
-              <ActionButton secondary compact onPress={() => navigate('personal-songs')}>
+              <ActionButton secondary compact onPress={() => navigate('personal-practice')}>
                 전체 보기 →
               </ActionButton>
             )}

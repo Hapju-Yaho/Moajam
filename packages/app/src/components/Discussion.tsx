@@ -11,7 +11,13 @@ import { CommentInput } from './CommentInput';
 import { VideoInput, VideoThumbnail } from './VideoAttachment';
 import { parseVideoUrl } from '../lib/video';
 type Reply = { id: string; authorId: string; text: string; date: string; videoUrl?: string };
-type Opinion = Reply & { resolved: boolean; likes: string[]; replies: Reply[]; time?: number };
+type Opinion = Reply & {
+  resolved: boolean;
+  likes: string[];
+  replies: Reply[];
+  time?: number;
+  projectId?: string;
+};
 const oldestFirst = (a: { date?: string }, b: { date?: string }) =>
   (Date.parse(a.date ?? '') || 0) - (Date.parse(b.date ?? '') || 0);
 export type DiscussionOptions = {
@@ -31,7 +37,11 @@ export function Discussion({
   onCreateTask?: (item: { id: string; text: string }) => void;
   linkedOpinionIds?: string[];
   focusId?: string;
-  timeline?: { position: number; onSeek: (time: number) => void };
+  timeline?: {
+    position: number;
+    projectId?: string;
+    onSeek: (time: number, projectId?: string) => void;
+  };
   legacyDocumentKey?: string;
   showOpinions?: boolean;
 }) {
@@ -170,7 +180,7 @@ export function Discussion({
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel={`${timeLabel(item.time)} 구간으로 이동`}
-                          onPress={() => timeline.onSeek(item.time!)}
+                          onPress={() => timeline.onSeek(item.time!, item.projectId)}
                           style={{ paddingVertical: 2 }}
                         >
                           <Copy style={{ color: '#2563eb', fontWeight: '600' }}>
@@ -381,7 +391,12 @@ export function Discussion({
                       resolved: false,
                       likes: [],
                       replies: [],
-                      ...(attachTime && timeline ? { time: timeline.position } : {}),
+                      ...(attachTime && timeline
+                        ? {
+                            time: timeline.position,
+                            ...(timeline.projectId ? { projectId: timeline.projectId } : {}),
+                          }
+                        : {}),
                     },
                     ...all,
                   ]);

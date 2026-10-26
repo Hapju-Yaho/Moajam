@@ -61,6 +61,7 @@ model Workspace {
   members     WorkspaceMember[]
   documents   WorkspaceDocument[]
   invitations WorkspaceInvitation[]
+  dawProjects DawProject[]
 
   @@index([createdById])
   @@map("workspaces")
@@ -91,6 +92,25 @@ model WorkspaceDocument {
   workspace Workspace @relation(fields:[workspaceId], references:[id], onDelete:Cascade)
   @@id([workspaceId,key])
   @@map("workspace_documents")
+}
+
+model DawProject {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  songId String @map("song_id") @db.VarChar(160)
+  name String @db.VarChar(160)
+  data Json
+  revision Int @default(1)
+  legacyKey String? @map("legacy_key") @db.VarChar(240)
+  createdBy String @map("created_by") @db.Uuid
+  updatedBy String @map("updated_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, legacyKey])
+  @@index([workspaceId, songId, deletedAt])
+  @@map("daw_projects")
 }
 
 model WorkspaceInvitation {

@@ -13,6 +13,9 @@ export type AppIconName =
   | 'message'
   | 'more'
   | 'rehearsal'
+  | 'studio'
+  | 'microphone'
+  | 'headphones'
   | 'settings'
   | 'songs'
   | 'sparkles'
@@ -27,6 +30,12 @@ interface AppIconProps {
 }
 
 const drawings: Record<AppIconName, string> = {
+  studio:
+    '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8v8M16 8v8M5 11h6M13 14h6"/>',
+  microphone:
+    '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/>',
+  headphones:
+    '<path d="M3 14v-3a9 9 0 0 1 18 0v3"/><rect x="3" y="12" width="4" height="8" rx="2"/><rect x="17" y="12" width="4" height="8" rx="2"/>',
   send: '<path d="m22 2-7 20-4-9-9-4 20-7ZM22 2 11 13"/>',
   share:
     '<path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>',

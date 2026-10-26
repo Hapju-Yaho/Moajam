@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { movePracticeSong, orderPracticeSongs } from '../lib/practiceSongOrder';
 import type { SortableSongListProps } from './SortableSongList.types';
 
@@ -7,6 +8,8 @@ export function SortableSongList<T extends { id: string; title: string }>({
   onReorder,
   renderSong,
   reorderEnabled = true,
+  handleInside = false,
+  onDragStateChange,
 }: SortableSongListProps<T>) {
   const list = useRef<HTMLDivElement>(null);
   const drag = useRef<{
@@ -22,6 +25,7 @@ export function SortableSongList<T extends { id: string; title: string }>({
   const scrollContainer = useRef<HTMLElement | null>(null);
   const positions = useRef(new Map<string, number>());
   const animations = useRef(new Map<string, Animation>());
+  const preparingDrag = useRef(false);
   useLayoutEffect(() => {
     const next = new Map<string, number>();
     list.current?.querySelectorAll<HTMLElement>('[data-sortable-song]').forEach((row) => {
@@ -33,6 +37,7 @@ export function SortableSongList<T extends { id: string; title: string }>({
       const old = positions.current.get(id);
       if (
         old !== undefined &&
+        !preparingDrag.current &&
         old !== top &&
         id !== lifted?.id &&
         !window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -71,12 +76,81 @@ export function SortableSongList<T extends { id: string; title: string }>({
     if (list.current?.hasPointerCapture(current.pointerId))
       list.current.releasePointerCapture(current.pointerId);
     if (commit && current.ids.some((id, index) => id !== songs[index]?.id)) onReorder(current.ids);
+    onDragStateChange?.(false);
   };
+  const renderHandle = (song: T) =>
+    reorderEnabled ? (
+      <button
+        type="button"
+        aria-label={`${song.title} 순서 변경`}
+        title="드래그 또는 위·아래 방향키로 순서 변경"
+        style={{
+          width: 28,
+          flexShrink: 0,
+          alignSelf: 'center',
+          padding: '8px 0',
+          border: 0,
+          background: 'transparent',
+          color: '#64748b',
+          fontSize: 20,
+          cursor: lifted?.id === song.id ? 'grabbing' : 'grab',
+          touchAction: 'none',
+        }}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || drag.current) return;
+          event.preventDefault();
+          if (handleInside) list.current?.focus({ preventScroll: true });
+          else event.currentTarget.focus({ preventScroll: true });
+          const row = event.currentTarget.closest<HTMLElement>('[data-sortable-song]')!;
+          const grabOffset = event.clientY - row.getBoundingClientRect().top;
+          if (onDragStateChange) {
+            animations.current.forEach((animation) => animation.cancel());
+            preparingDrag.current = true;
+            try {
+              flushSync(() => onDragStateChange(true));
+            } finally {
+              preparingDrag.current = false;
+            }
+          }
+          animations.current.get(song.id)?.cancel();
+          let parent = list.current?.parentElement ?? null;
+          while (parent && !/(auto|scroll)/.test(getComputedStyle(parent).overflowY))
+            parent = parent.parentElement;
+          scrollContainer.current = parent;
+          drag.current = {
+            id: song.id,
+            ids: songs.map((item) => item.id),
+            startY: row.getBoundingClientRect().top + grabOffset,
+            top: row.offsetTop,
+            scrollY: scrollContainer.current?.scrollTop ?? window.scrollY,
+            pointerId: event.pointerId,
+          };
+          setLifted({ id: song.id, delta: event.clientY - drag.current.startY });
+          list.current?.setPointerCapture(event.pointerId);
+        }}
+        onKeyDown={(event) => {
+          if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+          event.preventDefault();
+          const ids = songs.map((item) => item.id);
+          const target = ids[ids.indexOf(song.id) + (event.key === 'ArrowUp' ? -1 : 1)];
+          if (target) onReorder(movePracticeSong(ids, song.id, target));
+        }}
+      >
+        ⠿
+      </button>
+    ) : null;
   const shown = preview ? orderPracticeSongs(songs, preview) : songs;
   return (
     <div
       ref={list}
-      style={{ display: 'flex', flexDirection: 'column', gap: 16, position: 'relative' }}
+      tabIndex={-1}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        position: 'relative',
+        outline: 'none',
+      }}
       onPointerMove={(event) => {
         const current = drag.current;
         if (!current || !list.current) return;
@@ -114,8 +188,17 @@ export function SortableSongList<T extends { id: string; title: string }>({
         }
       }}
       onPointerUp={() => finish(true)}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && drag.current) {
+          event.preventDefault();
+          event.stopPropagation();
+          finish(false);
+        }
+      }}
       onPointerCancel={() => finish(false)}
-      onLostPointerCapture={() => finish(false)}
+      onLostPointerCapture={(event) => {
+        if (event.target === event.currentTarget) finish(false);
+      }}
     >
       {shown.map((song) => (
         <div
@@ -136,55 +219,10 @@ export function SortableSongList<T extends { id: string; title: string }>({
             borderRadius: 12,
           }}
         >
-          {reorderEnabled && (
-            <button
-              type="button"
-              aria-label={`${song.title} 순서 변경`}
-              title="드래그 또는 위·아래 방향키로 순서 변경"
-              style={{
-                width: 28,
-                flexShrink: 0,
-                alignSelf: 'center',
-                padding: '8px 0',
-                border: 0,
-                background: 'transparent',
-                color: '#64748b',
-                fontSize: 20,
-                cursor: lifted?.id === song.id ? 'grabbing' : 'grab',
-                touchAction: 'none',
-              }}
-              onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                event.preventDefault();
-                const row = event.currentTarget.parentElement!;
-                animations.current.get(song.id)?.cancel();
-                let parent = list.current?.parentElement ?? null;
-                while (parent && !/(auto|scroll)/.test(getComputedStyle(parent).overflowY))
-                  parent = parent.parentElement;
-                scrollContainer.current = parent;
-                drag.current = {
-                  id: song.id,
-                  ids: songs.map((item) => item.id),
-                  startY: event.clientY,
-                  top: row.offsetTop,
-                  scrollY: scrollContainer.current?.scrollTop ?? window.scrollY,
-                  pointerId: event.pointerId,
-                };
-                setLifted({ id: song.id, delta: 0 });
-                list.current?.setPointerCapture(event.pointerId);
-              }}
-              onKeyDown={(event) => {
-                if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
-                event.preventDefault();
-                const ids = songs.map((item) => item.id);
-                const target = ids[ids.indexOf(song.id) + (event.key === 'ArrowUp' ? -1 : 1)];
-                if (target) onReorder(movePracticeSong(ids, song.id, target));
-              }}
-            >
-              ⠿
-            </button>
-          )}
-          <div style={{ flex: 1, minWidth: 0 }}>{renderSong(song)}</div>
+          {!handleInside && renderHandle(song)}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {renderSong(song, handleInside ? renderHandle(song) : undefined)}
+          </div>
         </div>
       ))}
     </div>

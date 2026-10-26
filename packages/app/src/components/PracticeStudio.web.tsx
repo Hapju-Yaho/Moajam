@@ -14,16 +14,23 @@ import {
   type PracticeDocument,
 } from '../lib/practiceMerge';
 import { clientId } from '../lib/clientId';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { BandDawProjects } from './BandDawProjects.web';
+import { projectMediaKey } from '../lib/bandDawProjects';
 import { useIdentity } from '../state/Identity';
 import { useMockAppState } from '../state/MockAppState';
 import { serverConfigured } from '../lib/remote';
 import { savePersonalClip } from '../lib/personalClipLibrary.web';
 import { usePreferences } from '../state/preferences';
-import { readMedia, writeMedia } from '../lib/mediaStore';
+import { readMedia, writeMedia } from '../lib/mediaStore.web';
+import { useDawProject } from '../lib/dawProjectContext';
+import { encode as encodeProjectData } from '../lib/remote-media.web';
+import { manageBandProject } from '../lib/bandDawProjects';
+import { managePersonalDawProject, personalProjectMediaKey } from '../lib/personalDawProjects.web';
 import { ActionButton, Copy, FlexRow, Surface } from './ProductUI';
 import { AppIcon } from './icons';
 import { ClipLibrary } from './ClipLibrary.web';
+import { ProjectRefreshIcon } from './DawProjectControls.web';
 import { archiveClipAudio } from '../lib/clipArchive.web';
 import { validateAudioFile, type TrackPart } from '../lib/trackParts';
 import { TrackTimeline, type TimelineTrack as Track } from './TrackTimeline.web';
@@ -57,8 +64,59 @@ type Session = {
 };
 const timeLabel = (value: number) =>
   `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
-export function PracticeStudio({
+export function PracticeStudio(props: ComponentProps<typeof PracticeStudioSession>) {
+  const { adoptedSongs, workspaceId } = useMockAppState();
+  if (props.mediaKey?.startsWith('local-recording/'))
+    return (
+      <BandDawProjects
+        key="personal-recording-projects"
+        localOnly
+        workspaceId="personal"
+        songId="recording"
+        title="새 프로젝트"
+        renderStudio={(project, generation) => (
+          <PracticeStudioSession
+            key={`${project.id}/${generation}`}
+            {...props}
+            mediaKey={personalProjectMediaKey(project.id)}
+            projectId={project.id}
+          />
+        )}
+      />
+    );
+  const parts = props.scopeKey.split('/');
+  const song =
+    parts.length === 2 && parts[0] === workspaceId
+      ? adoptedSongs.find((item) => item.id === parts[1])
+      : undefined;
+  if (!song) return <PracticeStudioSession {...props} />;
+  return (
+    <BandDawProjects
+      key={props.scopeKey}
+      workspaceId={workspaceId}
+      songId={song.id}
+      title={song.title}
+      requestedId={props.requestedProjectId}
+      renderStudio={(project, generation, navigation) => (
+        <PracticeStudioSession
+          key={`${project.id}/${generation}`}
+          {...props}
+          mediaKey={projectMediaKey(workspaceId, project.id)}
+          projectId={project.id}
+          isDefaultProject={!!project.legacyKey}
+          onSeekProject={navigation.onSeekProject}
+          focusTime={navigation.focusTime ?? props.focusTime}
+        />
+      )}
+    />
+  );
+}
+export function PracticeStudioSession({
   scopeKey,
+  mediaKey,
+  projectId,
+  isDefaultProject,
+  onSeekProject,
   bpm,
   feedback,
   readOnly = false,
@@ -68,6 +126,11 @@ export function PracticeStudio({
   discussionInitiallyOpen = false,
 }: {
   scopeKey: string;
+  mediaKey?: string;
+  projectId?: string;
+  isDefaultProject?: boolean;
+  onSeekProject?: (time: number, projectId?: string) => void;
+  requestedProjectId?: string;
   bpm?: number;
   feedback?: boolean;
   readOnly?: boolean;
@@ -76,12 +139,15 @@ export function PracticeStudio({
   discussionOptions?: DiscussionOptions;
   discussionInitiallyOpen?: boolean;
 }) {
+  const projectControls = useDawProject();
   const feedbackRef = useRef<HTMLDivElement>(null);
+  const storageKey = mediaKey ?? `practice/${scopeKey}`;
+  const personalRecording = storageKey.startsWith('local-recording/');
   const userId = useIdentity();
   const urls = useRef(new Set<string>());
   const preferences = usePreferences();
   const { metronome, clickVolume, setMetronome, setClickVolume } = useLocalMetronome(
-    `${userId}/${scopeKey}`,
+    `${userId}/${storageKey}`,
     preferences.metronome,
   );
   const initialBpm = useRef(bpm ?? preferences.bpm);
@@ -183,7 +249,7 @@ export function PracticeStudio({
     setError('');
     setPlaying(false);
     setPosition(0);
-    void readMedia<Session>(`practice/${scopeKey}`, userId)
+    void readMedia<Session>(storageKey, userId)
       .then((session) => {
         if (!active) return;
         resetTracks(
@@ -232,7 +298,7 @@ export function PracticeStudio({
     return () => {
       active = false;
     };
-  }, [scopeKey, userId, loadAttempt, resetTracks]);
+  }, [scopeKey, storageKey, userId, loadAttempt, resetTracks]);
   const snapshot = useMemo<Session>(
     () => ({
       tracks: tracks.map((track) =>
@@ -269,7 +335,8 @@ export function PracticeStudio({
     return next === document.tracks ? document : { ...document, tracks: next };
   };
   const saved = samePractice(withDecodedDurations(savedSnapshot), withDecodedDurations(snapshot));
-  const dirty = !readOnly && loaded && savedSnapshot !== null && !saved;
+  const dirty =
+    !readOnly && loaded && savedSnapshot !== null && (!saved || !!projectControls?.nameDirty);
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -310,7 +377,7 @@ export function PracticeStudio({
     setRefreshing(true);
     setRefreshRequired(true);
     try {
-      const stored = await readMedia<Session>(`practice/${scopeKey}`, userId);
+      const stored = await readMedia<Session>(storageKey, userId);
       const remote: Session = {
         tracks: (stored?.tracks ?? []).map((track) =>
           withClips(
@@ -375,7 +442,7 @@ export function PracticeStudio({
   leaveAction.current = async () => {
     setRefreshing(true);
     try {
-      const remote = await readMedia<Session>(`practice/${scopeKey}`, userId);
+      const remote = await readMedia<Session>(storageKey, userId);
       const document = sharedPracticeSettings(remote ?? { tracks: [], notes: [] });
       applyDocument(document);
       setSavedSnapshot(document);
@@ -389,15 +456,36 @@ export function PracticeStudio({
       setRefreshing(false);
     }
   };
+  const projectBusy =
+    !loaded || refreshing || saving || recording || requesting || preparing || !!dialog;
+  const onProjectBusy = projectControls?.onBusy;
+  const onProjectDirty = projectControls?.onDirty;
   useEffect(() => {
-    if (!dirty) return;
+    onProjectDirty?.(dirty);
+  }, [onProjectDirty, dirty]);
+  useEffect(() => {
+    onProjectBusy?.(projectBusy);
+  }, [onProjectBusy, projectBusy]);
+  useEffect(() => {
+    if (!dirty && !recording && !requesting && !preparing && !saving) return;
     const listener = (event: Event) => {
       event.preventDefault();
+      if (recording || requesting || preparing || saving) {
+        setDialog({
+          title: '작업을 마친 후 이동해주세요.',
+          message: '녹음이나 저장이 끝난 뒤 프로젝트를 전환할 수 있어요.',
+          choices: [{ label: '확인', run: () => setDialog(null) }],
+        });
+        return;
+      }
       const proceed = (event as CustomEvent<() => void>).detail;
       setDialog({
         title: '떠나실건가요?',
-        message:
-          '사운드 트랙 변경사항이 서버에 저장되지 않았습니다. 변경사항을 서버에 저장하려면 변경사항 공유하기 버튼을 눌러주세요.',
+        message: personalRecording
+          ? '녹음실 변경사항이 저장되지 않았습니다. 이 기기에 저장 버튼을 눌러 보관해주세요.'
+          : projectId
+            ? '변경사항이 서버에 저장되지 않았습니다. 변경사항을 저장하려면 서버에 저장 버튼을 눌러주세요.'
+            : '사운드 트랙 변경사항이 서버에 저장되지 않았습니다. 변경사항을 서버에 저장하려면 변경사항 공유하기 버튼을 눌러주세요.',
         choices: [
           { label: '계속 작업하기', run: () => setDialog(null) },
           {
@@ -414,7 +502,7 @@ export function PracticeStudio({
     };
     window.addEventListener('moajam:before-navigate', listener);
     return () => window.removeEventListener('moajam:before-navigate', listener);
-  }, [dirty]);
+  }, [dirty, recording, requesting, preparing, saving, projectId, personalRecording]);
   const saveChanges = async () => {
     if (readOnly) return;
     if (
@@ -455,8 +543,15 @@ export function PracticeStudio({
     setSaveFailed(false);
     setError('');
     try {
-      await writeMedia(`practice/${scopeKey}`, pending, userId);
+      await writeMedia(
+        storageKey,
+        pending,
+        userId,
+        projectControls ? { name: projectControls.name } : undefined,
+      );
       if (alive.current) setSavedSnapshot(pending);
+      await projectControls?.onSaved();
+      return true;
     } catch (failure) {
       if (alive.current) {
         setSaveFailed(true);
@@ -472,11 +567,52 @@ export function PracticeStudio({
             : '변경사항 저장에 실패했어요. 다시 시도해주세요.',
         );
       }
+      return false;
     } finally {
       savingRef.current = false;
       if (alive.current) setSaving(false);
     }
   };
+  useEffect(() => {
+    if (!projectControls) return;
+    const ref = projectControls.bridge;
+    const busy =
+      !loaded || refreshing || saving || recording || requesting || preparing || !!dialog;
+    ref.current = {
+      dirty,
+      refresh: () => refreshChanges(),
+      save: async () => {
+        if (readOnly || busy || refreshRequired || !projectControls.name) return false;
+        return (await persistChanges(snapshot)) === true;
+      },
+      copy: async (name) => {
+        if (readOnly) throw Error('읽기 전용 작업실에서는 저장할 수 없어요.');
+        if (busy) throw Error('진행 중인 작업을 마친 후 다시 시도해주세요.');
+        const [workspace, song] = scopeKey.split('/');
+        const data = sharedPracticeSettings(snapshot);
+        const initialData =
+          serverConfigured && !personalRecording
+            ? await encodeProjectData(data, storageKey, userId)
+            : data;
+        const result = personalRecording
+          ? await managePersonalDawProject('create', userId, undefined, name, data)
+          : await manageBandProject(
+              'create',
+              workspace,
+              song,
+              userId,
+              undefined,
+              name,
+              initialData,
+            );
+        if (!result) throw Error('프로젝트를 만들지 못했어요.');
+        return result;
+      },
+    };
+    return () => {
+      ref.current = null;
+    };
+  });
   useEffect(() => {
     alive.current = true;
     const ownedUrls = urls.current;
@@ -873,9 +1009,10 @@ export function PracticeStudio({
       </ScheduleDialog>
       <div inert={!!dialog || refreshing} style={{ display: 'contents' }}>
         <TrackTimeline
-          key={`${userId}/${scopeKey}`}
-          storageScope={`${userId}/${scopeKey}`}
+          key={`${userId}/${storageKey}`}
+          storageScope={`${userId}/${storageKey}`}
           readOnly={readOnly}
+          personalRecording={personalRecording}
           onOpenLibrary={() => setLibraryOpen(true)}
           revealPosition={revealPosition}
           tracks={tracks}
@@ -892,8 +1029,8 @@ export function PracticeStudio({
                   : saving
                     ? '저장 중…'
                     : !saved
-                      ? '저장하지 않은 변경사항 · 이동 전에 변경사항 공유하기를 눌러주세요'
-                      : serverConfigured
+                      ? `저장하지 않은 변경사항 · 이동 전에 ${personalRecording ? '이 기기에 저장' : projectId ? '서버에 저장' : '변경사항 공유하기'}를 눌러주세요`
+                      : serverConfigured && !personalRecording
                         ? '서버에 저장됨'
                         : '이 브라우저에 저장됨 · 비공개'
           }
@@ -1087,9 +1224,10 @@ export function PracticeStudio({
           publishing={publishing}
           onImportClip={setImportTrack}
           onPublish={
-            workspaceId &&
-            (scopeKey.startsWith(`${workspaceId}/`) ||
-              scopeKey.startsWith(`session/${workspaceId}/`))
+            personalRecording ||
+            (workspaceId &&
+              (scopeKey.startsWith(`${workspaceId}/`) ||
+                scopeKey.startsWith(`session/${workspaceId}/`)))
               ? (track) => {
                   if (!track.blob) return;
                   setPublishing(track.id);
@@ -1248,19 +1386,25 @@ export function PracticeStudio({
                     marginBottom: 12,
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <h2>클립 보관함</h2>
-                    <ActionButton
-                      secondary
-                      compact
-                      onPress={() => setLibraryVersion((version) => version + 1)}
+                  <h2>클립 보관함</h2>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="clip-library-refresh-icon"
+                      aria-label="클립 보관함 새로고침"
+                      title="새로고침"
+                      onClick={() => setLibraryVersion((version) => version + 1)}
                     >
-                      새로고침
-                    </ActionButton>
+                      <ProjectRefreshIcon />
+                    </button>
+                    <button
+                      type="button"
+                      className="clip-library-dialog-button"
+                      onClick={() => setLibraryOpen(false)}
+                    >
+                      닫기
+                    </button>
                   </div>
-                  <ActionButton secondary compact onPress={() => setLibraryOpen(false)}>
-                    닫기
-                  </ActionButton>
                 </div>
                 <ClipLibrary version={libraryVersion} expanded />
               </div>
@@ -1279,77 +1423,121 @@ export function PracticeStudio({
                 style={{ maxHeight: '85vh', overflowY: 'auto', width: 'min(760px, 95vw)' }}
                 onClick={(event) => event.stopPropagation()}
               >
-                <h2>클립 가져오기 · {tracks.find((track) => track.id === importTrack)?.name}</h2>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    marginBottom: 12,
+                  }}
+                >
+                  <h2 style={{ margin: 0 }}>
+                    클립 가져오기 · {tracks.find((track) => track.id === importTrack)?.name}
+                  </h2>
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}
+                  >
+                    <button
+                      type="button"
+                      className="clip-library-refresh-icon"
+                      aria-label="클립 목록 새로고침"
+                      title="새로고침"
+                      onClick={() => setLibraryVersion((version) => version + 1)}
+                    >
+                      <ProjectRefreshIcon />
+                    </button>
+                    <button
+                      type="button"
+                      className="clip-library-dialog-button"
+                      onClick={() => setImportTrack(null)}
+                    >
+                      닫기
+                    </button>
+                  </div>
+                </div>
                 <ClipLibrary
                   version={libraryVersion}
+                  expanded
                   kind={tracks.find((track) => track.id === importTrack)?.kind ?? 'audio'}
                   onChoose={async (blob, name) => {
                     await importMedia(blob, name, importTrack);
                     if (alive.current) setImportTrack(null);
                   }}
                 />
-                <button onClick={() => setImportTrack(null)}>닫기</button>
               </div>
             </div>
           )}
         </ScheduleDialog>
-        <div id="practice-feedback" ref={feedbackRef} tabIndex={-1} aria-label="곡 의견">
-          <Surface>
-            <button
-              type="button"
-              onClick={() => setDiscussionOpen((open) => !open)}
-              aria-expanded={discussionOpen}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 7,
-                alignSelf: 'flex-start',
-                border: 0,
-                background: 'transparent',
-                color: '#566b8c',
-                padding: '10px 0',
-                cursor: 'pointer',
-                font: 'inherit',
-              }}
-            >
-              <span style={{ transform: discussionOpen ? 'rotate(180deg)' : undefined }}>
-                <AppIcon name="chevron-down" size={18} />
-              </span>
-              {discussionOpen ? '곡 의견 닫기' : '곡 의견 보기'}
-            </button>
-            {
-              <>
-                <Discussion
-                  showOpinions={discussionOpen}
-                  documentKey={`song/${scopeKey.split('/').at(-1)}/discussion`}
-                  legacyDocumentKey={`song/${scopeKey.split('/').at(-1)}/feedback`}
-                  focusId={focusId}
-                  timeline={{
-                    position,
-                    onSeek: (time) => {
-                      seek(time);
-                      setRevealPosition({ time: positionRef.current });
-                    },
-                  }}
-                  {...discussionOptions}
-                />
-                {discussionOpen && notes.length > 0 && (
-                  <details>
-                    <summary>기존 개인 메모 (나만 보기)</summary>
-                    {notes.map((note) => (
-                      <FlexRow key={note.id}>
-                        <ActionButton secondary compact onPress={() => seek(note.time)}>
-                          {timeLabel(note.time)}
-                        </ActionButton>
-                        <Copy>{note.text}</Copy>
-                      </FlexRow>
-                    ))}
-                  </details>
-                )}
-              </>
-            }
-          </Surface>
-        </div>
+        {!personalRecording && (
+          <div id="practice-feedback" ref={feedbackRef} tabIndex={-1} aria-label="곡 의견">
+            <Surface>
+              <button
+                type="button"
+                onClick={() => setDiscussionOpen((open) => !open)}
+                aria-expanded={discussionOpen}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  alignSelf: 'flex-start',
+                  border: 0,
+                  background: 'transparent',
+                  color: '#566b8c',
+                  padding: '10px 0',
+                  cursor: 'pointer',
+                  font: 'inherit',
+                }}
+              >
+                <span style={{ transform: discussionOpen ? 'rotate(180deg)' : undefined }}>
+                  <AppIcon name="chevron-down" size={18} />
+                </span>
+                {discussionOpen ? '곡 의견 닫기' : '곡 의견 보기'}
+              </button>
+              {
+                <>
+                  <Discussion
+                    showOpinions={discussionOpen}
+                    documentKey={`song/${scopeKey.split('/').at(-1)}/discussion`}
+                    legacyDocumentKey={`song/${scopeKey.split('/').at(-1)}/feedback`}
+                    focusId={focusId}
+                    timeline={{
+                      position,
+                      projectId,
+                      onSeek: (time, targetProject) => {
+                        if (
+                          projectId &&
+                          (targetProject ? targetProject !== projectId : !isDefaultProject) &&
+                          onSeekProject
+                        ) {
+                          onSeekProject(time, targetProject);
+                          return;
+                        }
+                        seek(time);
+                        setRevealPosition({ time: positionRef.current });
+                      },
+                    }}
+                    {...discussionOptions}
+                  />
+                  {discussionOpen && notes.length > 0 && (
+                    <details>
+                      <summary>기존 개인 메모 (나만 보기)</summary>
+                      {notes.map((note) => (
+                        <FlexRow key={note.id}>
+                          <ActionButton secondary compact onPress={() => seek(note.time)}>
+                            {timeLabel(note.time)}
+                          </ActionButton>
+                          <Copy>{note.text}</Copy>
+                        </FlexRow>
+                      ))}
+                    </details>
+                  )}
+                </>
+              }
+            </Surface>
+          </div>
+        )}
       </div>
     </>
   );

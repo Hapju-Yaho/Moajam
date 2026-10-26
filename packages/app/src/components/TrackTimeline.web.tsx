@@ -1,4 +1,6 @@
 import './StudioConfirm.web.css';
+import { DawProjectToolbar, DawProjectPanel } from './DawProjectControls.web';
+import { useDawProject } from '../lib/dawProjectContext';
 import { DawHelp } from './DawHelp.web';
 import { AppIcon } from './icons';
 import { soundfontInstruments, type SoundfontInstrumentId } from '../lib/soundfontCatalog';
@@ -198,6 +200,7 @@ function Waveform({
 export function TrackTimeline({
   storageScope,
   readOnly = false,
+  personalRecording = false,
   tracks,
   loaded,
   saveLabel,
@@ -241,6 +244,7 @@ export function TrackTimeline({
 }: {
   storageScope?: string;
   readOnly?: boolean;
+  personalRecording?: boolean;
   tracks: TimelineTrack[];
   loaded: boolean;
   saveLabel: string;
@@ -282,6 +286,7 @@ export function TrackTimeline({
   publishing: string | null;
   transport: Transport;
 }) {
+  const projectControls = useDawProject();
   const [addingTrack, setAddingTrack] = useState(false);
   const addTrackButton = useRef<HTMLButtonElement>(null);
   const [trackOrder, setTrackOrder] = useState<string[] | null>(null);
@@ -651,7 +656,7 @@ export function TrackTimeline({
       <header className="studio-heading">
         <div className="studio-heading-info">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h2>작업실</h2>
+            <h2>{personalRecording ? '녹음실' : '작업실'}</h2>
             {!readOnly && (
               <button
                 type="button"
@@ -703,22 +708,26 @@ export function TrackTimeline({
               클립 보관함
             </button>
           )}
-          <button type="button" disabled={playbackBusy} onClick={onRefresh}>
-            {refreshing ? '새로고침 중…' : '새로고침'}
-          </button>
-          {!readOnly && (
+          {!projectControls && (
+            <button type="button" disabled={playbackBusy} onClick={onRefresh}>
+              {refreshing ? '새로고침 중…' : '새로고침'}
+            </button>
+          )}
+          {!projectControls && !readOnly && (
             <button
               type="button"
               className="studio-share"
               onClick={onSave}
               disabled={!loaded || saving || refreshing || !dirty || t.recording || t.requesting}
             >
-              {saving ? '저장 중…' : '변경사항 공유하기'}
+              {saving ? '저장 중…' : personalRecording ? '이 기기에 저장' : '변경사항 공유하기'}
             </button>
           )}
         </div>
       </header>
       <div className="studio-console">
+        <DawProjectToolbar />
+        <DawProjectPanel />
         <div className="studio-transport">
           <div className="studio-transport-buttons">
             <button

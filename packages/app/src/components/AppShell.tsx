@@ -181,19 +181,20 @@ const bandItems: Array<{ icon: AppIconName; label: string; route: AppRoute }> = 
 const personalItems: typeof bandItems = [
   { icon: 'home', label: '홈', route: 'personal-home' },
   { icon: 'calendar', label: '합주 일정', route: 'personal-rehearsals' },
-  { icon: 'songs', label: '참여 곡', route: 'personal-songs' },
+  { icon: 'users', label: '팀 관리', route: 'personal-songs' },
 ];
 const toolItems: typeof bandItems = [
   { icon: 'songs', label: '악보 편집', route: 'tools' },
-  { icon: 'rehearsal', label: '작업실', route: 'track-editor' },
+  { icon: 'microphone', label: '녹음실', route: 'track-editor' },
+  { icon: 'headphones', label: '연습하기', route: 'personal-practice' },
 ];
 const pageTitles: Record<AppRoute, string> = {
   tools: '악보 편집',
-  'track-editor': '작업실',
+  'track-editor': '녹음실',
   'personal-home': '홈',
   'personal-rehearsals': '합주 일정',
-  'personal-songs': '참여 곡',
-  'personal-practice': '연습실',
+  'personal-songs': '팀 관리',
+  'personal-practice': '연습하기',
   home: '홈',
   recommendations: '곡 추천',
   recommendation: '곡 추천 상세',
@@ -215,8 +216,7 @@ const activeGroup = (current: AppRoute, target: AppRoute) => {
   if (target === 'recommendations') return current === target || current === 'recommendation';
   if (target === 'songs')
     return ['songs', 'song', 'recommendations', 'recommendation'].includes(current);
-  if (target === 'personal-practice')
-    return ['personal-practice', 'instrument', 'score-editor'].includes(current);
+  if (target === 'personal-practice') return current === 'personal-practice';
   return current === target;
 };
 interface AppShellProps {
@@ -256,6 +256,16 @@ export function AppShell({
   } = useMockAppState();
   const [tourOpen, setTourOpen] = useState(false);
   const [songsOpen, setSongsOpen] = useState(activeGroup(activeRoute, 'songs'));
+  const [toolsOpen, setToolsOpen] = useState(
+    [
+      'tools',
+      'track-editor',
+      'personal-practice',
+      'instrument',
+      'score-editor',
+      'band-score-editor',
+    ].includes(activeRoute),
+  );
   useEffect(() => {
     setSongsOpen(activeGroup(activeRoute, 'songs'));
   }, [activeRoute, entityId, workspace?.id]);
@@ -300,6 +310,7 @@ export function AppShell({
     'instrument',
     'score-editor',
     'band-score-editor',
+    'personal-practice',
   ].includes(activeRoute);
   const accountPage = activeRoute === 'settings' || activeRoute === 'help';
   const bandSpace = !personal && !toolsPage && !accountPage;
@@ -307,7 +318,7 @@ export function AppShell({
   const spaceLabel = accountPage
     ? 'Moajam'
     : toolsPage
-      ? '합주 도구'
+      ? '작업실'
       : personal
         ? '개인 공간'
         : (workspace?.name ?? '밴드 공간');
@@ -315,7 +326,7 @@ export function AppShell({
   const crumbs: Array<{ label: string; onPress?: () => void }> = [];
   if (toolsPage) {
     crumbs.push({ label: '개인 공간', onPress: () => onNavigate('personal-home') });
-    crumbs.push({ label: '합주 도구', onPress: () => onNavigate('tools') });
+    crumbs.push({ label: '작업실', onPress: () => onNavigate('tools') });
   } else {
     crumbs.push({
       label: spaceLabel,
@@ -624,8 +635,39 @@ export function AppShell({
                 </SpaceMenuReveal>
               </Stack>
               <SpaceMenuReveal id="music-tools" visible={!bandSpace}>
-                <NavGroupLabel nativeID="tour-music-tools">합주 도구</NavGroupLabel>
-                <Stack gap={2}>{nav(toolItems)}</Stack>
+                <NavItem
+                  nativeID="tour-music-tools"
+                  active={toolsPage}
+                  accessibilityRole="button"
+                  accessibilityLabel="작업실 메뉴"
+                  accessibilityState={{ expanded: toolsOpen }}
+                  aria-expanded={toolsOpen}
+                  onPress={() => setToolsOpen((open) => !open)}
+                  style={{ gap: 12, width: '100%' }}
+                >
+                  <NavIcon>
+                    <AppIcon
+                      name="studio"
+                      size={18}
+                      color={toolsPage ? theme.colors.primary : '#56657c'}
+                    />
+                  </NavIcon>
+                  <NavLabel active={toolsPage} style={{ flex: 1 }}>
+                    작업실
+                  </NavLabel>
+                  <View style={{ transform: [{ rotate: toolsOpen ? '180deg' : '0deg' }] }}>
+                    <AppIcon
+                      name="chevron-down"
+                      size={16}
+                      color={toolsPage ? theme.colors.primary : '#7b879f'}
+                    />
+                  </View>
+                </NavItem>
+                <SpaceMenuReveal id="sidebar-workshop-list" visible={toolsOpen}>
+                  <Stack gap={2} style={{ paddingLeft: 18, paddingBottom: 6 }}>
+                    {nav(toolItems)}
+                  </Stack>
+                </SpaceMenuReveal>
               </SpaceMenuReveal>
               <NavGroupLabel nativeID="tour-band-space">밴드 공간</NavGroupLabel>
               <WorkspaceCard nativeID="tour-band-switcher">
@@ -866,7 +908,7 @@ export function AppShell({
                     ? personalItems
                     : bandItems),
                 ...(!toolsPage && !bandSpace
-                  ? [{ icon: 'rehearsal' as const, label: '합주 도구', route: 'tools' as const }]
+                  ? [{ icon: 'studio' as const, label: '작업실', route: 'tools' as const }]
                   : []),
               ].map((item) => {
                 const active = activeGroup(activeRoute, item.route);
@@ -953,7 +995,7 @@ export function AppShell({
                       onNavigate('tools');
                     }}
                   >
-                    합주 도구 · 악보와 사운드 트랙 편집
+                    작업실 · 악보와 사운드 트랙 편집
                   </ActionButton>
                   {workspaces.length > 0 ? (
                     <>

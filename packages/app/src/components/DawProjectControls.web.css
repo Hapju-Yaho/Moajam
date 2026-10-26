@@ -1,0 +1,239 @@
+.studio-console {
+  position: relative;
+}
+.studio-console:has(.daw-project-overlay) {
+  min-height: 440px;
+}
+.studio-console:has(.daw-project-list) {
+  min-height: 500px;
+}
+.daw-project-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #526255;
+  color: #e3eae4;
+  flex-wrap: wrap;
+}
+.daw-project-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 100px;
+  flex: 1;
+}
+.studio-console .daw-project-name {
+  background: transparent;
+  border: 0;
+  padding: 4px 0;
+  color: #e3eae4;
+  font-size: 17px;
+  font-weight: 650;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.daw-project-title input {
+  width: 100%;
+  max-width: 420px;
+  box-sizing: border-box;
+}
+.daw-project-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.studio-console .daw-project-actions > button {
+  border: 1px solid #526255;
+  background: #334038;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.studio-console .daw-project-title input {
+  font-size: 16px;
+}
+.studio-console .daw-project-dialog input {
+  font-size: 14px;
+}
+.daw-project-actions button,
+.daw-project-dialog button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.daw-project-empty {
+  display: flex;
+  flex-direction: column;
+  min-height: 360px;
+  background: #232b25;
+  border: 1px solid #526255;
+  border-radius: 8px;
+  color: #e3eae4;
+}
+.daw-project-empty-message {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 280px;
+  color: #b7c6ba;
+}
+.daw-project-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  background: #141b16a6;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 64px 16px 16px;
+  box-sizing: border-box;
+  border-radius: inherit;
+  min-height: 270px;
+}
+.daw-project-dialog {
+  width: min(100%, 480px);
+  box-sizing: border-box;
+  padding: 20px;
+  border-radius: 10px;
+  border: 1px solid #6b806f;
+  background: #2e3931;
+  color: #e3eae4;
+  box-shadow: 0 12px 36px #0005;
+}
+.daw-project-delete-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 112px 28px 20px;
+  background: #141b1670;
+  box-sizing: border-box;
+}
+.daw-project-delete-dialog {
+  max-width: 420px;
+}
+.daw-project-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.daw-project-dialog h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.daw-project-dialog label {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.daw-project-dialog input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+}
+.daw-project-dialog p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.daw-project-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+.daw-project-dialog button {
+  min-height: 32px;
+}
+.studio-console .daw-project-dialog footer button {
+  border: 1px solid #607465;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+.studio-console .daw-project-dialog footer button:last-child {
+  background: #506c58;
+  color: #f4faf5;
+}
+.daw-project-list {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  flex: 1;
+  min-height: 0;
+  padding: 8px;
+  background: #222c26;
+  border: 1px solid #526456;
+  border-radius: 6px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.daw-project-select-dialog {
+  display: flex;
+  flex-direction: column;
+  height: 400px;
+}
+.daw-project-select-dialog > header,
+.daw-project-select-dialog > footer {
+  flex-shrink: 0;
+}
+.studio-console .daw-project-row > button:first-child {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.daw-project-row {
+  display: flex;
+  align-items: stretch;
+  background: transparent;
+  padding: 3px;
+}
+.daw-project-row + .daw-project-row {
+  border-top: 1px solid #46564b;
+  padding-top: 7px;
+}
+.studio-console .daw-project-row > button.active {
+  background: transparent;
+  color: #def0e2;
+  font-weight: 650;
+}
+.studio-console .daw-project-row > .daw-project-delete {
+  flex: 0 0 32px;
+  font-size: 20px;
+}
+.daw-project-name-error {
+  color: #f3ada5;
+  font-size: 12px;
+}
+.studio-console .daw-project-actions > .daw-project-save:disabled {
+  background: #222b25;
+  border-color: #3b4940;
+  color: #76867b;
+  opacity: 0.65;
+}
+.studio-console .daw-project-dialog footer > .daw-project-confirm-delete {
+  background: #a83d3d;
+  color: white;
+  border-color: #c56a63;
+}
+.studio-console button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+@media (max-width: 600px) {
+  .daw-project-overlay {
+    padding-top: 20px;
+  }
+  .daw-project-actions {
+    justify-content: flex-start;
+  }
+}

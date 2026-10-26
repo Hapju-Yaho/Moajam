@@ -23,6 +23,7 @@ export type NotificationItem = {
     parentId?: string;
     time?: number;
     assetId?: string;
+    projectId?: string;
     date?: string;
     start?: string;
     place?: string;

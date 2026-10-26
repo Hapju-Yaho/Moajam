@@ -32,6 +32,7 @@ export function SongWorkspaceScreen({
   focusId,
   focusTime,
   assetId,
+  projectId,
 }: ScreenProps) {
   const tab: SongTab =
     requestedTab === 'resources'
@@ -95,6 +96,7 @@ export function SongWorkspaceScreen({
                 title={song.title}
                 aspectRatio={1}
                 showOriginalLink={false}
+                openExternally
               />
             </View>
           )}
@@ -200,6 +202,7 @@ export function SongWorkspaceScreen({
         )}
       </Surface>
       <PracticeStudio
+        requestedProjectId={projectId}
         discussionInitiallyOpen={tab === 'discussion'}
         discussionOptions={{
           linkedOpinionIds: checks

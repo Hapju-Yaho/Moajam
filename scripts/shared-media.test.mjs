@@ -50,7 +50,7 @@ test('band media uses shared revisions and uploads; personal media remains perso
       )
       .outputText.replaceAll("'./remote'", JSON.stringify(remote))
       .replaceAll("'./personal-store'", JSON.stringify(personal));
-    const { readRemoteMedia, writeRemoteMedia } = await import(dataUrl(source));
+    const { readRemoteMedia, writeRemoteMedia, encode } = await import(dataUrl(source));
     assert.equal(await readRemoteMedia(key), undefined);
     await writeRemoteMedia(key, {
       tracks: [{ blob: new Blob(['audio'], { type: 'audio/wav' }) }],
@@ -67,6 +67,33 @@ test('band media uses shared revisions and uploads; personal media remains perso
     await writeRemoteMedia('practice/personal', { tracks: [] });
     assert.ok(calls.some((call) => call[0] === 'personal-read'));
     assert.ok(calls.some((call) => call[0] === 'personal-write'));
+    const projectId = 'aaaaaaaa-1234-1234-1234-123456789abc';
+    const projectKey = `daw-project/${band}/${projectId}`;
+    document = { revision: 1, value: { data: { tracks: [] } } };
+    const previousCalls = calls.length;
+    await readRemoteMedia(projectKey);
+    const projectBlob = new Blob(['project audio'], { type: 'audio/wav' });
+    await writeRemoteMedia(projectKey, { tracks: [{ blob: projectBlob }] }, undefined, {
+      name: 'Edited project name',
+    });
+    const projectCalls = calls.slice(previousCalls);
+    assert.ok(
+      projectCalls.some(
+        (call) => call[0] === 'PUT' && call[1] === `/workspaces/${band}/daw-projects/${projectId}`,
+      ),
+    );
+    assert.equal(projectCalls.find((call) => call[0] === 'upload')[4], band);
+    assert.equal(projectCalls.find((call) => call[0] === 'PUT')[2].name, 'Edited project name');
+    const uploadCount = calls.filter((call) => call[0] === 'upload').length;
+    const snapshot = await encode({ tracks: [{ blob: projectBlob }] }, projectKey, 'member-b');
+    assert.deepEqual(snapshot.tracks[0].blob, { __moajamAssetId: 'asset' });
+    assert.equal(calls.filter((call) => call[0] === 'upload').length, uploadCount);
+    assert.equal(
+      projectCalls.some((call) => call[0].startsWith('personal')),
+      false,
+    );
+    document.revision++;
+    await assert.rejects(writeRemoteMedia(projectKey, { tracks: [] }));
   } finally {
     delete globalThis.__mediaTest;
   }

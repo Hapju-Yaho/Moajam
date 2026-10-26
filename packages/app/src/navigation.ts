@@ -37,6 +37,7 @@ export interface NavigationOptions {
   focusId?: string;
   focusTime?: number;
   assetId?: string;
+  projectId?: string;
   scoreView?: 'applied' | 'expanded';
   scorePart?: string;
   id?: string;
@@ -49,6 +50,7 @@ export interface ScreenProps {
   focusId?: string;
   focusTime?: number;
   assetId?: string;
+  projectId?: string;
   scoreView?: 'applied' | 'expanded';
   scorePart?: string;
   navigate: (route: AppRoute, options?: NavigationOptions) => void;
@@ -62,6 +64,8 @@ export function buildAppPath(
   options: NavigationOptions | undefined,
   context: { route: AppRoute; workspaceId: string; entityId?: string },
 ) {
+  if (next === 'personal-practice' && !options?.id) return '/me/practice';
+  if (next === 'track-editor' && !options?.id) return '/tools/tracks';
   const bandId = options?.workspaceId ?? context.workspaceId;
   const base = `/workspaces/${encodeURIComponent(bandId)}`;
   const id =
@@ -103,6 +107,7 @@ export function buildAppPath(
   )
     songParams.set('at', String(options.focusTime));
   if (options?.assetId) songParams.set('asset', options.assetId);
+  if (options?.projectId) songParams.set('project', options.projectId);
   const songQuery = songParams.size ? `?${songParams}` : '';
   const paths: Partial<Record<AppRoute, string>> = {
     home: base,

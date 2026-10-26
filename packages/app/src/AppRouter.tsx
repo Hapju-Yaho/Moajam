@@ -9,6 +9,8 @@ import { HelpScreen } from './screens/HelpScreen';
 import { InstrumentExtractorScreen } from './screens/InstrumentExtractorScreen';
 import { MembersScreen } from './screens/MembersScreen';
 import { MusicToolsScreen } from './screens/MusicToolsScreen';
+import { RecordingScreen } from './screens/RecordingScreen';
+import { TeamManagementScreen } from './screens/TeamManagementScreen';
 import { RecommendationDetailScreen } from './screens/RecommendationDetailScreen';
 import { RehearsalsScreen } from './screens/RehearsalsScreen';
 import { ScoreEditorScreen } from './screens/ScoreEditorScreen';
@@ -21,6 +23,7 @@ interface AppScreenProps {
   focusId?: string;
   focusTime?: number;
   assetId?: string;
+  projectId?: string;
   scoreView?: 'applied' | 'expanded';
   scorePart?: string;
   route: AppRoute;
@@ -58,6 +61,7 @@ function ScopedScreen({
   focusId,
   focusTime,
   assetId,
+  projectId,
 }: AppScreenProps) {
   const { workspaces, workspace } = useMockAppState();
   if (workspaceId && !workspace)
@@ -88,15 +92,16 @@ function ScopedScreen({
   switch (route) {
     case 'personal-home':
     case 'personal-rehearsals':
-    case 'personal-songs':
       return <PersonalScreen route={route} navigate={navigate} />;
+    case 'personal-songs':
+      return <TeamManagementScreen navigate={navigate} />;
     case 'tools':
       return <MusicToolsScreen navigate={navigate} />;
     case 'track-editor':
       return entityId ? (
         <SongWorkspaceScreen navigate={navigate} entityId={entityId} songTab="tracks" />
       ) : (
-        <MusicToolsScreen navigate={navigate} mode="tracks" />
+        <RecordingScreen navigate={navigate} />
       );
     case 'personal-practice':
     case 'practice':
@@ -108,10 +113,13 @@ function ScopedScreen({
           feedback={feedback}
           focusId={focusId}
           focusTime={focusTime}
+          projectId={projectId}
           assetId={assetId}
         />
+      ) : route === 'personal-practice' ? (
+        <PersonalScreen route="personal-practice" navigate={navigate} />
       ) : (
-        <MusicToolsScreen navigate={navigate} />
+        <MusicToolsScreen navigate={navigate} mode="tracks" />
       );
     case 'recommendations':
       return <SongsScreen navigate={navigate} />;
@@ -128,6 +136,7 @@ function ScopedScreen({
           feedback={feedback}
           focusId={focusId}
           focusTime={focusTime}
+          projectId={projectId}
           assetId={assetId}
         />
       );
@@ -170,6 +179,7 @@ export function MoajamApp() {
     focusId?: string;
     focusTime?: number;
     assetId?: string;
+    projectId?: string;
   }>({
     route: 'personal-home',
   });
@@ -183,6 +193,7 @@ export function MoajamApp() {
       feedback={location.feedback}
       focusId={location.focusId}
       focusTime={location.focusTime}
+      projectId={location.projectId}
       assetId={location.assetId}
       scorePart={location.scorePart}
       scoreView={location.scoreView}
@@ -194,6 +205,7 @@ export function MoajamApp() {
           feedback: options?.feedback,
           focusId: options?.focusId,
           focusTime: options?.focusTime,
+          projectId: options?.projectId,
           assetId: options?.assetId,
           scorePart: options?.scorePart,
           scoreView: options?.scoreView,

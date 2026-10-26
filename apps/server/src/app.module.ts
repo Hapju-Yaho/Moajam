@@ -17,6 +17,8 @@ import { ProfilePhotoService } from './personal/profile-photo.service.js';
 import { WorkspaceSyncController } from './workspaces/workspace-sync.controller.js';
 import { LocalFilesController } from './media/local-files.controller.js';
 import { YouTubeController } from './media/youtube.controller.js';
+import { DawProjectsController } from './workspaces/daw-projects.controller.js';
+import { DawProjectsService } from './workspaces/daw-projects.service.js';
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { YouTubeController } from './media/youtube.controller.js';
     DatabaseModule,
   ],
   controllers: [
+    DawProjectsController,
     HealthController,
     WorkspacesController,
     BandPhotoController,
@@ -41,6 +44,12 @@ import { YouTubeController } from './media/youtube.controller.js';
     LocalFilesController,
     YouTubeController,
   ],
-  providers: [StorageService, SeparationService, ProfilePhotoService, BandPhotoService],
+  providers: [
+    StorageService,
+    SeparationService,
+    ProfilePhotoService,
+    BandPhotoService,
+    DawProjectsService,
+  ],
 })
 export class AppModule {}
