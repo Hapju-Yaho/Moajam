@@ -21,6 +21,7 @@ interface AppScreenProps {
   focusId?: string;
   focusTime?: number;
   assetId?: string;
+  projectId?: string;
   scoreView?: 'applied' | 'expanded';
   scorePart?: string;
   route: AppRoute;
@@ -58,6 +59,7 @@ function ScopedScreen({
   focusId,
   focusTime,
   assetId,
+  projectId,
 }: AppScreenProps) {
   const { workspaces, workspace } = useMockAppState();
   if (workspaceId && !workspace)
@@ -108,6 +110,7 @@ function ScopedScreen({
           feedback={feedback}
           focusId={focusId}
           focusTime={focusTime}
+          projectId={projectId}
           assetId={assetId}
         />
       ) : (
@@ -128,6 +131,7 @@ function ScopedScreen({
           feedback={feedback}
           focusId={focusId}
           focusTime={focusTime}
+          projectId={projectId}
           assetId={assetId}
         />
       );
@@ -170,6 +174,7 @@ export function MoajamApp() {
     focusId?: string;
     focusTime?: number;
     assetId?: string;
+    projectId?: string;
   }>({
     route: 'personal-home',
   });
@@ -183,6 +188,7 @@ export function MoajamApp() {
       feedback={location.feedback}
       focusId={location.focusId}
       focusTime={location.focusTime}
+      projectId={location.projectId}
       assetId={location.assetId}
       scorePart={location.scorePart}
       scoreView={location.scoreView}
@@ -194,6 +200,7 @@ export function MoajamApp() {
           feedback: options?.feedback,
           focusId: options?.focusId,
           focusTime: options?.focusTime,
+          projectId: options?.projectId,
           assetId: options?.assetId,
           scorePart: options?.scorePart,
           scoreView: options?.scoreView,

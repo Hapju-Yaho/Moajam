@@ -3,6 +3,14 @@ import { readPersonal, writePersonal, assertPersonalUnchanged } from './personal
 const assets = new WeakMap<Blob, { user: string; scope?: string; id: Promise<string> }>();
 const bandRevisions = new Map<string, number>();
 function bandSession(key: string) {
+  const project = /^daw-project\/([0-9a-f]{8}-[0-9a-f-]{27})\/([0-9a-f]{8}-[0-9a-f-]{27})$/i.exec(
+    key,
+  );
+  if (project)
+    return {
+      workspaceId: project[1],
+      path: `/workspaces/${project[1]}/daw-projects/${project[2]}`,
+    };
   const score = /^band-score\/([0-9a-f]{8}-[0-9a-f-]{27})\/([\w-]+)$/i.exec(key);
   if (score)
     return {
@@ -94,7 +102,12 @@ export async function readRemoteMedia<T>(key: string, owner?: string): Promise<T
   }
   return (await decode(await readPersonal(key, user), user, key)) as T | undefined;
 }
-export async function writeRemoteMedia(key: string, value: unknown, owner?: string) {
+export async function writeRemoteMedia(
+  key: string,
+  value: unknown,
+  owner?: string,
+  options?: { name?: string },
+) {
   const user = owner ?? (await currentIdentity());
   if (!user) throw new Error('로그인이 필요합니다.');
   const ref = `${user}/${key}`;
@@ -110,7 +123,11 @@ export async function writeRemoteMedia(key: string, value: unknown, owner?: stri
         const result = await api<BandDocument>(
           band.path,
           'PUT',
-          { revision, value: { data: await encode(value, key, user) } },
+          {
+            revision,
+            ...(options?.name === undefined ? {} : { name: options.name }),
+            value: { data: await encode(value, key, user) },
+          },
           user,
         );
         bandRevisions.set(ref, result.revision);

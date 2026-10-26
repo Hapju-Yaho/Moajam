@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+  <meta charset="utf-8" /><title>밴드 프로젝트 검증</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>pre { white-space: pre-wrap; overflow-wrap: anywhere; }</style>
+  <div id="root"></div>
+  <pre id="result">RUNNING</pre>
+  <script>
+    window.addEventListener(
+      'error',
+      (event) => (document.getElementById('result').textContent = 'FAIL: ' + event.message),
+    );
+    window.addEventListener(
+      'unhandledrejection',
+      (event) => (document.getElementById('result').textContent = 'FAIL: ' + String(event.reason)),
+    );
+  </script>
+  <script type="module">
+    import RefreshRuntime from '/@react-refresh';
+    RefreshRuntime.injectIntoGlobalHook(window);
+    window.$RefreshReg$ = () => {};
+    window.$RefreshSig$ = () => (type) => type;
+    window.__vite_plugin_react_preamble_installed__ = true;
+  </script>
+  <script type="module" src="./daw-projects.browser.tsx"></script>
+</html>

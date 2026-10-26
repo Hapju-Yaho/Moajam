@@ -37,6 +37,7 @@ export interface NavigationOptions {
   focusId?: string;
   focusTime?: number;
   assetId?: string;
+  projectId?: string;
   scoreView?: 'applied' | 'expanded';
   scorePart?: string;
   id?: string;
@@ -49,6 +50,7 @@ export interface ScreenProps {
   focusId?: string;
   focusTime?: number;
   assetId?: string;
+  projectId?: string;
   scoreView?: 'applied' | 'expanded';
   scorePart?: string;
   navigate: (route: AppRoute, options?: NavigationOptions) => void;
@@ -103,6 +105,7 @@ export function buildAppPath(
   )
     songParams.set('at', String(options.focusTime));
   if (options?.assetId) songParams.set('asset', options.assetId);
+  if (options?.projectId) songParams.set('project', options.projectId);
   const songQuery = songParams.size ? `?${songParams}` : '';
   const paths: Partial<Record<AppRoute, string>> = {
     home: base,

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import './ClipMenu.web.css';
 export function ClipMenu({ label, children }: { label: string; children: ReactNode }) {
   const trigger = useRef<HTMLButtonElement>(null),
     menu = useRef<HTMLDivElement>(null);
@@ -30,35 +31,37 @@ export function ClipMenu({ label, children }: { label: string; children: ReactNo
     };
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
         setOpen(false);
         trigger.current?.focus();
       }
     };
     const close = () => setOpen(false);
+    const scroll = (event: Event) => {
+      if (!(event.target instanceof Node) || !menu.current?.contains(event.target)) close();
+    };
     document.addEventListener('pointerdown', outside, true);
     document.addEventListener('keydown', key);
     window.addEventListener('resize', close);
+    window.addEventListener('scroll', scroll, true);
     return () => {
       document.removeEventListener('pointerdown', outside, true);
       document.removeEventListener('keydown', key);
       window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', scroll, true);
     };
   }, [open]);
   return (
     <>
       <button
         ref={trigger}
+        type="button"
+        className="clip-menu-trigger"
         aria-label={label}
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen(!open)}
-        style={{
-          background: 'transparent',
-          border: 0,
-          fontSize: 22,
-          padding: '0 8px',
-          cursor: 'pointer',
-        }}
       >
         ⋮
       </button>
@@ -66,6 +69,7 @@ export function ClipMenu({ label, children }: { label: string; children: ReactNo
         createPortal(
           <div
             ref={menu}
+            className="clip-settings-menu"
             role="menu"
             aria-label={label}
             onClick={(event) => {
@@ -75,17 +79,6 @@ export function ClipMenu({ label, children }: { label: string; children: ReactNo
             style={{
               position: 'fixed',
               ...position,
-              zIndex: 10000,
-              minWidth: 160,
-              maxHeight: 'calc(100dvh - 16px)',
-              overflowY: 'auto',
-              background: 'white',
-              border: '1px solid #dce4ef',
-              borderRadius: 8,
-              padding: 8,
-              boxShadow: '0 4px 16px #0002',
-              display: 'grid',
-              gap: 8,
             }}
           >
             {children}

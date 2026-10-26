@@ -236,6 +236,7 @@ test('notification deep links retain exact opinion, PDF and track timestamp targ
         songTab: 'tracks',
         focusId: 'feedback-1',
         focusTime: 42.5,
+        projectId: 'project-1',
         assetId: 'pdf-1',
         feedback: true,
       },
@@ -245,6 +246,7 @@ test('notification deep links retain exact opinion, PDF and track timestamp targ
   );
   assert.equal(url.searchParams.get('focus'), 'feedback-1');
   assert.equal(url.searchParams.get('at'), '42.5');
+  assert.equal(url.searchParams.get('project'), 'project-1');
   assert.equal(url.searchParams.get('asset'), 'pdf-1');
   assert.equal(url.searchParams.get('tab'), 'tracks');
   for (const focusTime of [-1, NaN, Infinity]) {

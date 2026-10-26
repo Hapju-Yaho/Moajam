@@ -113,8 +113,13 @@ export async function readMedia<T>(key: string, owner?: string): Promise<T | und
   if (legacy !== undefined) await saveDocument(scope, legacy);
   return legacy;
 }
-export async function writeMedia<T>(key: string, value: T, owner?: string): Promise<void> {
-  if (serverConfigured) return writeRemoteMedia(key, value, owner);
+export async function writeMedia<T>(
+  key: string,
+  value: T,
+  owner?: string,
+  options?: { name?: string },
+): Promise<void> {
+  if (serverConfigured) return writeRemoteMedia(key, value, owner, options);
   const user = owner ?? (await currentIdentity());
   if (!user) throw new Error('로그인이 필요합니다.');
   await saveDocument(user + '/' + key, value);

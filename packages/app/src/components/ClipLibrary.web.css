@@ -47,3 +47,27 @@ details[open] > .clip-library-toggle::before {
 details:not([open]) .clip-library-refresh {
   display: none;
 }
+.studio-confirm-card button.clip-library-dialog-button,
+.studio-confirm-card button.clip-library-refresh-icon {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 11px;
+  margin: 0;
+  border: 1px solid #b9cdfc;
+  border-radius: 9px;
+  background: white;
+  color: #1748b3;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.studio-confirm-card button.clip-library-refresh-icon {
+  width: 34px;
+  padding: 0;
+}

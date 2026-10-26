@@ -139,6 +139,7 @@ export function Notifications({
             : 'discussion',
         focusId: metadata?.focusId,
         focusTime: metadata?.time,
+        projectId: metadata?.projectId,
         assetId: metadata?.assetId,
         feedback: item.kind === 'TRACK_FEEDBACK',
       });

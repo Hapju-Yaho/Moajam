@@ -53,6 +53,7 @@ function RoutedScreen({ route }: { route: AppRoute }) {
       songTab={parseSongTab(search.get('tab'))}
       feedback={search.get('feedback') === 'true'}
       focusId={search.get('focus') ?? undefined}
+      projectId={search.get('project') ?? undefined}
       assetId={search.get('asset') ?? undefined}
       focusTime={
         search.has('at') &&

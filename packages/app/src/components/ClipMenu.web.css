@@ -1,0 +1,64 @@
+.studio-confirm-card button.clip-menu-trigger,
+button.clip-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #52645b;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.clip-settings-menu {
+  z-index: 100001;
+  box-sizing: border-box;
+  width: 192px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid #dce4df;
+  border-radius: 10px;
+  background: #fff;
+  color: #273431;
+  box-shadow: 0 8px 24px #16251d26;
+  font-family: inherit;
+}
+.clip-settings-menu > button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+.clip-settings-menu > button:hover:not(:disabled),
+.clip-settings-menu > button:focus-visible,
+button.clip-menu-trigger:hover,
+button.clip-menu-trigger[aria-expanded='true'] {
+  background: #edf3ef;
+}
+.clip-settings-menu > button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

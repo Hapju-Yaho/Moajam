@@ -1,4 +1,6 @@
 import './StudioConfirm.web.css';
+import { DawProjectToolbar, DawProjectPanel } from './DawProjectControls.web';
+import { useDawProject } from '../lib/dawProjectContext';
 import { DawHelp } from './DawHelp.web';
 import { AppIcon } from './icons';
 import { soundfontInstruments, type SoundfontInstrumentId } from '../lib/soundfontCatalog';
@@ -282,6 +284,7 @@ export function TrackTimeline({
   publishing: string | null;
   transport: Transport;
 }) {
+  const projectControls = useDawProject();
   const [addingTrack, setAddingTrack] = useState(false);
   const addTrackButton = useRef<HTMLButtonElement>(null);
   const [trackOrder, setTrackOrder] = useState<string[] | null>(null);
@@ -703,10 +706,12 @@ export function TrackTimeline({
               클립 보관함
             </button>
           )}
-          <button type="button" disabled={playbackBusy} onClick={onRefresh}>
-            {refreshing ? '새로고침 중…' : '새로고침'}
-          </button>
-          {!readOnly && (
+          {!projectControls && (
+            <button type="button" disabled={playbackBusy} onClick={onRefresh}>
+              {refreshing ? '새로고침 중…' : '새로고침'}
+            </button>
+          )}
+          {!projectControls && !readOnly && (
             <button
               type="button"
               className="studio-share"
@@ -719,6 +724,8 @@ export function TrackTimeline({
         </div>
       </header>
       <div className="studio-console">
+        <DawProjectToolbar />
+        <DawProjectPanel />
         <div className="studio-transport">
           <div className="studio-transport-buttons">
             <button

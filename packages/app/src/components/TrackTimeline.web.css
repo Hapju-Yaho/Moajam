@@ -193,7 +193,9 @@
 }
 .track-studio.is-collapsed
   .studio-console
-  > :not(.studio-transport):not(.studio-footer):not(.studio-accessible-seek) {
+  > :not(.studio-transport):not(.studio-footer):not(.studio-accessible-seek):not(
+    .daw-project-toolbar
+  ):not(.daw-project-overlay) {
   display: none;
 }
 .track-studio.is-collapsed .studio-accessible-seek {

@@ -32,6 +32,7 @@ export function SongWorkspaceScreen({
   focusId,
   focusTime,
   assetId,
+  projectId,
 }: ScreenProps) {
   const tab: SongTab =
     requestedTab === 'resources'
@@ -200,6 +201,7 @@ export function SongWorkspaceScreen({
         )}
       </Surface>
       <PracticeStudio
+        requestedProjectId={projectId}
         discussionInitiallyOpen={tab === 'discussion'}
         discussionOptions={{
           linkedOpinionIds: checks
