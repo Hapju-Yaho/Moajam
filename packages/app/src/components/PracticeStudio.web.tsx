@@ -873,6 +873,8 @@ export function PracticeStudio({
       </ScheduleDialog>
       <div inert={!!dialog || refreshing} style={{ display: 'contents' }}>
         <TrackTimeline
+          key={`${userId}/${scopeKey}`}
+          storageScope={`${userId}/${scopeKey}`}
           readOnly={readOnly}
           onOpenLibrary={() => setLibraryOpen(true)}
           revealPosition={revealPosition}

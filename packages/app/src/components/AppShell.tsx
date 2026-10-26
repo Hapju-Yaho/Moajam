@@ -1,9 +1,11 @@
 import { claimFirstHelpVisit, completeHelpVisit, type HelpScreen } from '../lib/helpVisits';
 import { PracticeHelp } from './PracticeHelp';
 import { ScreenHelpContext } from './ScreenHelpContext';
+import { BandCreateContext } from './BandCreateContext';
 import { HomeTour } from './HomeTour';
 import { consumeHomeTourReplay, requestHomeTourReplay } from '../lib/homeTourSession';
 import { BandListReveal } from './BandListReveal';
+import { SpaceMenuReveal } from './SpaceMenuReveal';
 import { ProfilePhoto } from './ProfilePhoto';
 import styled from '@emotion/native';
 import { Stack, theme } from '@moajam/ui';
@@ -172,8 +174,8 @@ const BottomLabel = styled.Text<{ active?: boolean }>`
 
 const bandItems: Array<{ icon: AppIconName; label: string; route: AppRoute }> = [
   { icon: 'home', label: '홈', route: 'home' },
-  { icon: 'songs', label: '참여 곡', route: 'songs' },
   { icon: 'calendar', label: '합주', route: 'rehearsals' },
+  { icon: 'songs', label: '참여 곡', route: 'songs' },
   { icon: 'users', label: '멤버', route: 'members' },
 ];
 const personalItems: typeof bandItems = [
@@ -253,6 +255,10 @@ export function AppShell({
     clearActionError,
   } = useMockAppState();
   const [tourOpen, setTourOpen] = useState(false);
+  const [songsOpen, setSongsOpen] = useState(activeGroup(activeRoute, 'songs'));
+  useEffect(() => {
+    setSongsOpen(activeGroup(activeRoute, 'songs'));
+  }, [activeRoute, entityId, workspace?.id]);
   useEffect(() => {
     let active = true;
     const screen: HelpScreen | undefined =
@@ -296,6 +302,7 @@ export function AppShell({
     'band-score-editor',
   ].includes(activeRoute);
   const accountPage = activeRoute === 'settings' || activeRoute === 'help';
+  const bandSpace = !personal && !toolsPage && !accountPage;
   const scoreEditorPage = activeRoute === 'score-editor' || activeRoute === 'band-score-editor';
   const spaceLabel = accountPage
     ? 'Moajam'
@@ -326,8 +333,7 @@ export function AppShell({
     crumbs.push({
       label: currentSong?.title ?? '곡 상세',
       onPress: songTab
-        ? () =>
-            onNavigate('song', { id: entityId, workspaceId: workspace?.id, songTab: 'main' })
+        ? () => onNavigate('song', { id: entityId, workspaceId: workspace?.id, songTab: 'main' })
         : undefined,
     });
     const tabLabels: Partial<Record<SongTab, string>> = {
@@ -418,6 +424,97 @@ export function AppShell({
   const nav = (items: typeof bandItems) =>
     items.map((item) => {
       const active = activeGroup(activeRoute, item.route);
+      if (items === bandItems && item.route === 'songs')
+        return (
+          <View key={item.route}>
+            <View
+              nativeID="tour-band-nav-songs"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                borderRadius: 10,
+                backgroundColor: active ? '#eaf0fc' : 'transparent',
+              }}
+            >
+              <NavItem
+                active={active}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                onPress={() => {
+                  setSongsOpen(true);
+                  onNavigate('songs');
+                }}
+                style={{ gap: 12, flex: 1, backgroundColor: 'transparent' }}
+              >
+                <NavIcon>
+                  <AppIcon
+                    name="songs"
+                    color={active ? theme.colors.primary : '#56657c'}
+                    size={18}
+                  />
+                </NavIcon>
+                <NavLabel active={active}>{item.label}</NavLabel>
+              </NavItem>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={songsOpen ? '참여곡 목록 접기' : '참여곡 목록 펼치기'}
+                accessibilityState={{ expanded: songsOpen }}
+                onPress={() => setSongsOpen((open) => !open)}
+                style={{ width: 32, height: 40, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <View style={{ transform: [{ rotate: songsOpen ? '180deg' : '0deg' }] }}>
+                  <AppIcon
+                    name="chevron-down"
+                    size={16}
+                    color={active ? theme.colors.primary : '#7b879f'}
+                  />
+                </View>
+              </Pressable>
+            </View>
+            <SpaceMenuReveal id="sidebar-song-list" visible={songsOpen}>
+              <Stack gap={2} style={{ paddingLeft: 28, paddingBottom: 6 }}>
+                {adoptedSongs
+                  .filter((song) => !song.archived)
+                  .map((song) => {
+                    const selected = activeRoute === 'song' && entityId === song.id;
+                    return (
+                      <NavItem
+                        key={song.id}
+                        active={selected}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${song.title} 곡 상세`}
+                        accessibilityState={{ selected }}
+                        onPress={() =>
+                          onNavigate('song', { id: song.id, workspaceId: workspace?.id })
+                        }
+                        style={{ minHeight: 34, paddingVertical: 7 }}
+                      >
+                        <View
+                          style={{
+                            width: 4,
+                            height: 4,
+                            borderRadius: 2,
+                            flexShrink: 0,
+                            backgroundColor: selected ? theme.colors.primary : '#94a3b8',
+                          }}
+                        />
+                        <NavLabel
+                          numberOfLines={2}
+                          active={selected}
+                          style={{ flex: 1, fontSize: 13 }}
+                        >
+                          {song.title}
+                        </NavLabel>
+                      </NavItem>
+                    );
+                  })}
+                {!adoptedSongs.some((song) => !song.archived) && (
+                  <Meta style={{ padding: 10 }}>참여곡이 없어요.</Meta>
+                )}
+              </Stack>
+            </SpaceMenuReveal>
+          </View>
+        );
       return (
         <NavItem
           key={item.route}
@@ -436,34 +533,51 @@ export function AppShell({
       );
     });
   const switcher = (
-    <WorkspaceSwitcher
-      accessibilityRole="button"
-      accessibilityLabel="밴드 변경"
-      accessibilityState={{ expanded: switcherOpen }}
-      onPress={() => {
-        setCreateContent(false);
-        setSwitcherOpen((open) => !open);
-      }}
-      style={{ gap: 10 }}
-    >
-      {workspace?.photo ? (
-        <Image
-          source={{ uri: workspace.photo }}
-          style={{ width: 36, height: 36, borderRadius: 18 }}
-        />
-      ) : (
-        <WorkspaceThumb style={{ backgroundColor: workspace?.color ?? '#43896b' }}>
-          <AppIcon name="guitar" color="white" size={20} />
-        </WorkspaceThumb>
-      )}
-      <View style={{ flex: 1 }}>
-        <SidebarText numberOfLines={1}>{workspace?.name ?? '밴드 선택'}</SidebarText>
-        <SidebarText small>{members.length}명의 멤버</SidebarText>
-      </View>
-      <View style={{ transform: [{ rotate: switcherOpen ? '180deg' : '0deg' }] }}>
-        <AppIcon name="chevron-down" color="#7b879f" size={16} />
-      </View>
-    </WorkspaceSwitcher>
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <WorkspaceSwitcher
+        accessibilityRole="button"
+        accessibilityLabel={`${workspace?.name ?? '밴드'} 홈으로 이동`}
+        onPress={() => {
+          if (workspace) choose(workspace.id);
+        }}
+        style={{ gap: 10, flex: 1, minWidth: 0 }}
+      >
+        {workspace?.photo ? (
+          <Image
+            source={{ uri: workspace.photo }}
+            style={{ width: 36, height: 36, borderRadius: 18 }}
+          />
+        ) : (
+          <WorkspaceThumb style={{ backgroundColor: workspace?.color ?? '#43896b' }}>
+            <AppIcon name="guitar" color="white" size={20} />
+          </WorkspaceThumb>
+        )}
+        <View style={{ flex: 1 }}>
+          <SidebarText numberOfLines={1}>{workspace?.name ?? '밴드 선택'}</SidebarText>
+          <SidebarText small>{members.length}명의 멤버</SidebarText>
+        </View>
+      </WorkspaceSwitcher>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="밴드 목록 펼치기"
+        accessibilityState={{ expanded: switcherOpen }}
+        onPress={() => {
+          setCreateContent(false);
+          setSwitcherOpen((open) => !open);
+        }}
+        style={{
+          width: 32,
+          height: 40,
+          marginRight: 6,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <View style={{ transform: [{ rotate: switcherOpen ? '180deg' : '0deg' }] }}>
+          <AppIcon name="chevron-down" color="#7b879f" size={16} />
+        </View>
+      </Pressable>
+    </View>
   );
   return (
     <ScreenHelpContext.Provider
@@ -501,10 +615,18 @@ export function AppShell({
               </BrandButton>
               <NavGroupLabel nativeID="tour-personal-space">개인 공간</NavGroupLabel>
               <Stack nativeID="tour-personal-menu" gap={2}>
-                {nav(personalItems)}
+                {nav(personalItems.slice(0, 1))}
+                <SpaceMenuReveal
+                  id="personal-extra"
+                  visible={!bandSpace || (tourOpen && tourSidebar)}
+                >
+                  <Stack gap={2}>{nav(personalItems.slice(1))}</Stack>
+                </SpaceMenuReveal>
               </Stack>
-              <NavGroupLabel nativeID="tour-music-tools">합주 도구</NavGroupLabel>
-              <Stack gap={2}>{nav(toolItems)}</Stack>
+              <SpaceMenuReveal id="music-tools" visible={!bandSpace}>
+                <NavGroupLabel nativeID="tour-music-tools">합주 도구</NavGroupLabel>
+                <Stack gap={2}>{nav(toolItems)}</Stack>
+              </SpaceMenuReveal>
               <NavGroupLabel nativeID="tour-band-space">밴드 공간</NavGroupLabel>
               <WorkspaceCard nativeID="tour-band-switcher">
                 {workspaces.length ? switcher : emptyBand}
@@ -546,9 +668,11 @@ export function AppShell({
                   </BandListReveal>
                 )}
               </WorkspaceCard>
-              <Stack nativeID="tour-band-menu" gap={2}>
-                {workspace ? nav(bandItems) : null}
-              </Stack>
+              <SpaceMenuReveal id="band-menu" visible={bandSpace || (tourOpen && tourSidebar)}>
+                <Stack nativeID="tour-band-menu" gap={2}>
+                  {workspace ? nav(bandItems) : null}
+                </Stack>
+              </SpaceMenuReveal>
             </ScrollView>
             <View style={{ paddingTop: 16 }}>
               <Profile
@@ -581,7 +705,13 @@ export function AppShell({
         <Main>
           <Topbar style={{ paddingHorizontal: desktop ? 28 : 16 }}>
             <View
-              style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+              }}
             >
               {!desktop && (
                 <BrandButton
@@ -718,20 +848,24 @@ export function AppShell({
               </Surface>
             ) : null}
 
-            {children}
+            <BandCreateContext.Provider value={openCreate}>{children}</BandCreateContext.Provider>
           </PageScroll>
           {!desktop && (
             <BottomNav>
               {[
                 ...(toolsPage
                   ? [
-                      { icon: 'home' as const, label: '개인 홈', route: 'personal-home' as const },
+                      {
+                        icon: 'home' as const,
+                        label: '개인 홈',
+                        route: 'personal-home' as const,
+                      },
                       ...toolItems,
                     ]
                   : personal
                     ? personalItems
                     : bandItems),
-                ...(!toolsPage
+                ...(!toolsPage && !bandSpace
                   ? [{ icon: 'rehearsal' as const, label: '합주 도구', route: 'tools' as const }]
                   : []),
               ].map((item) => {

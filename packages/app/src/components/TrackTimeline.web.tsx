@@ -196,6 +196,7 @@ function Waveform({
 }
 
 export function TrackTimeline({
+  storageScope,
   readOnly = false,
   tracks,
   loaded,
@@ -238,6 +239,7 @@ export function TrackTimeline({
   publishing,
   transport: t,
 }: {
+  storageScope?: string;
   readOnly?: boolean;
   tracks: TimelineTrack[];
   loaded: boolean;
@@ -354,7 +356,22 @@ export function TrackTimeline({
   const [magnetic, setMagnetic] = useState(true);
   const [follow, setFollow] = useState(true);
   const [expanded, setExpanded] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsedStorageKey = storageScope ? `moajam-daw-collapsed/${storageScope}` : undefined;
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return collapsedStorageKey ? localStorage.getItem(collapsedStorageKey) === 'true' : false;
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (!collapsedStorageKey) return;
+    try {
+      localStorage.setItem(collapsedStorageKey, String(collapsed));
+    } catch {
+      // Keep the control usable when browser storage is unavailable.
+    }
+  }, [collapsedStorageKey, collapsed]);
   const [filter, setFilter] = useState('ALL');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const selectedClips = tracks.flatMap(trackClips).filter((clip) => selectedIds.includes(clip.id));
