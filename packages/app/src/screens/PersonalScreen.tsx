@@ -1,5 +1,6 @@
 import { ScreenHelpButton } from '../components/ScreenHelpButton';
-import { useState } from 'react';
+import { useContext, useState } from 'react';
+import { BandCreateContext } from '../components/BandCreateContext';
 import { useIdentity } from '../state/Identity';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { ScheduleDashboard } from '../components/ScheduleDashboard';
@@ -204,7 +205,12 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
                   }}
                 >
                   <Surface
-                    style={{ borderTopWidth: 4, borderTopColor: band.color, minHeight: 150 }}
+                    style={{
+                      borderTopWidth: 4,
+                      borderTopColor: band.color,
+                      minHeight: 150,
+                      flex: 1,
+                    }}
                   >
                     <Meta style={{ color: band.color, fontWeight: '500' }}>MY BAND</Meta>
                     <FlexBetween>
@@ -219,6 +225,9 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
                   </Surface>
                 </Pressable>
               ))}
+              <CreateBandCard
+                width={width < 650 ? Math.max(240, bandWidth - 24) : (bandWidth - 32) / 3}
+              />
             </ScrollView>
           </View>
         </>
@@ -266,5 +275,61 @@ export function PersonalScreen({ navigate, route }: ScreenProps & { route: AppRo
         <Meta>오늘 {dateKey(new Date())} · 밴드에서 변경한 일정과 곡이 함께 반영됩니다.</Meta>
       )}
     </AppShell>
+  );
+}
+
+function CreateBandCard({ width }: { width: number }) {
+  const openCreate = useContext(BandCreateContext);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="새 밴드 만들기"
+      onPress={openCreate}
+      style={{ width, flexShrink: 0 }}
+    >
+      <Surface
+        style={{
+          flex: 1,
+          minHeight: 150,
+          borderTopWidth: 4,
+          borderTopColor: '#b9cdfc',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+        }}
+      >
+        <View
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            borderWidth: 1.5,
+            borderColor: '#2563eb',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <View
+            style={{
+              position: 'absolute',
+              width: 18,
+              height: 2,
+              borderRadius: 1,
+              backgroundColor: '#2563eb',
+            }}
+          />
+          <View
+            style={{
+              position: 'absolute',
+              width: 2,
+              height: 18,
+              borderRadius: 1,
+              backgroundColor: '#2563eb',
+            }}
+          />
+        </View>
+        <Copy style={{ color: '#2563eb', fontWeight: '500' }}>새 밴드 만들기</Copy>
+      </Surface>
+    </Pressable>
   );
 }
