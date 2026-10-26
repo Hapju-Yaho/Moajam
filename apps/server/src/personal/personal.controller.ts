@@ -8,7 +8,18 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
-import { Allow, IsInt, Min, IsObject } from 'class-validator';
+import {
+  Allow,
+  IsInt,
+  Min,
+  IsObject,
+  IsArray,
+  ArrayMaxSize,
+  ArrayUnique,
+  IsUUID,
+  IsOptional,
+  IsBoolean,
+} from 'class-validator';
 import { PrismaService } from '../common/database/prisma.service.js';
 import { CurrentUser } from '../common/auth/current-user.decorator.js';
 import type { AuthenticatedUser } from '../common/auth/auth.service.js';
@@ -39,6 +50,10 @@ export class PreferencesDto {
   @IsObject()
   value!: Record<string, unknown>;
   @ApiProperty({ minimum: 0 }) @IsInt() @Min(0) revision!: number;
+}
+export class WorkspaceOrderDto {
+  @IsArray() @ArrayMaxSize(1000) @ArrayUnique() @IsUUID('all', { each: true }) ids!: string[];
+  @IsOptional() @IsBoolean() initializeOnly?: boolean;
 }
 export function validatePersonalKey(key: string) {
   if (
@@ -93,6 +108,49 @@ export class PersonalController {
     private readonly db: PrismaService,
     private readonly photos: ProfilePhotoService,
   ) {}
+  @Get('workspace-order')
+  async workspaceOrder(@CurrentUser() user: AuthenticatedUser) {
+    const saved = await this.db.personalDocument.findUnique({
+      where: { ownerId_key: { ownerId: user.id, key: 'workspace-order' } },
+    });
+    const memberships = await this.db.workspaceMember.findMany({
+      where: { userId: user.id },
+      select: { workspaceId: true },
+    });
+    const allowed = new Set(memberships.map((member) => member.workspaceId));
+    const ids = (saved?.value as { ids?: unknown } | undefined)?.ids;
+    return {
+      ids: Array.isArray(ids)
+        ? ids.filter((id): id is string => typeof id === 'string' && allowed.has(id))
+        : [],
+      initialized: !!saved,
+    };
+  }
+  @Put('workspace-order')
+  async saveWorkspaceOrder(@CurrentUser() user: AuthenticatedUser, @Body() dto: WorkspaceOrderDto) {
+    const count = await this.db.workspaceMember.count({
+      where: { userId: user.id, workspaceId: { in: dto.ids } },
+    });
+    if (count !== dto.ids.length)
+      throw new BadRequestException('참여 중인 팀의 순서만 저장할 수 있습니다.');
+    const where = { ownerId_key: { ownerId: user.id, key: 'workspace-order' } };
+    const value = { ids: dto.ids };
+    if (dto.initializeOnly) {
+      try {
+        await this.db.personalDocument.create({
+          data: { ownerId: user.id, key: 'workspace-order', value },
+        });
+      } catch (error) {
+        if ((error as { code?: string }).code !== 'P2002') throw error;
+      }
+    } else
+      await this.db.personalDocument.upsert({
+        where,
+        create: { ownerId: user.id, key: 'workspace-order', value },
+        update: { value, revision: { increment: 1 } },
+      });
+    return this.workspaceOrder(user);
+  }
   @Get('help-visits/:screen')
   @ApiOperation({ summary: '화면 도움말 완료 여부 조회' })
   async readHelpVisit(@CurrentUser() user: AuthenticatedUser, @Param('screen') screen: string) {

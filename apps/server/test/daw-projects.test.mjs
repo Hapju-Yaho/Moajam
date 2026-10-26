@@ -83,6 +83,46 @@ test('band projects preserve old DAW data, isolate projects and bands, reuse ass
         members: { create: [{ userId: outsider.user.id, role: 'OWNER' }] },
       },
     });
+    const second = await db.workspace.create({
+      data: {
+        name: 'Another team',
+        createdById: owner.user.id,
+        members: { create: { userId: owner.user.id, role: 'OWNER' } },
+      },
+    });
+    assert.deepEqual(await call('/me/workspace-order', 'GET', undefined, owner.token), {
+      ids: [],
+      initialized: false,
+    });
+    await call('/me/workspace-order', 'PUT', { ids: [second.id, band.id] }, owner.token);
+    // The same authenticated user receives the stored order on a fresh request/device.
+    assert.deepEqual((await call('/me/workspace-order', 'GET', undefined, owner.token)).ids, [
+      second.id,
+      band.id,
+    ]);
+    assert.deepEqual((await call('/me/workspace-order', 'GET', undefined, member.token)).ids, []);
+    await call(
+      '/me/workspace-order',
+      'PUT',
+      { ids: [band.id, second.id], initializeOnly: true },
+      owner.token,
+    );
+    assert.deepEqual((await call('/me/workspace-order', 'GET', undefined, owner.token)).ids, [
+      second.id,
+      band.id,
+    ]);
+    await call('/me/workspace-order', 'PUT', { ids: [other.id] }, owner.token, 400);
+    await call('/me/workspace-order', 'PUT', { ids: [band.id, band.id] }, owner.token, 422);
+    await call('/me/workspace-order', 'PUT', { ids: ['invalid-id'] }, owner.token, 422);
+    await call('/me/workspace-order', 'PUT', { ids: [] }, undefined, 401);
+    assert.deepEqual(
+      (
+        await db.personalDocument.findUnique({
+          where: { ownerId_key: { ownerId: owner.user.id, key: 'workspace-order' } },
+        })
+      ).value,
+      { ids: [second.id, band.id] },
+    );
     const songs = [
       { id: 'song', title: 'Original Song' },
       { id: 'empty', title: 'Empty Song' },

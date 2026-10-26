@@ -181,19 +181,19 @@ const bandItems: Array<{ icon: AppIconName; label: string; route: AppRoute }> = 
 const personalItems: typeof bandItems = [
   { icon: 'home', label: '홈', route: 'personal-home' },
   { icon: 'calendar', label: '합주 일정', route: 'personal-rehearsals' },
-  { icon: 'songs', label: '참여 곡', route: 'personal-songs' },
+  { icon: 'users', label: '팀 관리', route: 'personal-songs' },
 ];
 const toolItems: typeof bandItems = [
   { icon: 'songs', label: '악보 편집', route: 'tools' },
-  { icon: 'rehearsal', label: '녹음실', route: 'track-editor' },
-  { icon: 'rehearsal', label: '연습하기', route: 'personal-practice' },
+  { icon: 'microphone', label: '녹음실', route: 'track-editor' },
+  { icon: 'headphones', label: '연습하기', route: 'personal-practice' },
 ];
 const pageTitles: Record<AppRoute, string> = {
   tools: '악보 편집',
   'track-editor': '녹음실',
   'personal-home': '홈',
   'personal-rehearsals': '합주 일정',
-  'personal-songs': '참여 곡',
+  'personal-songs': '팀 관리',
   'personal-practice': '연습하기',
   home: '홈',
   recommendations: '곡 추천',
@@ -647,7 +647,7 @@ export function AppShell({
                 >
                   <NavIcon>
                     <AppIcon
-                      name="rehearsal"
+                      name="studio"
                       size={18}
                       color={toolsPage ? theme.colors.primary : '#56657c'}
                     />
@@ -908,7 +908,7 @@ export function AppShell({
                     ? personalItems
                     : bandItems),
                 ...(!toolsPage && !bandSpace
-                  ? [{ icon: 'rehearsal' as const, label: '작업실', route: 'tools' as const }]
+                  ? [{ icon: 'studio' as const, label: '작업실', route: 'tools' as const }]
                   : []),
               ].map((item) => {
                 const active = activeGroup(activeRoute, item.route);

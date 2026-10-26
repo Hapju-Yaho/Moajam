@@ -5,7 +5,8 @@ export function SpaceMenuReveal({
   id,
   visible,
   children,
-}: PropsWithChildren<{ id: string; visible: boolean }>) {
+  animate = true,
+}: PropsWithChildren<{ id: string; visible: boolean; animate?: boolean }>) {
   const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   const lastVisible = useRef(previousVisibility.get(id));
@@ -13,6 +14,7 @@ export function SpaceMenuReveal({
     const previous = lastVisible.current;
     previousVisibility.set(id, visible);
     if (
+      !animate ||
       previous === undefined ||
       previous === visible ||
       window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -33,7 +35,7 @@ export function SpaceMenuReveal({
         lastVisible.current = visible;
       };
     return () => animation?.cancel();
-  }, [id, visible]);
+  }, [id, visible, animate]);
   return (
     <div
       ref={outer}

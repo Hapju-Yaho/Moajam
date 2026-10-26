@@ -45,6 +45,5 @@ export function ScheduleDialog({
       },
     },
     children,
-    (label = '일정 등록 및 수정'),
   );
 }

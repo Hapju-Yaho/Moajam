@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { SortableSongList } from '../components/SortableSongList';
 import { RecommendationsScreen } from './RecommendationsScreen';
 import { Pressable, useWindowDimensions, View } from 'react-native';
@@ -34,16 +34,19 @@ export function SongsScreen({ navigate }: ScreenProps) {
             setReorderingWorkspace(reorderingWorkspace === workspaceId ? null : workspaceId)
           }
         >
-          {reorderingWorkspace === workspaceId ? '순서 변경 완료' : '순서 변경'}
+          {reorderingWorkspace === workspaceId ? '변경 완료' : '순서 변경'}
         </ActionButton>
       </FlexBetween>
       <Stack gap={16}>
         <SortableSongList
           key={workspaceId}
           songs={adoptedSongs}
+          handleInside
           reorderEnabled={reorderingWorkspace === workspaceId}
           onReorder={reorderAdoptedSongs}
-          renderSong={(song) => <SongTile song={song} navigate={navigate} />}
+          renderSong={(song, handle) => (
+            <SongTile song={song} navigate={navigate} dragHandle={handle} />
+          )}
         />
         {!adoptedSongs.length && (
           <Surface>
@@ -65,7 +68,15 @@ export function SongsScreen({ navigate }: ScreenProps) {
   );
 }
 
-function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps['navigate'] }) {
+function SongTile({
+  song,
+  navigate,
+  dragHandle,
+}: {
+  song: AdoptedSong;
+  navigate: ScreenProps['navigate'];
+  dragHandle?: ReactNode;
+}) {
   const { members, rehearsals, workspaceId } = useMockAppState();
   const participants = members.filter((member) => song.participants?.[member.id]);
   const nextSession = rehearsals
@@ -78,51 +89,56 @@ function SongTile({ song, navigate }: { song: AdoptedSong; navigate: ScreenProps
     .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`))[0];
   const { width } = useWindowDimensions();
   return (
-    <Pressable
-      style={{ width: '100%', alignSelf: 'stretch', minWidth: 0 }}
-      accessibilityRole="button"
-      accessibilityLabel={`${song.title} 상세 보기`}
-      onPress={() => navigate('song', { id: song.id, workspaceId })}
+    <Surface
+      style={{ width: '100%', alignSelf: 'stretch', minWidth: 0, gap: 8, paddingVertical: 12 }}
     >
-      <Surface style={{ width: '100%', gap: 8, paddingVertical: 12 }}>
-        <FlexRow gap={16} style={{ alignItems: 'flex-start' }}>
-          <View>
-            <SongCover
-              id={song.id}
-              thumbnailUrl={song.thumbnailUrl}
-              referenceUrl={song.referenceUrl}
-              size={width < 650 ? 64 : 80}
-            />
-          </View>
-          <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
-            <FlexBetween>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Heading>{song.title}</Heading>
-              </View>
-            </FlexBetween>
+      <FlexRow gap={12} style={{ alignItems: 'stretch' }}>
+        {dragHandle}
+        <Pressable
+          style={{ flex: 1, minWidth: 0, gap: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={`${song.title} 상세 보기`}
+          onPress={() => navigate('song', { id: song.id, workspaceId })}
+        >
+          <FlexRow gap={16} style={{ alignItems: 'flex-start' }}>
+            <View>
+              <SongCover
+                id={song.id}
+                thumbnailUrl={song.thumbnailUrl}
+                referenceUrl={song.referenceUrl}
+                size={width < 650 ? 64 : 80}
+              />
+            </View>
+            <View style={{ flex: 1, minWidth: 0, gap: 7 }}>
+              <FlexBetween>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Heading>{song.title}</Heading>
+                </View>
+              </FlexBetween>
+              <Meta>
+                {song.artist} · {song.year}
+              </Meta>
+              <FlexBetween>
+                <FlexRow>
+                  {participants.slice(0, 3).map((member) => (
+                    <Avatar key={member.id} size={28} color={member.color}>
+                      <AvatarText>{member.initials}</AvatarText>
+                    </Avatar>
+                  ))}
+                  {participants.length > 3 && <Meta>+{participants.length - 3}</Meta>}
+                  {!participants.length && <Meta>참여자 미배정</Meta>}
+                </FlexRow>
+                <Meta>의견 {song.comments}</Meta>
+              </FlexBetween>
+            </View>
+          </FlexRow>
+          {nextSession && (
             <Meta>
-              {song.artist} · {song.year}
+              다음 합주 · {nextSession.date} {nextSession.start}
             </Meta>
-            <FlexBetween>
-              <FlexRow>
-                {participants.slice(0, 3).map((member) => (
-                  <Avatar key={member.id} size={28} color={member.color}>
-                    <AvatarText>{member.initials}</AvatarText>
-                  </Avatar>
-                ))}
-                {participants.length > 3 && <Meta>+{participants.length - 3}</Meta>}
-                {!participants.length && <Meta>참여자 미배정</Meta>}
-              </FlexRow>
-              <Meta>의견 {song.comments}</Meta>
-            </FlexBetween>
-          </View>
-        </FlexRow>
-        {nextSession && (
-          <Meta>
-            다음 합주 · {nextSession.date} {nextSession.start}
-          </Meta>
-        )}
-      </Surface>
-    </Pressable>
+          )}
+        </Pressable>
+      </FlexRow>
+    </Surface>
   );
 }

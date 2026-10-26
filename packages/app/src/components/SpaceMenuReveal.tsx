@@ -6,7 +6,8 @@ export function SpaceMenuReveal({
   id,
   visible,
   children,
-}: PropsWithChildren<{ id: string; visible: boolean }>) {
+  animate = true,
+}: PropsWithChildren<{ id: string; visible: boolean; animate?: boolean }>) {
   const progress = useRef(
     new Animated.Value((previousVisibility.get(id) ?? visible) ? 1 : 0),
   ).current;
@@ -16,7 +17,7 @@ export function SpaceMenuReveal({
     let active = true;
     void AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
       if (!active) return;
-      if (reduce) progress.setValue(visible ? 1 : 0);
+      if (reduce || !animate) progress.setValue(visible ? 1 : 0);
       else
         Animated.timing(progress, {
           toValue: visible ? 1 : 0,
@@ -28,7 +29,7 @@ export function SpaceMenuReveal({
       active = false;
       progress.stopAnimation();
     };
-  }, [id, visible, progress]);
+  }, [id, visible, progress, animate]);
   return (
     <Animated.View
       pointerEvents={visible ? 'auto' : 'none'}

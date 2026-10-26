@@ -10,6 +10,7 @@ import { InstrumentExtractorScreen } from './screens/InstrumentExtractorScreen';
 import { MembersScreen } from './screens/MembersScreen';
 import { MusicToolsScreen } from './screens/MusicToolsScreen';
 import { RecordingScreen } from './screens/RecordingScreen';
+import { TeamManagementScreen } from './screens/TeamManagementScreen';
 import { RecommendationDetailScreen } from './screens/RecommendationDetailScreen';
 import { RehearsalsScreen } from './screens/RehearsalsScreen';
 import { ScoreEditorScreen } from './screens/ScoreEditorScreen';
@@ -91,8 +92,9 @@ function ScopedScreen({
   switch (route) {
     case 'personal-home':
     case 'personal-rehearsals':
-    case 'personal-songs':
       return <PersonalScreen route={route} navigate={navigate} />;
+    case 'personal-songs':
+      return <TeamManagementScreen navigate={navigate} />;
     case 'tools':
       return <MusicToolsScreen navigate={navigate} />;
     case 'track-editor':
@@ -114,6 +116,8 @@ function ScopedScreen({
           projectId={projectId}
           assetId={assetId}
         />
+      ) : route === 'personal-practice' ? (
+        <PersonalScreen route="personal-practice" navigate={navigate} />
       ) : (
         <MusicToolsScreen navigate={navigate} mode="tracks" />
       );

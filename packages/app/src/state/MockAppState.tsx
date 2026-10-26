@@ -35,6 +35,8 @@ import {
 } from '../lib/remote';
 import { usePreferences } from './preferences';
 import { loadWorkspaceState, saveWorkspaceState } from './workspaceStorage';
+import { loadWorkspaceOrder, localWorkspaceOrder, saveWorkspaceOrder } from '../lib/workspaceOrder';
+import { orderPracticeSongs } from '../lib/practiceSongOrder';
 
 export type MockMember = (typeof initialMembers)[number];
 export type AdoptedSong = WorkspaceSong;
@@ -49,6 +51,9 @@ interface Store {
   syncStatus: string;
   reloadRemote: () => Promise<void>;
   leaveWorkspace: (id: string, confirmDelete?: boolean) => Promise<void>;
+  reorderWorkspaces: (ids: string[]) => Promise<void>;
+  workspaceOrderSaving: boolean;
+  workspaceOrderError: string;
 }
 const StoreContext = createContext<Store | null>(null);
 const WorkspaceScope = createContext<string | undefined>(undefined);
@@ -65,6 +70,17 @@ export function MockAppStateProvider({ children }: PropsWithChildren) {
   );
   const [selectedWorkspaceId, selectWorkspace] = useState(saved?.selectedWorkspaceId ?? 'ws-demo');
   const [storageError, setStorageError] = useState(false);
+  const [workspaceOrder, setWorkspaceOrder] = useState<{ user: string; ids: string[] }>(() => ({
+    user: identity,
+    ids: serverConfigured ? [] : localWorkspaceOrder(identity),
+  }));
+  const [workspaceOrderSaving, setWorkspaceOrderSaving] = useState(false);
+  const [workspaceOrderError, setWorkspaceOrderError] = useState('');
+  const orderQueue = useRef(Promise.resolve());
+  const orderTicket = useRef(0);
+  const savedOrder = useRef(workspaceOrder.ids);
+  const activeIdentity = useRef(identity);
+  activeIdentity.current = identity;
   const [actionError, setActionError] = useState('');
   const [syncStatus, setSyncStatus] = useState(
     serverConfigured ? '서버 데이터 불러오는 중…' : '브라우저에 보관',
@@ -82,6 +98,7 @@ export function MockAppStateProvider({ children }: PropsWithChildren) {
       refreshing.current = true;
       try {
         await queue.current;
+        await orderQueue.current;
         if (
           background &&
           (failed.current ||
@@ -92,6 +109,24 @@ export function MockAppStateProvider({ children }: PropsWithChildren) {
         const remote = await loadRemoteWorkspaces(() => currentWorkspaces.current === snapshot);
         if (!remote) return;
         const bands = remote.map((band) => normalizeWorkspace(band, identity));
+        await orderQueue.current;
+        const ticket = orderTicket.current;
+        try {
+          const ids = await loadWorkspaceOrder(
+            identity,
+            bands.map((band) => band.id),
+          );
+          if (ticket === orderTicket.current && activeIdentity.current === identity) {
+            savedOrder.current = ids;
+            setWorkspaceOrder({ user: identity, ids });
+            setWorkspaceOrderError('');
+          }
+        } catch (error) {
+          if (activeIdentity.current === identity)
+            setWorkspaceOrderError(
+              error instanceof Error ? error.message : '팀 순서를 불러오지 못했어요.',
+            );
+        }
         acknowledged.current = bands;
         remoteReady.current = true;
         failed.current = false;
@@ -179,9 +214,53 @@ export function MockAppStateProvider({ children }: PropsWithChildren) {
     },
     [identity, workspaces],
   );
+  const reorderWorkspaces = useCallback(
+    (ids: string[]) => {
+      const allowed = new Set(currentWorkspaces.current.map((band) => band.id));
+      const requested = [...new Set(ids)].filter((id) => allowed.has(id));
+      const complete = [
+        ...requested,
+        ...currentWorkspaces.current.map((band) => band.id).filter((id) => !requested.includes(id)),
+      ];
+      const ticket = ++orderTicket.current;
+      setWorkspaceOrder({ user: identity, ids: complete });
+      setWorkspaceOrderSaving(true);
+      setWorkspaceOrderError('');
+      const task = orderQueue.current
+        .catch(() => {})
+        .then(async () => {
+          const saved = await saveWorkspaceOrder(identity, complete);
+          if (activeIdentity.current === identity) savedOrder.current = saved;
+          if (ticket === orderTicket.current && activeIdentity.current === identity)
+            setWorkspaceOrder({ user: identity, ids: saved });
+        });
+      const handled = task
+        .catch((error) => {
+          if (ticket === orderTicket.current && activeIdentity.current === identity) {
+            setWorkspaceOrder({ user: identity, ids: savedOrder.current });
+            setWorkspaceOrderError(
+              error instanceof Error ? error.message : '팀 순서를 저장하지 못했어요.',
+            );
+          }
+          throw error;
+        })
+        .finally(() => {
+          if (ticket === orderTicket.current && activeIdentity.current === identity)
+            setWorkspaceOrderSaving(false);
+        });
+      orderQueue.current = handled.catch(() => {});
+      return handled;
+    },
+    [identity],
+  );
+  const orderedWorkspaces = useMemo(
+    () =>
+      orderPracticeSongs(workspaces, workspaceOrder.user === identity ? workspaceOrder.ids : []),
+    [workspaces, workspaceOrder, identity],
+  );
   const value = useMemo(
     () => ({
-      workspaces,
+      workspaces: orderedWorkspaces,
       setWorkspaces,
       selectedWorkspaceId,
       selectWorkspace,
@@ -191,15 +270,21 @@ export function MockAppStateProvider({ children }: PropsWithChildren) {
       syncStatus,
       reloadRemote,
       leaveWorkspace,
+      reorderWorkspaces,
+      workspaceOrderSaving,
+      workspaceOrderError,
     }),
     [
-      workspaces,
+      orderedWorkspaces,
       selectedWorkspaceId,
       storageError,
       actionError,
       syncStatus,
       reloadRemote,
       leaveWorkspace,
+      reorderWorkspaces,
+      workspaceOrderSaving,
+      workspaceOrderError,
     ],
   );
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
@@ -249,6 +334,9 @@ export function useMockAppState() {
     syncStatus: store.syncStatus,
     reloadRemote: store.reloadRemote,
     leaveWorkspace: (confirmDelete = false) => store.leaveWorkspace(workspaceId, confirmDelete),
+    reorderWorkspaces: store.reorderWorkspaces,
+    workspaceOrderSaving: store.workspaceOrderSaving,
+    workspaceOrderError: store.workspaceOrderError,
     actionError: store.actionError,
     clearActionError: () => store.setActionError(''),
     setDocument: <T,>(

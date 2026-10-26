@@ -25,8 +25,9 @@ const guides: { title: string; detail: string; route: AppRoute }[] = [
   {
     title: '참여곡 상세',
     detail: '곡 의견, 파트별 PDF 악보와 작업실 녹음·편집',
-    route: 'personal-songs',
+    route: 'personal-practice',
   },
+  { title: '팀 관리', detail: '참여 중인 팀과 멤버 확인', route: 'personal-songs' },
   { title: '개인 홈', detail: '내 밴드의 일정과 참여 곡을 모아보기', route: 'personal-home' },
   {
     title: '곡 추천과 채택',
