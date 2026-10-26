@@ -6,16 +6,25 @@ import { PracticeStudioSession } from '../packages/app/src/components/PracticeSt
 import { MockAppStateProvider } from '../packages/app/src/state/MockAppState';
 import { readMedia } from '../packages/app/src/lib/mediaStore.web';
 import { projectMediaKey, type BandDawProject } from '../packages/app/src/lib/bandDawProjects';
+import { personalProjectMediaKey } from '../packages/app/src/lib/personalDawProjects.web';
 
 configureRemote({ apiUrl: '/api/v1', demo: true });
 const workspace = `test-band-${Date.now()}`;
 const song = 'test-song';
-const rows = () => readMedia<BandDawProject[]>(`daw-project-list/${workspace}/${song}`, 'm1');
-const data = (id: string) => readMedia<{ tracks: unknown[] }>(projectMediaKey(workspace, id), 'm1');
+const personal = new URLSearchParams(location.search).has('personal');
+const mediaKey = (id: string) =>
+  personal ? personalProjectMediaKey(id) : projectMediaKey(workspace, id);
+const rows = () =>
+  readMedia<BandDawProject[]>(
+    personal ? 'local-recording/projects' : `daw-project-list/${workspace}/${song}`,
+    'm1',
+  );
+const data = (id: string) => readMedia<{ tracks: unknown[] }>(mediaKey(id), 'm1');
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <MockAppStateProvider>
       <BandDawProjects
+        localOnly={personal}
         workspaceId={workspace}
         songId={song}
         title="원래 곡 이름"
@@ -23,7 +32,7 @@ createRoot(document.getElementById('root')!).render(
           <PracticeStudioSession
             key={`${project.id}/${generation}`}
             scopeKey={`${workspace}/${song}`}
-            mediaKey={projectMediaKey(workspace, project.id)}
+            mediaKey={mediaKey(project.id)}
             projectId={project.id}
             onSeekProject={navigation.onSeekProject}
           />
@@ -92,7 +101,10 @@ void (async () => {
     document.querySelector<HTMLInputElement>('[aria-label="현재 프로젝트 이름"]')!.blur();
     await tick();
     if ((await rows())![0].name !== '첫 작업') throw Error('Name persisted before Save');
-    click('서버에 저장', document.querySelector('.daw-project-actions')!);
+    click(
+      personal ? '이 기기에 저장' : '서버에 저장',
+      document.querySelector('.daw-project-actions')!,
+    );
     await wait(async () => (await rows())![0].name === '첫 작업 수정');
     await tick();
     await addTrack();
@@ -126,7 +138,11 @@ void (async () => {
     const third = (await rows())!.find((row) => row.name === '기존도 저장')!;
     if ((await data(second.id))!.tracks.length !== 2 || (await data(third.id))!.tracks.length !== 2)
       throw Error('Save-and-copy did not preserve both projects');
-    await wait(() => [...document.querySelectorAll<HTMLButtonElement>('.daw-project-actions button')].some(button => button.textContent?.trim() === '프로젝트 선택' && !button.disabled));
+    await wait(() =>
+      [...document.querySelectorAll<HTMLButtonElement>('.daw-project-actions button')].some(
+        (button) => button.textContent?.trim() === '프로젝트 선택' && !button.disabled,
+      ),
+    );
     click('프로젝트 선택');
     await wait(panel);
     click('첫 작업 수정', panel());

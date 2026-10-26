@@ -132,6 +132,15 @@ test('practice links retain both song and band on reload', () => {
   assert.equal(url.pathname, '/workspaces/band%202/songs/song%20%2F%201');
   assert.equal(url.searchParams.get('tab'), 'tracks');
 });
+test('workshop menu opens blank recording and the practice song picker without inheriting a song', () => {
+  const context = { route: 'song', workspaceId: 'band', entityId: 'old-song' };
+  assert.equal(buildAppPath('track-editor', undefined, context), '/tools/tracks');
+  assert.equal(buildAppPath('personal-practice', undefined, context), '/me/practice');
+  assert.equal(
+    buildAppPath('personal-practice', { id: 'chosen', workspaceId: 'other' }, context),
+    '/workspaces/other/songs/chosen?tab=tracks',
+  );
+});
 test('band switching clears previous entity context', () => {
   assert.equal(
     buildAppPath(

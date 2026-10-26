@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 import type { BandDawProjects as NativeProjects } from './BandDawProjects';
 import { useIdentity } from '../state/Identity';
 import { serverConfigured } from '../lib/remote';
@@ -7,6 +7,7 @@ import { DawProjectToolbar, DawProjectPanel, ProjectRefreshIcon } from './DawPro
 import { DawProjectContext, type ProjectBridge } from '../lib/dawProjectContext';
 import { ClipLibrary } from './ClipLibrary.web';
 import { ScheduleDialog } from './ScheduleDialog';
+import { listPersonalDawProjects, managePersonalDawProject } from '../lib/personalDawProjects.web';
 
 export function BandDawProjects({
   workspaceId,
@@ -14,8 +15,23 @@ export function BandDawProjects({
   title,
   requestedId,
   renderStudio,
-}: ComponentProps<typeof NativeProjects>) {
+  localOnly = false,
+}: ComponentProps<typeof NativeProjects> & { localOnly?: boolean }) {
   const user = useIdentity();
+  const fetchProjects = useCallback(
+    () =>
+      localOnly
+        ? listPersonalDawProjects(user)
+        : listBandProjects(workspaceId, songId, title, user),
+    [localOnly, user, workspaceId, songId, title],
+  );
+  const manageProject = useCallback(
+    (action: 'create' | 'rename' | 'delete', project?: BandDawProject, name?: string) =>
+      localOnly
+        ? managePersonalDawProject(action, user, project, name)
+        : manageBandProject(action, workspaceId, songId, user, project, name),
+    [localOnly, user, workspaceId, songId],
+  );
   const [projects, setProjects] = useState<BandDawProject[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [loaded, setLoaded] = useState(false);
@@ -37,7 +53,9 @@ export function BandDawProjects({
   const [seekTarget, setSeekTarget] = useState<{ id: string; time: number }>();
   const bridge = useRef<ProjectBridge | null>(null);
   const selected = projects.find((row) => row.id === selectedId);
-  const storageKey = `moajam-daw-selected/${user}/${workspaceId}/${songId}`;
+  const storageKey = localOnly
+    ? `moajam-daw-selected/${user}/personal-recording`
+    : `moajam-daw-selected/${user}/${workspaceId}/${songId}`;
   const alive = useRef(true);
   const overlay = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -78,14 +96,14 @@ export function BandDawProjects({
     };
   }, [mode]);
   const load = async () => {
-    const rows = await listBandProjects(workspaceId, songId, title, user);
+    const rows = await fetchProjects();
     if (alive.current) {
       const current = rows.find((row) => row.id === selectedId);
       if (selected && !current) {
         // Keep the mounted editor and unsaved media available for Save As.
         setProjects([...rows, selected]);
         setError(
-          '현재 프로젝트가 서버에서 삭제되었어요. 다른 이름으로 저장하여 작업을 보관해주세요.',
+          `현재 프로젝트가 ${localOnly ? '이 기기' : '서버'}에서 삭제되었어요. 다른 이름으로 저장하여 작업을 보관해주세요.`,
         );
       } else {
         setProjects(rows);
@@ -96,7 +114,7 @@ export function BandDawProjects({
   };
   useEffect(() => {
     let active = true;
-    void listBandProjects(workspaceId, songId, title, user)
+    void fetchProjects()
       .then((rows) => {
         if (!active) return;
         setProjects(rows);
@@ -122,7 +140,7 @@ export function BandDawProjects({
     return () => {
       active = false;
     };
-  }, [workspaceId, songId, title, user, requestedId, storageKey]);
+  }, [fetchProjects, requestedId, storageKey]);
   const choose = (project: BandDawProject) => {
     setStudioDirty(false);
     bridge.current = null;
@@ -147,8 +165,8 @@ export function BandDawProjects({
   const duplicateName =
     !!name.trim() && projects.some((project) => project.name.trim() === name.trim());
   const onSaved = async () => {
-    if (!serverConfigured && selected && nameDirty)
-      await manageBandProject('rename', workspaceId, songId, user, selected, draft.trim());
+    if ((localOnly || !serverConfigured) && selected && nameDirty)
+      await manageProject('rename', selected, draft.trim());
     if (alive.current) {
       setEditing(false);
       setProjects((rows) =>
@@ -177,7 +195,7 @@ export function BandDawProjects({
       }
       const project =
         mode === 'create'
-          ? await manageBandProject('create', workspaceId, songId, user, undefined, name.trim())
+          ? await manageProject('create', undefined, name.trim())
           : await session?.copy(name.trim());
       if (!project) throw Error('프로젝트를 만들지 못했어요.');
       setProjects((rows) => [...rows, project]);
@@ -260,7 +278,7 @@ export function BandDawProjects({
           disabled={!selected || working || !draft.trim() || !dirty}
           onClick={() => void save()}
         >
-          서버에 저장
+          {localOnly ? '이 기기에 저장' : '서버에 저장'}
         </button>
         <button
           aria-label="새로고침"
@@ -464,7 +482,7 @@ export function BandDawProjects({
                 onClick={() => {
                   if (!deleting || busy) return;
                   setBusy(true);
-                  void manageBandProject('delete', workspaceId, songId, user, deleting)
+                  void manageProject('delete', deleting)
                     .then(() => {
                       const remaining = projects.filter((project) => project.id !== deleting.id);
                       setProjects(remaining);
@@ -536,7 +554,7 @@ export function BandDawProjects({
         <section className="track-studio">
           <header className="studio-heading">
             <div className="studio-heading-info">
-              <h2>작업실</h2>
+              <h2>{localOnly ? '녹음실' : '작업실'}</h2>
             </div>
             <div className="studio-heading-actions">
               <button onClick={() => setLibraryOpen(true)}>클립 보관함</button>

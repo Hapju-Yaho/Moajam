@@ -15,7 +15,7 @@ import {
 } from '../lib/practiceMerge';
 import { clientId } from '../lib/clientId';
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { BandDawProjects } from './BandDawProjects';
+import { BandDawProjects } from './BandDawProjects.web';
 import { projectMediaKey } from '../lib/bandDawProjects';
 import { useIdentity } from '../state/Identity';
 import { useMockAppState } from '../state/MockAppState';
@@ -26,6 +26,7 @@ import { readMedia, writeMedia } from '../lib/mediaStore.web';
 import { useDawProject } from '../lib/dawProjectContext';
 import { encode as encodeProjectData } from '../lib/remote-media.web';
 import { manageBandProject } from '../lib/bandDawProjects';
+import { managePersonalDawProject, personalProjectMediaKey } from '../lib/personalDawProjects.web';
 import { ActionButton, Copy, FlexRow, Surface } from './ProductUI';
 import { AppIcon } from './icons';
 import { ClipLibrary } from './ClipLibrary.web';
@@ -65,6 +66,24 @@ const timeLabel = (value: number) =>
   `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
 export function PracticeStudio(props: ComponentProps<typeof PracticeStudioSession>) {
   const { adoptedSongs, workspaceId } = useMockAppState();
+  if (props.mediaKey?.startsWith('local-recording/'))
+    return (
+      <BandDawProjects
+        key="personal-recording-projects"
+        localOnly
+        workspaceId="personal"
+        songId="recording"
+        title="새 프로젝트"
+        renderStudio={(project, generation) => (
+          <PracticeStudioSession
+            key={`${project.id}/${generation}`}
+            {...props}
+            mediaKey={personalProjectMediaKey(project.id)}
+            projectId={project.id}
+          />
+        )}
+      />
+    );
   const parts = props.scopeKey.split('/');
   const song =
     parts.length === 2 && parts[0] === workspaceId
@@ -123,6 +142,7 @@ export function PracticeStudioSession({
   const projectControls = useDawProject();
   const feedbackRef = useRef<HTMLDivElement>(null);
   const storageKey = mediaKey ?? `practice/${scopeKey}`;
+  const personalRecording = storageKey.startsWith('local-recording/');
   const userId = useIdentity();
   const urls = useRef(new Set<string>());
   const preferences = usePreferences();
@@ -461,9 +481,11 @@ export function PracticeStudioSession({
       const proceed = (event as CustomEvent<() => void>).detail;
       setDialog({
         title: '떠나실건가요?',
-        message: projectId
-          ? '변경사항이 서버에 저장되지 않았습니다. 변경사항을 저장하려면 서버에 저장 버튼을 눌러주세요.'
-          : '사운드 트랙 변경사항이 서버에 저장되지 않았습니다. 변경사항을 서버에 저장하려면 변경사항 공유하기 버튼을 눌러주세요.',
+        message: personalRecording
+          ? '녹음실 변경사항이 저장되지 않았습니다. 이 기기에 저장 버튼을 눌러 보관해주세요.'
+          : projectId
+            ? '변경사항이 서버에 저장되지 않았습니다. 변경사항을 저장하려면 서버에 저장 버튼을 눌러주세요.'
+            : '사운드 트랙 변경사항이 서버에 저장되지 않았습니다. 변경사항을 서버에 저장하려면 변경사항 공유하기 버튼을 눌러주세요.',
         choices: [
           { label: '계속 작업하기', run: () => setDialog(null) },
           {
@@ -480,7 +502,7 @@ export function PracticeStudioSession({
     };
     window.addEventListener('moajam:before-navigate', listener);
     return () => window.removeEventListener('moajam:before-navigate', listener);
-  }, [dirty, recording, requesting, preparing, saving, projectId]);
+  }, [dirty, recording, requesting, preparing, saving, projectId, personalRecording]);
   const saveChanges = async () => {
     if (readOnly) return;
     if (
@@ -568,18 +590,21 @@ export function PracticeStudioSession({
         if (busy) throw Error('진행 중인 작업을 마친 후 다시 시도해주세요.');
         const [workspace, song] = scopeKey.split('/');
         const data = sharedPracticeSettings(snapshot);
-        const initialData = serverConfigured
-          ? await encodeProjectData(data, storageKey, userId)
-          : data;
-        const result = await manageBandProject(
-          'create',
-          workspace,
-          song,
-          userId,
-          undefined,
-          name,
-          initialData,
-        );
+        const initialData =
+          serverConfigured && !personalRecording
+            ? await encodeProjectData(data, storageKey, userId)
+            : data;
+        const result = personalRecording
+          ? await managePersonalDawProject('create', userId, undefined, name, data)
+          : await manageBandProject(
+              'create',
+              workspace,
+              song,
+              userId,
+              undefined,
+              name,
+              initialData,
+            );
         if (!result) throw Error('프로젝트를 만들지 못했어요.');
         return result;
       },
@@ -987,6 +1012,7 @@ export function PracticeStudioSession({
           key={`${userId}/${storageKey}`}
           storageScope={`${userId}/${storageKey}`}
           readOnly={readOnly}
+          personalRecording={personalRecording}
           onOpenLibrary={() => setLibraryOpen(true)}
           revealPosition={revealPosition}
           tracks={tracks}
@@ -1003,8 +1029,8 @@ export function PracticeStudioSession({
                   : saving
                     ? '저장 중…'
                     : !saved
-                      ? `저장하지 않은 변경사항 · 이동 전에 ${projectId ? '서버에 저장' : '변경사항 공유하기'}를 눌러주세요`
-                      : serverConfigured
+                      ? `저장하지 않은 변경사항 · 이동 전에 ${personalRecording ? '이 기기에 저장' : projectId ? '서버에 저장' : '변경사항 공유하기'}를 눌러주세요`
+                      : serverConfigured && !personalRecording
                         ? '서버에 저장됨'
                         : '이 브라우저에 저장됨 · 비공개'
           }
@@ -1443,72 +1469,74 @@ export function PracticeStudioSession({
             </div>
           )}
         </ScheduleDialog>
-        <div id="practice-feedback" ref={feedbackRef} tabIndex={-1} aria-label="곡 의견">
-          <Surface>
-            <button
-              type="button"
-              onClick={() => setDiscussionOpen((open) => !open)}
-              aria-expanded={discussionOpen}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 7,
-                alignSelf: 'flex-start',
-                border: 0,
-                background: 'transparent',
-                color: '#566b8c',
-                padding: '10px 0',
-                cursor: 'pointer',
-                font: 'inherit',
-              }}
-            >
-              <span style={{ transform: discussionOpen ? 'rotate(180deg)' : undefined }}>
-                <AppIcon name="chevron-down" size={18} />
-              </span>
-              {discussionOpen ? '곡 의견 닫기' : '곡 의견 보기'}
-            </button>
-            {
-              <>
-                <Discussion
-                  showOpinions={discussionOpen}
-                  documentKey={`song/${scopeKey.split('/').at(-1)}/discussion`}
-                  legacyDocumentKey={`song/${scopeKey.split('/').at(-1)}/feedback`}
-                  focusId={focusId}
-                  timeline={{
-                    position,
-                    projectId,
-                    onSeek: (time, targetProject) => {
-                      if (
-                        projectId &&
-                        (targetProject ? targetProject !== projectId : !isDefaultProject) &&
-                        onSeekProject
-                      ) {
-                        onSeekProject(time, targetProject);
-                        return;
-                      }
-                      seek(time);
-                      setRevealPosition({ time: positionRef.current });
-                    },
-                  }}
-                  {...discussionOptions}
-                />
-                {discussionOpen && notes.length > 0 && (
-                  <details>
-                    <summary>기존 개인 메모 (나만 보기)</summary>
-                    {notes.map((note) => (
-                      <FlexRow key={note.id}>
-                        <ActionButton secondary compact onPress={() => seek(note.time)}>
-                          {timeLabel(note.time)}
-                        </ActionButton>
-                        <Copy>{note.text}</Copy>
-                      </FlexRow>
-                    ))}
-                  </details>
-                )}
-              </>
-            }
-          </Surface>
-        </div>
+        {!personalRecording && (
+          <div id="practice-feedback" ref={feedbackRef} tabIndex={-1} aria-label="곡 의견">
+            <Surface>
+              <button
+                type="button"
+                onClick={() => setDiscussionOpen((open) => !open)}
+                aria-expanded={discussionOpen}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  alignSelf: 'flex-start',
+                  border: 0,
+                  background: 'transparent',
+                  color: '#566b8c',
+                  padding: '10px 0',
+                  cursor: 'pointer',
+                  font: 'inherit',
+                }}
+              >
+                <span style={{ transform: discussionOpen ? 'rotate(180deg)' : undefined }}>
+                  <AppIcon name="chevron-down" size={18} />
+                </span>
+                {discussionOpen ? '곡 의견 닫기' : '곡 의견 보기'}
+              </button>
+              {
+                <>
+                  <Discussion
+                    showOpinions={discussionOpen}
+                    documentKey={`song/${scopeKey.split('/').at(-1)}/discussion`}
+                    legacyDocumentKey={`song/${scopeKey.split('/').at(-1)}/feedback`}
+                    focusId={focusId}
+                    timeline={{
+                      position,
+                      projectId,
+                      onSeek: (time, targetProject) => {
+                        if (
+                          projectId &&
+                          (targetProject ? targetProject !== projectId : !isDefaultProject) &&
+                          onSeekProject
+                        ) {
+                          onSeekProject(time, targetProject);
+                          return;
+                        }
+                        seek(time);
+                        setRevealPosition({ time: positionRef.current });
+                      },
+                    }}
+                    {...discussionOptions}
+                  />
+                  {discussionOpen && notes.length > 0 && (
+                    <details>
+                      <summary>기존 개인 메모 (나만 보기)</summary>
+                      {notes.map((note) => (
+                        <FlexRow key={note.id}>
+                          <ActionButton secondary compact onPress={() => seek(note.time)}>
+                            {timeLabel(note.time)}
+                          </ActionButton>
+                          <Copy>{note.text}</Copy>
+                        </FlexRow>
+                      ))}
+                    </details>
+                  )}
+                </>
+              }
+            </Surface>
+          </div>
+        )}
       </div>
     </>
   );

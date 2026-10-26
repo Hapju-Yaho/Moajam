@@ -192,6 +192,7 @@ export function PracticeStudioSession({
   }, [feedback, ready]);
   const loadedScope = useRef('');
   const storageKey = mediaKey ?? `practice/${scopeKey}`;
+  const personalRecording = storageKey.startsWith('local-recording/');
   const extras = useRef<Record<string, unknown>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -306,16 +307,20 @@ export function PracticeStudioSession({
               disabled={!ready || saving || busy || recording.isRecording}
               onPress={() => void saveChanges()}
             >
-              {saving ? '저장 중…' : '변경사항 공유하기'}
+              {saving ? '저장 중…' : personalRecording ? '이 기기에 저장' : '변경사항 공유하기'}
             </ActionButton>
           </FlexRow>
           <Meta>
-            {savedMessage || '변경 후 화면을 이동하기 전에 변경사항 공유하기를 눌러주세요.'}
+            {savedMessage ||
+              (personalRecording
+                ? '화면을 이동하기 전에 이 기기에 저장을 눌러주세요.'
+                : '변경 후 화면을 이동하기 전에 변경사항 공유하기를 눌러주세요.')}
           </Meta>
           <Meta>
-            악기 파트를 고른 뒤 음원을 추가하세요. {serverConfigured ? '내 계정' : '이 기기'}에
-            비공개로 저장합니다. 변경사항 공유하기를 눌렀을 때 저장돼요. 녹음을 중지한 후 화면을
-            이동해주세요.
+            악기 파트를 고른 뒤 음원을 추가하세요.{' '}
+            {serverConfigured && !personalRecording ? '내 계정' : '이 기기'}에 비공개로 저장합니다.{' '}
+            {personalRecording ? '이 기기에 저장' : '변경사항 공유하기'}를 눌렀을 때 저장돼요.
+            녹음을 중지한 후 화면을 이동해주세요.
           </Meta>
           <TrackPartPicker
             value={uploadPart}
@@ -377,35 +382,39 @@ export function PracticeStudioSession({
           />
         )),
       )}
-      <ActionButton
-        secondary
-        onPress={() => setDiscussionOpen((open) => !open)}
-        accessibilityState={{ expanded: discussionOpen }}
-      >
-        {discussionOpen ? '곡 의견 닫기' : '곡 의견 보기'}
-      </ActionButton>
-      {
-        <Discussion
-          showOpinions={discussionOpen}
-          documentKey={`song/${scopeKey.split('/').at(-1)}/discussion`}
-          legacyDocumentKey={`song/${scopeKey.split('/').at(-1)}/feedback`}
-          focusId={focusId}
-          timeline={{
-            position: seekRequest?.time ?? 0,
-            projectId,
-            onSeek: (time, targetProject) => {
-              if (
-                projectId &&
-                (targetProject ? targetProject !== projectId : !isDefaultProject) &&
-                onSeekProject
-              )
-                onSeekProject(time, targetProject);
-              else setSeekRequest({ time });
-            },
-          }}
-          {...discussionOptions}
-        />
-      }
+      {!personalRecording && (
+        <>
+          <ActionButton
+            secondary
+            onPress={() => setDiscussionOpen((open) => !open)}
+            accessibilityState={{ expanded: discussionOpen }}
+          >
+            {discussionOpen ? '곡 의견 닫기' : '곡 의견 보기'}
+          </ActionButton>
+          {
+            <Discussion
+              showOpinions={discussionOpen}
+              documentKey={`song/${scopeKey.split('/').at(-1)}/discussion`}
+              legacyDocumentKey={`song/${scopeKey.split('/').at(-1)}/feedback`}
+              focusId={focusId}
+              timeline={{
+                position: seekRequest?.time ?? 0,
+                projectId,
+                onSeek: (time, targetProject) => {
+                  if (
+                    projectId &&
+                    (targetProject ? targetProject !== projectId : !isDefaultProject) &&
+                    onSeekProject
+                  )
+                    onSeekProject(time, targetProject);
+                  else setSeekRequest({ time });
+                },
+              }}
+              {...discussionOptions}
+            />
+          }
+        </>
+      )}
       {!readOnly && (
         <>
           <Heading>개인 메모</Heading>

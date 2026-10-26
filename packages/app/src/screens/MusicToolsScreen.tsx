@@ -36,18 +36,18 @@ export function MusicToolsScreen({
         .includes(query.trim().toLowerCase()),
   );
   return (
-    <AppShell activeRoute={mode === 'scores' ? 'tools' : 'track-editor'} onNavigate={navigate}>
+    <AppShell activeRoute={mode === 'scores' ? 'tools' : 'personal-practice'} onNavigate={navigate}>
       <View style={{ gap: 8 }}>
-        <Meta>합주 도구</Meta>
-        <PageHeading>{mode === 'scores' ? '악보 편집' : '작업실'}</PageHeading>
+        <Meta>작업실</Meta>
+        <PageHeading>{mode === 'scores' ? '악보 편집' : '연습하기'}</PageHeading>
         <Copy>작업할 곡을 선택하세요. 저장한 결과는 곡 상세에서 함께 볼 수 있어요.</Copy>
       </View>
       <FlexRow wrap>
         <Pill active={mode === 'scores'} onPress={() => navigate('tools')}>
           <PillText active={mode === 'scores'}>악보 편집</PillText>
         </Pill>
-        <Pill active={mode === 'tracks'} onPress={() => navigate('track-editor')}>
-          <PillText active={mode === 'tracks'}>작업실</PillText>
+        <Pill active={mode === 'tracks'} onPress={() => navigate('personal-practice')}>
+          <PillText active={mode === 'tracks'}>연습하기</PillText>
         </Pill>
       </FlexRow>
       {mode === 'scores' ? (
@@ -98,7 +98,7 @@ export function MusicToolsScreen({
               accessibilityRole="button"
               accessibilityLabel={`${song.bandName} ${song.title} 편집`}
               onPress={() =>
-                navigate(mode === 'scores' ? 'band-score-editor' : 'track-editor', {
+                navigate(mode === 'scores' ? 'band-score-editor' : 'personal-practice', {
                   id: song.id,
                   workspaceId: song.workspaceId,
                 })
@@ -112,13 +112,13 @@ export function MusicToolsScreen({
               <ActionButton
                 compact
                 onPress={() =>
-                  navigate(mode === 'scores' ? 'band-score-editor' : 'track-editor', {
+                  navigate(mode === 'scores' ? 'band-score-editor' : 'personal-practice', {
                     id: song.id,
                     workspaceId: song.workspaceId,
                   })
                 }
               >
-                {mode === 'scores' ? '악보 편집' : '작업실'}
+                {mode === 'scores' ? '악보 편집' : '연습하기'}
               </ActionButton>
               {mode === 'scores' && (
                 <ActionButton

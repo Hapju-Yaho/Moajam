@@ -64,6 +64,8 @@ export function buildAppPath(
   options: NavigationOptions | undefined,
   context: { route: AppRoute; workspaceId: string; entityId?: string },
 ) {
+  if (next === 'personal-practice' && !options?.id) return '/me/practice';
+  if (next === 'track-editor' && !options?.id) return '/tools/tracks';
   const bandId = options?.workspaceId ?? context.workspaceId;
   const base = `/workspaces/${encodeURIComponent(bandId)}`;
   const id =

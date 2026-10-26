@@ -200,6 +200,7 @@ function Waveform({
 export function TrackTimeline({
   storageScope,
   readOnly = false,
+  personalRecording = false,
   tracks,
   loaded,
   saveLabel,
@@ -243,6 +244,7 @@ export function TrackTimeline({
 }: {
   storageScope?: string;
   readOnly?: boolean;
+  personalRecording?: boolean;
   tracks: TimelineTrack[];
   loaded: boolean;
   saveLabel: string;
@@ -654,7 +656,7 @@ export function TrackTimeline({
       <header className="studio-heading">
         <div className="studio-heading-info">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h2>작업실</h2>
+            <h2>{personalRecording ? '녹음실' : '작업실'}</h2>
             {!readOnly && (
               <button
                 type="button"
@@ -718,7 +720,7 @@ export function TrackTimeline({
               onClick={onSave}
               disabled={!loaded || saving || refreshing || !dirty || t.recording || t.requesting}
             >
-              {saving ? '저장 중…' : '변경사항 공유하기'}
+              {saving ? '저장 중…' : personalRecording ? '이 기기에 저장' : '변경사항 공유하기'}
             </button>
           )}
         </div>
