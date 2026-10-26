@@ -221,7 +221,8 @@ export function TrackTimeline({
   onMoveToNewTrack,
   onSave,
   onRefresh,
-  onOpenEditor,
+  onOpenLibrary,
+  revealPosition,
   refreshing,
   saving,
   dirty,
@@ -238,7 +239,6 @@ export function TrackTimeline({
   transport: t,
 }: {
   readOnly?: boolean;
-  onOpenEditor?: () => void;
   tracks: TimelineTrack[];
   loaded: boolean;
   saveLabel: string;
@@ -261,6 +261,8 @@ export function TrackTimeline({
   onMoveToNewTrack: (id: string, offset: number) => void;
   onSave: () => void;
   onRefresh: () => void;
+  onOpenLibrary?: () => void;
+  revealPosition?: { time: number };
   refreshing: boolean;
   saving: boolean;
   dirty: boolean;
@@ -352,6 +354,7 @@ export function TrackTimeline({
   const [magnetic, setMagnetic] = useState(true);
   const [follow, setFollow] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [filter, setFilter] = useState('ALL');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const selectedClips = tracks.flatMap(trackClips).filter((clip) => selectedIds.includes(clip.id));
@@ -593,6 +596,19 @@ export function TrackTimeline({
       element.scrollLeft = Math.max(0, x - available * 0.25);
   }, [t.position, t.playing, follow, zoom]);
   useEffect(() => {
+    if (!revealPosition) return;
+    setCollapsed(false);
+    const frame = requestAnimationFrame(() => {
+      const element = viewport.current;
+      if (!element) return;
+      const available = Math.max(1, element.clientWidth - 214);
+      element.scrollLeft = Math.max(0, revealPosition.time * zoom - available * 0.35);
+      element.scrollTop = 0;
+      element.closest('.studio-console')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [revealPosition, zoom]);
+  useEffect(() => {
     if (selectedClips.length < 2) return;
     const clear = (event: PointerEvent) => {
       if (event.ctrlKey || event.metaKey) return;
@@ -612,20 +628,23 @@ export function TrackTimeline({
   };
   const editor = (
     <section
-      className={`track-studio ${expanded ? 'is-expanded' : ''} ${readOnly ? 'is-readonly' : ''}`}
+      className={`track-studio ${expanded ? 'is-expanded' : ''} ${readOnly ? 'is-readonly' : ''} ${collapsed ? 'is-collapsed' : ''}`}
       aria-label={readOnly ? '사운드 트랙 플레이어' : '트랙 편집기'}
     >
       <header className="studio-heading">
         <div className="studio-heading-info">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h2>사운드 트랙</h2>
+            <h2>작업실</h2>
             {!readOnly && (
               <button
                 type="button"
                 aria-label="DAW 도움말 열기"
                 title="DAW 도움말"
                 className="studio-help-button"
-                onClick={() => setDawHelpOpen(true)}
+                onClick={() => {
+                  setCollapsed(false);
+                  setDawHelpOpen(true);
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -662,14 +681,14 @@ export function TrackTimeline({
           className="studio-heading-actions"
           style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}
         >
+          {onOpenLibrary && (
+            <button type="button" onClick={onOpenLibrary}>
+              클립 보관함
+            </button>
+          )}
           <button type="button" disabled={playbackBusy} onClick={onRefresh}>
             {refreshing ? '새로고침 중…' : '새로고침'}
           </button>
-          {readOnly && onOpenEditor && (
-            <button type="button" className="studio-open-editor" onClick={onOpenEditor}>
-              사운드 트랙 편집 <span aria-hidden="true">↗</span>
-            </button>
-          )}
           {!readOnly && (
             <button
               type="button"
@@ -745,6 +764,21 @@ export function TrackTimeline({
             <strong>
               {clock(t.duration)}.{String(Math.floor((t.duration % 1) * 100)).padStart(2, '0')}
             </strong>
+            <button
+              type="button"
+              className="studio-collapse"
+              title={collapsed ? 'DAW 펼치기' : 'DAW 접기'}
+              aria-label={collapsed ? 'DAW 펼치기' : 'DAW 접기'}
+              aria-expanded={!collapsed}
+              onClick={() => setCollapsed((value) => !value)}
+            >
+              {collapsed ? '자세히 보기' : '간략히'}
+              <span
+                style={{ display: 'flex', transform: collapsed ? undefined : 'rotate(180deg)' }}
+              >
+                <AppIcon name="chevron-down" size={18} />
+              </span>
+            </button>
           </div>
         </div>
         <div className="studio-clickbar">
@@ -1862,7 +1896,7 @@ export function TrackTimeline({
                   ? tracks.length
                     ? '이 세션의 트랙이 없어요'
                     : readOnly
-                      ? '저장된 트랙이 없어요. 사운드 트랙 편집에서 음원을 추가해주세요.'
+                      ? '저장된 트랙이 없어요.'
                       : '트랙을 추가해 주세요'
                   : ''}
               </div>
@@ -1908,13 +1942,24 @@ export function TrackTimeline({
         <input
           className="studio-accessible-seek"
           aria-label="재생 위치"
+          title={
+            t.loop && t.loopEnd > t.loopStart
+              ? `반복 구간 ${clock(t.loopStart)} ~ ${clock(t.loopEnd)}`
+              : undefined
+          }
+          style={{
+            background:
+              t.loop && t.duration > 0 && t.loopEnd > t.loopStart
+                ? `linear-gradient(to right, #515e56 0%, #515e56 ${Math.max(0, Math.min(100, (t.loopStart / t.duration) * 100))}%, #83bd9a ${Math.max(0, Math.min(100, (t.loopStart / t.duration) * 100))}%, #83bd9a ${Math.max(0, Math.min(100, (t.loopEnd / t.duration) * 100))}%, #515e56 ${Math.max(0, Math.min(100, (t.loopEnd / t.duration) * 100))}%, #515e56 100%)`
+                : '#515e56',
+          }}
           type="range"
           min="0"
           max={t.duration || 1}
           step="0.01"
           value={Math.min(t.position, t.duration)}
           disabled={!t.duration || t.recording || t.requesting}
-          onChange={(event) => seekPosition(Number(event.target.value))}
+          onChange={(event) => t.onSeek(Number(event.target.value))}
         />
       </div>
       {!!error && (

@@ -1,4 +1,6 @@
 export type AppIconName =
+  | 'send'
+  | 'share'
   | 'bell'
   | 'calendar'
   | 'chevron-down'
@@ -25,6 +27,9 @@ interface AppIconProps {
 }
 
 const drawings: Record<AppIconName, string> = {
+  send: '<path d="m22 2-7 20-4-9-9-4 20-7ZM22 2 11 13"/>',
+  share:
+    '<path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>',
   logo: '<path d="M9 18V6.8L19 4v10.2"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="14.2" r="2.5"/>',
   home: '<path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9M9 20v-6h6v6"/>',
   sparkles:

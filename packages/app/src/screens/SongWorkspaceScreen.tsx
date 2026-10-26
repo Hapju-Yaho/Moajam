@@ -1,6 +1,6 @@
-import { theme } from '@moajam/ui';
-import { useState } from 'react';
-import { useWindowDimensions, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, useWindowDimensions, View } from 'react-native';
+import { AppIcon } from '../components/icons';
 import { AppShell } from '../components/AppShell';
 import { WorkspaceSyncControls } from '../components/WorkspaceSyncControls';
 import {
@@ -11,15 +11,11 @@ import {
   Heading,
   Meta,
   PageHeading,
-  Pill,
-  PillText,
   Surface,
 } from '../components/ProductUI';
 import { SongActions } from '../components/SongActions';
 import { ReferenceVideo } from '../components/ReferenceVideo';
-import { Discussion } from '../components/Discussion';
 import { SongPdfLibrary } from '../components/SongPdfLibrary';
-import { SongScoreViewer } from '../components/SongScoreViewer';
 import { PracticeStudio } from '../components/PracticeStudio';
 import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
 import { buildAppPath, type ScreenProps, type SongTab } from '../navigation';
@@ -28,12 +24,6 @@ import { SongOverview, type Arrangement } from '../components/song/SongOverview'
 import { SongHistory } from '../components/song/SongHistory';
 import type { SongCheck } from '../components/song/SongChecks';
 
-const tabs = [
-  ['discussion', '곡 의견'],
-  ['scores', '악보 보기'],
-  ['tracks', '사운드 트랙'],
-  ['overview', '곡 정보·합주 기록'],
-] as const;
 export function SongWorkspaceScreen({
   navigate,
   entityId,
@@ -44,16 +34,14 @@ export function SongWorkspaceScreen({
   assetId,
 }: ScreenProps) {
   const tab: SongTab =
-    requestedTab === 'main'
-      ? 'discussion'
-      : requestedTab === 'resources'
-        ? 'scores'
-        : requestedTab === 'practice'
-          ? 'tracks'
-          : requestedTab === 'history'
-            ? 'overview'
-            : requestedTab;
-  const { adoptedSongs, workspace, workspaceId, currentUserId, rehearsals } = useMockAppState();
+    requestedTab === 'resources'
+      ? 'scores'
+      : requestedTab === 'practice'
+        ? 'tracks'
+        : requestedTab === 'history'
+          ? 'overview'
+          : requestedTab;
+  const { adoptedSongs, workspaceId, currentUserId, rehearsals } = useMockAppState();
   const song = adoptedSongs.find((item) => item.id === entityId);
   const [arrangement] = useWorkspaceValue<Arrangement>(`song/${entityId}/arrangement`, {
     key: '',
@@ -62,6 +50,10 @@ export function SongWorkspaceScreen({
   });
   const [checks, setChecks] = useWorkspaceValue<SongCheck[]>(`song/${entityId}/checks`, []);
   const [message, setMessage] = useState('');
+  const [overviewOpen, setOverviewOpen] = useState(tab === 'overview');
+  useEffect(() => {
+    setOverviewOpen(tab === 'overview');
+  }, [entityId, tab, focusId]);
   const { width } = useWindowDimensions();
   const wideHero = width >= 720;
   if (!song)
@@ -75,7 +67,6 @@ export function SongWorkspaceScreen({
         </Surface>
       </AppShell>
     );
-  const selectTab = (songTab: SongTab) => navigate('song', { id: song.id, workspaceId, songTab });
   const sessions = rehearsals.filter((event) => event.songIds?.includes(song.id));
   const nextSession = sessions
     .filter((event) => !event.cancelled && new Date(`${event.date}T${event.end}`) >= new Date())
@@ -88,12 +79,12 @@ export function SongWorkspaceScreen({
       songTab={tab}
       hideSyncControls
     >
+      <WorkspaceSyncControls>
+        <ActionButton secondary compact onPress={() => navigate('songs', { workspaceId })}>
+          곡 변경
+        </ActionButton>
+      </WorkspaceSyncControls>
       <Surface>
-        <WorkspaceSyncControls>
-          <Meta style={{ color: theme.colors.primary }}>
-            {workspace?.name} · 참여곡{song.archived ? ' · 보관됨' : ''}
-          </Meta>
-        </WorkspaceSyncControls>
         <View style={{ flexDirection: wideHero ? 'row' : 'column', gap: 20 }}>
           {!!song.referenceUrl && (
             <View style={{ width: 220, maxWidth: '100%', flexShrink: 0 }}>
@@ -108,135 +99,137 @@ export function SongWorkspaceScreen({
             </View>
           )}
           <View style={{ flex: 1, minWidth: 0, gap: 14 }}>
-            <FlexBetween>
+            <FlexBetween style={{ flexWrap: 'wrap', gap: 12 }}>
               <PageHeading style={{ flex: 1 }}>{song.title}</PageHeading>
-              <SongActions song={song} onDeleted={() => navigate('songs', { workspaceId })} />
+              <FlexRow wrap>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="곡 링크 공유"
+                  onPress={() =>
+                    void shareLink(
+                      buildAppPath(
+                        'song',
+                        { id: song.id, workspaceId },
+                        { route: 'song', workspaceId },
+                      ),
+                    )
+                      .then(() => setMessage('곡 링크를 공유했어요. 밴드 멤버만 볼 수 있어요.'))
+                      .catch(() =>
+                        setMessage('링크를 공유하지 못했어요. 주소창의 링크를 복사해주세요.'),
+                      )
+                  }
+                  style={{
+                    width: 34,
+                    height: 34,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: '#dce3ee',
+                  }}
+                >
+                  <AppIcon name="share" size={18} color="#566b8c" />
+                </Pressable>
+                <SongActions song={song} onDeleted={() => navigate('songs', { workspaceId })} />
+              </FlexRow>
             </FlexBetween>
             <Copy>
               {song.artist} · 내 파트 {song.participants?.[currentUserId]?.part || '미배정'} · Key{' '}
               {arrangement.key || '미정'} · BPM {arrangement.bpm || '미정'}
             </Copy>
-            <FlexRow>
+            <FlexRow wrap>
+              <SongPdfLibrary
+                key={`${song.id}/${assetId ?? ''}`}
+                songId={song.id}
+                title={song.title}
+                assetId={assetId}
+                buttonLabel="악보 보기"
+                initialOpen={tab === 'scores'}
+              />
               <ActionButton
                 secondary
                 compact
-                onPress={() =>
-                  void shareLink(
-                    buildAppPath(
-                      'song',
-                      { id: song.id, workspaceId, songTab: tab },
-                      { route: 'song', workspaceId },
-                    ),
-                  )
-                    .then(() => setMessage('곡 링크를 공유했어요. 밴드 멤버만 볼 수 있어요.'))
-                    .catch(() =>
-                      setMessage('링크를 공유하지 못했어요. 주소창의 링크를 복사해주세요.'),
-                    )
-                }
+                onPress={() => navigate('band-score-editor', { id: song.id, workspaceId })}
               >
-                곡 링크 공유
+                악보 작업
               </ActionButton>
             </FlexRow>
             {!!message && <Meta accessibilityLiveRegion="polite">{message}</Meta>}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: overviewOpen }}
+              onPress={() => setOverviewOpen((open) => !open)}
+              style={{
+                alignSelf: 'flex-end',
+                marginTop: 'auto',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 7,
+                paddingTop: 10,
+              }}
+            >
+              <View style={{ transform: [{ rotate: overviewOpen ? '180deg' : '0deg' }] }}>
+                <AppIcon name="chevron-down" size={18} color="#566b8c" />
+              </View>
+              <Meta>{overviewOpen ? '곡 정보·합주 기록 닫기' : '곡 정보·합주 기록 보기'}</Meta>
+            </Pressable>
           </View>
         </View>
+
+        {overviewOpen && (
+          <>
+            <SongOverview song={song} />
+            <SongHistory songId={song.id} navigate={navigate} />
+            {nextSession && (
+              <Surface>
+                <Heading>다음 합주</Heading>
+                <Copy>{nextSession.title}</Copy>
+                <Meta>
+                  {nextSession.date} · {nextSession.start}–{nextSession.end} ·{' '}
+                  {nextSession.place || '장소 미정'}
+                </Meta>
+                <ActionButton
+                  secondary
+                  onPress={() => navigate('rehearsals', { id: nextSession.id, workspaceId })}
+                >
+                  합주 일정 보기
+                </ActionButton>
+              </Surface>
+            )}
+          </>
+        )}
       </Surface>
-      <FlexRow wrap>
-        {tabs.map(([value, label]) => (
-          <Pill
-            key={value}
-            accessibilityRole="button"
-            accessibilityState={{ selected: tab === value }}
-            active={tab === value}
-            onPress={() => selectTab(value)}
-          >
-            <PillText active={tab === value}>{label}</PillText>
-          </Pill>
-        ))}
-      </FlexRow>
-      {tab === 'discussion' && (
-        <>
-          <FlexBetween>
-            <Heading>곡 의견</Heading>
-            <ActionButton secondary compact onPress={() => selectTab('tracks')}>
-              시간별 피드백 →
-            </ActionButton>
-          </FlexBetween>
-          <Discussion
-            documentKey={`song/${song.id}/discussion`}
-            focusId={focusId}
-            linkedOpinionIds={checks
-              .map((item) => item.sourceOpinionId)
-              .filter((id): id is string => !!id)}
-            onCreateTask={(item) => {
-              setChecks((all) =>
-                all.some((check) => check.sourceOpinionId === item.id)
-                  ? all
-                  : [
-                      ...all,
-                      {
-                        id: `check-${Date.now()}`,
-                        label: (item.text || '의견에 첨부된 자료 확인').slice(0, 2000),
-                        done: false,
-                        assigneeId: currentUserId,
-                        sourceOpinionId: item.id,
-                      },
-                    ],
-              );
-              setMessage('준비할 일에 추가했어요. 곡 정보에서 확인할 수 있어요.');
-            }}
-          />
-          {nextSession && (
-            <Surface>
-              <Heading>다음 합주</Heading>
-              <Copy>{nextSession.title}</Copy>
-              <Meta>
-                {nextSession.date} · {nextSession.start}–{nextSession.end} ·{' '}
-                {nextSession.place || '장소 미정'}
-              </Meta>
-              <ActionButton
-                secondary
-                onPress={() => navigate('rehearsals', { id: nextSession.id, workspaceId })}
-              >
-                합주 일정 보기
-              </ActionButton>
-            </Surface>
-          )}
-        </>
-      )}
-      {tab === 'scores' && (
-        <>
-          <Surface>
-            <Heading>외부 PDF 악보</Heading>
-            <Meta>파트별 PDF를 추가하고 참고하세요. PDF 원본을 음표로 편집하지는 않아요.</Meta>
-            <SongPdfLibrary
-              key={`${song.id}/${assetId ?? ''}`}
-              songId={song.id}
-              title={song.title}
-              assetId={assetId}
-            />
-          </Surface>
-          <SongScoreViewer songId={song.id} navigate={navigate} />
-        </>
-      )}
-      {tab === 'tracks' && (
-        <PracticeStudio
-          key={`${workspaceId}/${song.id}`}
-          scopeKey={`${workspaceId}/${song.id}`}
-          bpm={Number(arrangement.bpm) || 120}
-          readOnly
-          feedback={feedback}
-          focusId={focusId}
-          focusTime={focusTime}
-          onOpenEditor={() => navigate('track-editor', { id: song.id, workspaceId })}
-        />
-      )}
-      {tab === 'overview' && (
-        <>
-          <SongOverview song={song} />
-          <SongHistory songId={song.id} navigate={navigate} />
-        </>
-      )}
+      <PracticeStudio
+        discussionInitiallyOpen={tab === 'discussion'}
+        discussionOptions={{
+          linkedOpinionIds: checks
+            .map((item) => item.sourceOpinionId)
+            .filter((id): id is string => !!id),
+          onCreateTask: (item) => {
+            setChecks((all) =>
+              all.some((check) => check.sourceOpinionId === item.id)
+                ? all
+                : [
+                    ...all,
+                    {
+                      id: `check-${Date.now()}`,
+                      label: (item.text || '의견에 첨부된 자료 확인').slice(0, 2000),
+                      done: false,
+                      assigneeId: currentUserId,
+                      sourceOpinionId: item.id,
+                    },
+                  ],
+            );
+            setMessage('준비할 일에 추가했어요. 곡 정보에서 확인할 수 있어요.');
+          },
+        }}
+        key={`${workspaceId}/${song.id}`}
+        scopeKey={`${workspaceId}/${song.id}`}
+        bpm={Number(arrangement.bpm) || 120}
+        feedback={feedback}
+        focusId={focusId}
+        focusTime={focusTime}
+      />
     </AppShell>
   );
 }

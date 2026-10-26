@@ -183,6 +183,23 @@
   color: #9faea5;
   font-size: 10px;
 }
+.studio-length .studio-collapse {
+  justify-self: end;
+  min-height: 24px;
+  padding: 2px 7px;
+}
+.studio-length .studio-collapse span {
+  color: inherit;
+}
+.track-studio.is-collapsed
+  .studio-console
+  > :not(.studio-transport):not(.studio-footer):not(.studio-accessible-seek) {
+  display: none;
+}
+.track-studio.is-collapsed .studio-accessible-seek {
+  display: block;
+  margin-top: 14px;
+}
 .studio-clickbar {
   display: flex;
   align-items: center;
@@ -682,6 +699,38 @@
   width: calc(100% - 24px);
   margin: 0 12px 12px;
 }
+.studio-console input.studio-accessible-seek {
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+}
+.studio-accessible-seek::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+}
+.studio-accessible-seek::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  border: 2px solid #29312c;
+  border-radius: 50%;
+  background: #e0f1e5;
+}
+.studio-accessible-seek::-moz-range-track {
+  height: 6px;
+  background: transparent;
+}
+.studio-accessible-seek::-moz-range-progress {
+  background: transparent;
+}
+.studio-accessible-seek::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #29312c;
+  border-radius: 50%;
+  background: #e0f1e5;
+}
 .studio-error {
   white-space: pre-wrap;
   padding: 10px 14px;
@@ -780,11 +829,44 @@
   outline-offset: -2px;
 }
 
-.track-studio button.studio-share {
+.track-studio .studio-heading-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+}
+.track-studio .studio-heading-actions button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid #b9cdfc;
+  border-radius: 9px;
+  background: white;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+}
+.track-studio .studio-heading-actions button.studio-share {
+  padding-inline: 15px;
   background: #2563eb;
   border-color: #2563eb;
   color: white;
-  font-weight: 600;
+}
+.track-studio .studio-heading-actions button:hover:not(:disabled) {
+  background: #f0f5ff;
+}
+.track-studio .studio-heading-actions button.studio-share:hover:not(:disabled) {
+  background: #2859c4;
+  border-color: #2859c4;
+}
+.track-studio .studio-heading-actions button:disabled {
+  opacity: 0.45;
+}
+.track-studio .studio-heading-actions button:focus-visible {
+  outline-color: #2563eb;
 }
 .studio-ruler {
   touch-action: none;
@@ -1023,29 +1105,6 @@
   flex-shrink: 0;
   align-items: center;
 }
-.track-studio.is-readonly .studio-heading-actions button {
-  border: 1px solid #dce3ee;
-  background: #fff;
-  color: #52627a;
-  font-size: 13px;
-  min-height: 38px;
-  padding: 8px 13px;
-  border-radius: 10px;
-  white-space: nowrap;
-}
-.track-studio.is-readonly .studio-heading-actions .studio-open-editor {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: #386ce4;
-  border-color: #386ce4;
-  color: #fff;
-  font-weight: 600;
-  box-shadow: 0 3px 8px #386ce420;
-}
-.track-studio.is-readonly .studio-heading-actions .studio-open-editor:hover {
-  background: #2859c4;
-}
 @media (max-width: 700px) {
   .track-studio.is-readonly .studio-heading {
     padding: 12px;
@@ -1059,9 +1118,5 @@
   }
   .track-studio.is-readonly .studio-heading-info h2 {
     font-size: 15px;
-  }
-  .track-studio.is-readonly .studio-heading-actions button {
-    padding: 8px 10px;
-    font-size: 12px;
   }
 }

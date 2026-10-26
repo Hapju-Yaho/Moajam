@@ -1,4 +1,4 @@
-import { useNotificationFocus } from '../lib/useNotificationFocus';
+import { Discussion, type DiscussionOptions } from './Discussion';
 import { useUndoState } from '../lib/useUndoState';
 import { mergeClips } from '../lib/clipMerge.web';
 import { MidiClipEditor } from './MidiClipEditor.web';
@@ -16,12 +16,13 @@ import {
 import { clientId } from '../lib/clientId';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useIdentity } from '../state/Identity';
-import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
+import { useMockAppState } from '../state/MockAppState';
 import { serverConfigured } from '../lib/remote';
 import { savePersonalClip } from '../lib/personalClipLibrary.web';
 import { usePreferences } from '../state/preferences';
 import { readMedia, writeMedia } from '../lib/mediaStore';
-import { ActionButton, Copy, FlexRow, Heading, Meta, Surface } from './ProductUI';
+import { ActionButton, Copy, FlexRow, Surface } from './ProductUI';
+import { AppIcon } from './icons';
 import { ClipLibrary } from './ClipLibrary.web';
 import { archiveClipAudio } from '../lib/clipArchive.web';
 import { validateAudioFile, type TrackPart } from '../lib/trackParts';
@@ -61,17 +62,19 @@ export function PracticeStudio({
   bpm,
   feedback,
   readOnly = false,
-  onOpenEditor,
   focusId,
   focusTime,
+  discussionOptions,
+  discussionInitiallyOpen = false,
 }: {
   scopeKey: string;
   bpm?: number;
   feedback?: boolean;
   readOnly?: boolean;
-  onOpenEditor?: () => void;
   focusId?: string;
   focusTime?: number;
+  discussionOptions?: DiscussionOptions;
+  discussionInitiallyOpen?: boolean;
 }) {
   const feedbackRef = useRef<HTMLDivElement>(null);
   const userId = useIdentity();
@@ -93,11 +96,15 @@ export function PracticeStudio({
   const [armed, setArmed] = useState<string | null>(null);
   const clickContext = useRef<AudioContext | null>(null);
   const countAbort = useRef<AbortController | null>(null);
-  const { workspaceId, members, canManage } = useMockAppState();
-  const [sharedNotes, setSharedNotes] = useWorkspaceValue<(Note & { authorId: string })[]>(
-    `song/${scopeKey.split('/').at(-1)}/feedback`,
-    [],
+  const { workspaceId } = useMockAppState();
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [revealPosition, setRevealPosition] = useState<{ time: number }>();
+  const [discussionOpen, setDiscussionOpen] = useState(
+    discussionInitiallyOpen || !!feedback || !!focusId,
   );
+  useEffect(() => {
+    if (discussionInitiallyOpen || feedback || focusId) setDiscussionOpen(true);
+  }, [discussionInitiallyOpen, feedback, focusId]);
   const [libraryVersion, setLibraryVersion] = useState(0);
   const [editingMidi, setEditingMidi] = useState<TimelineClip | null>(null);
   const [importTrack, setImportTrack] = useState<string | null>(null);
@@ -131,10 +138,7 @@ export function PracticeStudio({
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const appliedFocus = useRef('');
-  useNotificationFocus(
-    focusId ? `track-feedback-${focusId}` : undefined,
-    loaded && sharedNotes.some((note) => note.id === focusId),
-  );
+
   useEffect(() => {
     const key = `${scopeKey}/${focusId ?? ''}/${focusTime ?? ''}`;
     if (
@@ -156,7 +160,6 @@ export function PracticeStudio({
   const [requesting, setRequesting] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState('');
-  const [draft, setDraft] = useState('');
   const playback = useRef<ClipPlayback | null>(null);
   const mix = useRef({ tracks, solo, masterVolume });
   mix.current = { tracks, solo, masterVolume };
@@ -871,7 +874,8 @@ export function PracticeStudio({
       <div inert={!!dialog || refreshing} style={{ display: 'contents' }}>
         <TrackTimeline
           readOnly={readOnly}
-          onOpenEditor={onOpenEditor}
+          onOpenLibrary={() => setLibraryOpen(true)}
+          revealPosition={revealPosition}
           tracks={tracks}
           loaded={loaded && !refreshing && !dialog}
           saveLabel={
@@ -1222,7 +1226,45 @@ export function PracticeStudio({
             }}
           />
         )}
-        {!readOnly && <ClipLibrary version={libraryVersion} />}
+        <ScheduleDialog
+          visible={libraryOpen}
+          label="클립 보관함"
+          onClose={() => setLibraryOpen(false)}
+        >
+          {libraryOpen && (
+            <div className="studio-confirm-overlay" onClick={() => setLibraryOpen(false)}>
+              <div
+                className="studio-confirm-card"
+                style={{ maxHeight: '85vh', overflowY: 'auto', width: 'min(900px, 95vw)' }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 12,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <h2>클립 보관함</h2>
+                    <ActionButton
+                      secondary
+                      compact
+                      onPress={() => setLibraryVersion((version) => version + 1)}
+                    >
+                      새로고침
+                    </ActionButton>
+                  </div>
+                  <ActionButton secondary compact onPress={() => setLibraryOpen(false)}>
+                    닫기
+                  </ActionButton>
+                </div>
+                <ClipLibrary version={libraryVersion} expanded />
+              </div>
+            </div>
+          )}
+        </ScheduleDialog>
         <ScheduleDialog
           visible={!!importTrack}
           label="클립 가져오기"
@@ -1249,119 +1291,61 @@ export function PracticeStudio({
             </div>
           )}
         </ScheduleDialog>
-        <div id="practice-feedback" ref={feedbackRef} tabIndex={-1} aria-label="세부 피드백">
+        <div id="practice-feedback" ref={feedbackRef} tabIndex={-1} aria-label="곡 의견">
           <Surface>
-            <FlexRow>
-              <Heading>세부 피드백</Heading>
-              <Meta>원하는 시간대로 커서를 올려두고, 해당 부분에 대한 의견을 남겨보아요.</Meta>
-            </FlexRow>
-            <FlexRow>
-              <Meta>현재 구간 {timeLabel(position)}</Meta>
-              <input
-                aria-label="연습 메모"
-                value={draft}
-                placeholder="이 구간에서 기억할 것"
-                onChange={(event) => setDraft(event.target.value)}
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  padding: 12,
-                  border: '1px solid #dce4ef',
-                  borderRadius: 8,
-                }}
-              />
-              <ActionButton
-                secondary
-                disabled={!loaded || !draft.trim()}
-                onPress={() => {
-                  if (!draft.trim()) return;
-                  setSharedNotes((all) => [
-                    ...all,
-                    { id: clientId(), time: position, text: draft.trim(), authorId: userId },
-                  ]);
-                  setDraft('');
-                }}
-              >
-                피드백 등록
-              </ActionButton>
-            </FlexRow>
-            {notes.length > 0 && (
-              <details>
-                <summary>기존 개인 메모 (나만 보기)</summary>
-                {notes.map((note) => (
-                  <FlexRow key={note.id}>
-                    <ActionButton secondary compact onPress={() => seek(note.time)}>
-                      {timeLabel(note.time)}
-                    </ActionButton>
-                    <Copy>{note.text}</Copy>
-                  </FlexRow>
-                ))}
-              </details>
-            )}
-            {sharedNotes.map((note) => {
-              const member = members.find((item) => item.id === note.authorId);
-              const name = member?.name ?? '탈퇴한 멤버';
-              const photo = note.authorId === userId ? preferences.photo : member?.photo;
-              return (
-                <FlexRow
-                  key={note.id}
-                  nativeID={`track-feedback-${note.id}`}
-                  style={
-                    focusId === note.id
-                      ? {
-                          backgroundColor: '#e4efff',
-                          borderRadius: 10,
-                          padding: 10,
-                          borderWidth: 1,
-                          borderColor: '#5986ed',
-                        }
-                      : undefined
-                  }
-                >
-                  <span
-                    title={name}
-                    aria-label={name}
-                    style={{
-                      width: 28,
-                      height: 28,
-                      flexShrink: 0,
-                      borderRadius: '50%',
-                      overflow: 'hidden',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: member?.color ?? '#e2e8f0',
-                      fontSize: 11,
-                    }}
-                  >
-                    {photo ? (
-                      <img
-                        src={photo}
-                        alt={name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    ) : (
-                      name.slice(-2)
-                    )}
-                  </span>
-                  <ActionButton secondary compact onPress={() => seek(note.time)}>
-                    {timeLabel(note.time)}
-                  </ActionButton>
-                  <Copy style={{ flex: 1 }}>{note.text}</Copy>
-                  <Meta>{name}</Meta>
-                  <ActionButton
-                    secondary
-                    compact
-                    disabled={note.authorId !== userId && !canManage}
-                    onPress={() =>
-                      setSharedNotes((all) => all.filter((item) => item.id !== note.id))
-                    }
-                  >
-                    삭제
-                  </ActionButton>
-                </FlexRow>
-              );
-            })}
+            <button
+              type="button"
+              onClick={() => setDiscussionOpen((open) => !open)}
+              aria-expanded={discussionOpen}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                alignSelf: 'flex-start',
+                border: 0,
+                background: 'transparent',
+                color: '#566b8c',
+                padding: '10px 0',
+                cursor: 'pointer',
+                font: 'inherit',
+              }}
+            >
+              <span style={{ transform: discussionOpen ? 'rotate(180deg)' : undefined }}>
+                <AppIcon name="chevron-down" size={18} />
+              </span>
+              {discussionOpen ? '곡 의견 닫기' : '곡 의견 보기'}
+            </button>
+            {
+              <>
+                <Discussion
+                  showOpinions={discussionOpen}
+                  documentKey={`song/${scopeKey.split('/').at(-1)}/discussion`}
+                  legacyDocumentKey={`song/${scopeKey.split('/').at(-1)}/feedback`}
+                  focusId={focusId}
+                  timeline={{
+                    position,
+                    onSeek: (time) => {
+                      seek(time);
+                      setRevealPosition({ time: positionRef.current });
+                    },
+                  }}
+                  {...discussionOptions}
+                />
+                {discussionOpen && notes.length > 0 && (
+                  <details>
+                    <summary>기존 개인 메모 (나만 보기)</summary>
+                    {notes.map((note) => (
+                      <FlexRow key={note.id}>
+                        <ActionButton secondary compact onPress={() => seek(note.time)}>
+                          {timeLabel(note.time)}
+                        </ActionButton>
+                        <Copy>{note.text}</Copy>
+                      </FlexRow>
+                    ))}
+                  </details>
+                )}
+              </>
+            }
           </Surface>
         </div>
       </div>

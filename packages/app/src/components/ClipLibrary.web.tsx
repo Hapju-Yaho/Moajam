@@ -159,10 +159,12 @@ export function ClipLibrary({
   version,
   onChoose,
   kind,
+  expanded = false,
 }: {
   version: number;
   onChoose?: (blob: Blob, name: string) => void | Promise<void>;
   kind?: 'audio' | 'midi';
+  expanded?: boolean;
 }) {
   const disclosure = useRef<HTMLDetailsElement>(null);
   const disclosureAnimation = useRef<Animation | null>(null);
@@ -264,7 +266,7 @@ export function ClipLibrary({
       <details
         ref={disclosure}
         style={{ position: 'relative', overflow: 'hidden' }}
-        open={onChoose ? true : undefined}
+        open={onChoose || expanded ? true : undefined}
         onToggle={(event) => {
           if (!event.currentTarget.open)
             event.currentTarget.querySelectorAll('audio').forEach((audio) => audio.pause());
@@ -274,10 +276,10 @@ export function ClipLibrary({
           className="clip-library-toggle"
           onClick={(event) => {
             event.preventDefault();
-            toggleDisclosure();
+            if (!expanded) toggleDisclosure();
           }}
           style={{
-            display: 'flex',
+            display: expanded ? 'none' : 'flex',
             alignItems: 'center',
             gap: 16,
             fontWeight: 600,

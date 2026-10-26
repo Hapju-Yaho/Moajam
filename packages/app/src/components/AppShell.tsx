@@ -183,11 +183,11 @@ const personalItems: typeof bandItems = [
 ];
 const toolItems: typeof bandItems = [
   { icon: 'songs', label: '악보 편집', route: 'tools' },
-  { icon: 'rehearsal', label: '사운드 트랙 편집', route: 'track-editor' },
+  { icon: 'rehearsal', label: '작업실', route: 'track-editor' },
 ];
 const pageTitles: Record<AppRoute, string> = {
   tools: '악보 편집',
-  'track-editor': '사운드 트랙 편집',
+  'track-editor': '작업실',
   'personal-home': '홈',
   'personal-rehearsals': '합주 일정',
   'personal-songs': '참여 곡',
@@ -327,13 +327,13 @@ export function AppShell({
       label: currentSong?.title ?? '곡 상세',
       onPress: songTab
         ? () =>
-            onNavigate('song', { id: entityId, workspaceId: workspace?.id, songTab: 'discussion' })
+            onNavigate('song', { id: entityId, workspaceId: workspace?.id, songTab: 'main' })
         : undefined,
     });
     const tabLabels: Partial<Record<SongTab, string>> = {
       discussion: '곡 의견',
       scores: '악보 보기',
-      tracks: '사운드 트랙',
+      tracks: '작업실',
       overview: '곡 정보·합주 기록',
     };
     if (songTab && tabLabels[songTab]) crumbs.push({ label: tabLabels[songTab]! });
