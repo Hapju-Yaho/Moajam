@@ -1,3 +1,4 @@
+import { clientId } from './clientId';
 import { api, serverConfigured, currentIdentity } from './remote';
 import { readMedia, writeMedia } from './mediaStore.web';
 import type { StoredScore } from './scoreVersions';
@@ -27,7 +28,7 @@ export async function listScoreProjects(
       );
       if (previous?.value.data) {
         rows.unshift({
-          id: crypto.randomUUID(),
+          id: clientId(),
           name: title.slice(0, 160),
           revision: 1,
           workspaceId: workspace,
@@ -68,7 +69,7 @@ export async function createScoreProject(
     if (rows.some((item) => !item.deleted && item.name.toLowerCase() === name.trim().toLowerCase()))
       throw new Error('같은 이름 프로젝트가 존재합니다.');
     const project = {
-      id: crypto.randomUUID(),
+      id: clientId(),
       workspaceId: workspace,
       songId: song,
       name: name.trim(),

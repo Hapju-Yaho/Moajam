@@ -1,3 +1,4 @@
+import { clientId } from './clientId';
 import { scorePartStaves } from './scoreParts';
 import {
   scoreBeat,
@@ -118,7 +119,7 @@ export function inputScoreMeasureRest(
   score: Score,
   part: string,
   bar: number,
-  makeId = () => crypto.randomUUID(),
+  makeId = () => clientId(),
 ): Score {
   if (!score.parts.includes(part)) throw new Error('입력할 악기를 선택해주세요.');
   const pair = scorePartStaves(score, part);
@@ -188,7 +189,7 @@ export function deleteScoreMeasureRest(
   score: Score,
   part: string,
   bar: number,
-  makeId = () => crypto.randomUUID(),
+  makeId = () => clientId(),
 ): Score {
   if (!scoreMeasureRestBars(score, part).has(bar)) return score;
   const pair = scorePartStaves(score, part);

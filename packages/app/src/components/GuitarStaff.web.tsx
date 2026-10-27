@@ -141,7 +141,7 @@ export function GuitarStaff({
   playbackPosition?: ScorePlaybackPosition;
   zoom: number;
   onSelect: (id: string, string?: number, beat?: number) => void;
-  onPartSelect?: (part: string, note?: string) => void;
+  onPartSelect?: (part: string, note?: string, position?: { beat: number; bar?: number }) => void;
   onAppend: (string: number, beat: number, bar?: number) => void;
   onChordSelect: (beat: number) => void;
   emptyBeat: number;

@@ -12,7 +12,7 @@ export function ScoreEnsemble({
 }: ComponentProps<typeof GuitarStaff> & {
   parts: string[];
   showPartLabels?: boolean;
-  onPartSelect?: (part: string, note?: string) => void;
+  onPartSelect?: (part: string, note?: string, position?: { beat: number; bar?: number }) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
@@ -83,26 +83,27 @@ export function ScoreEnsemble({
                     playbackBeat={active ? props.playbackBeat : null}
                     cursor={active ? props.cursor : null}
                     rangeIds={active ? props.rangeIds : []}
-                    editable={props.editable && active}
+                    editable={props.editable && (active || !!props.score.keyboardStaves?.[owner])}
                     onSelect={
                       active
                         ? props.onSelect
-                        : (id) => {
-                            if (props.editable) onPartSelect?.(part, id);
+                        : (id, _string, beat) => {
+                            if (props.editable)
+                              onPartSelect?.(part, id, beat === undefined ? undefined : { beat });
                           }
                     }
                     onChordSelect={
                       active
                         ? props.onChordSelect
-                        : () => {
-                            if (props.editable) onPartSelect?.(part);
+                        : (beat) => {
+                            if (props.editable) onPartSelect?.(part, undefined, { beat });
                           }
                     }
                     onAppend={
                       active
                         ? props.onAppend
-                        : () => {
-                            if (props.editable) onPartSelect?.(part);
+                        : (_string, beat, bar) => {
+                            if (props.editable) onPartSelect?.(part, undefined, { beat, bar });
                           }
                     }
                     onDeselect={active ? props.onDeselect : () => {}}

@@ -1,4 +1,6 @@
+import { clientId } from './clientId';
 import {
+  alignScoreMeasures,
   renameScorePart,
   removeScorePart,
   scoreInstrument,
@@ -62,9 +64,9 @@ export function addInstrumentPart(score: Score, name: string, instrument: string
   let next = renameScorePart(score, null, name);
   const right = name.trim();
   next = { ...next, instruments: { ...next.instruments, [right]: instrument } };
-  if (instrument === 'drums') return enableDrumVoices(next, right);
-  if (instrument !== 'piano') return next;
-  return enableKeyboardPart(next, right);
+  if (instrument === 'drums') return alignScoreMeasures(enableDrumVoices(next, right));
+  if (instrument !== 'piano') return alignScoreMeasures(next);
+  return alignScoreMeasures(enableKeyboardPart(next, right));
 }
 export function enableKeyboardPart(score: Score, right: string): Score {
   if (score.keyboardStaves?.[right]) return score;
@@ -84,11 +86,7 @@ export function enableKeyboardPart(score: Score, right: string): Score {
     },
   };
 }
-export function enableDrumVoices(
-  score: Score,
-  part: string,
-  makeId = () => crypto.randomUUID(),
-): Score {
+export function enableDrumVoices(score: Score, part: string, makeId = () => clientId()): Score {
   const upper = scorePartOwner(score, part);
   if (score.drumVoices?.[upper]) return score;
   if (score.keyboardStaves?.[upper]) throw new Error('키보드 파트는 드럼 성부로 바꿀 수 없어요.');

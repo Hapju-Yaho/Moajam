@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { soundfontInstruments, type SoundfontInstrumentId } from '../lib/soundfontCatalog';
+import { soundfontsForNotation, type SoundfontInstrumentId } from '../lib/soundfontCatalog';
 import { prepareSoundfontInstrument } from '../lib/soundfont.web';
 import { createScoreOutput, scheduleScoreNote } from '../lib/scoreAudio.web';
 import { ScoreBackingDisclosure } from './ScoreBackingDisclosure.web';
@@ -7,6 +7,7 @@ import { ScoreSettingsIcon } from './ScoreSettingsIcon.web';
 
 export function ScoreSoundfont({
   part,
+  notation = 'guitar',
   instrument,
   disabled,
   volume,
@@ -16,6 +17,7 @@ export function ScoreSoundfont({
   compact = false,
 }: {
   part: string;
+  notation?: string;
   instrument: SoundfontInstrumentId;
   disabled: boolean;
   volume: number;
@@ -99,6 +101,24 @@ export function ScoreSoundfont({
       setMessage(error instanceof Error ? error.message : '악기 소리를 불러오지 못했어요.');
     }
   };
+  const help = compact && (
+    <ScoreBackingDisclosure label="악기 안내 및 출처" help>
+      <p>
+        {usingRecording
+          ? '내 녹음은 전체 파트에 공통으로 적용돼요. 음색을 선택하면 파트별 가상악기로 돌아갑니다.'
+          : '파트마다 음색을 선택할 수 있어요. 미리 듣기에는 악보 재생 음량이 적용됩니다.'}
+      </p>
+      <p>FluidR3 · Frank Wen / MIDI.js Soundfonts · Benjamin Gleitzman</p>
+      <a href="/soundfonts/fluidr3/NOTICE.txt" target="_blank" rel="noreferrer">
+        출처 및 라이선스
+      </a>
+    </ScoreBackingDisclosure>
+  );
+  const previewButton = !usingRecording && (
+    <button type="button" disabled={disabled} onClick={() => void preview()}>
+      {previewing ? '미리 듣기 정지' : compact ? '▷ 미리 듣기' : '악기 미리 듣기'}
+    </button>
+  );
   return (
     <section
       className={compact ? 'score-sound-inline' : 'score-backing'}
@@ -106,58 +126,37 @@ export function ScoreSoundfont({
     >
       <div className="score-backing-row">
         {!compact && <strong>{part} 재생 악기</strong>}
-        <label>
+        <div className="score-sound-field">
           {compact ? (
-            <span>
-              <ScoreSettingsIcon /> <strong>음색</strong>
-              <small className="score-sample-scope">
-                {usingRecording ? '전체 파트 공통' : `현재 파트 · ${part}`}
-              </small>
-            </span>
+            <div className="score-sound-title">
+              <ScoreSettingsIcon /> <strong>악기</strong>
+              {help}
+            </div>
           ) : (
             '악기 선택'
           )}
-          <select
-            aria-label="악보 재생 악기 선택"
-            value={usingRecording ? 'recording' : instrument}
-            disabled={disabled}
-            onChange={(event) => {
-              stop();
-              onChange(event.target.value as SoundfontInstrumentId | 'recording');
-            }}
-          >
-            <option value="recording">내 악기 소리로 재생</option>
-            {['기타', '베이스', '건반·기타 악기', '퍼커션'].map((group) => (
-              <optgroup key={group} label={group}>
-                {soundfontInstruments
-                  .filter((item) => item.group === group)
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
-        {!usingRecording && (
-          <button type="button" disabled={disabled} onClick={() => void preview()}>
-            {previewing ? '미리 듣기 정지' : compact ? '▷ 미리 듣기' : '악기 미리 듣기'}
-          </button>
-        )}
-        {compact && (
-          <ScoreBackingDisclosure label="음색 안내 및 출처" help>
-            <p>
-              {usingRecording
-                ? '내 녹음은 전체 파트에 공통으로 적용돼요. 음색을 선택하면 파트별 가상악기로 돌아갑니다.'
-                : '파트마다 음색을 선택할 수 있어요. 미리 듣기에는 악보 재생 음량이 적용됩니다.'}
-            </p>
-            <p>FluidR3 · Frank Wen / MIDI.js Soundfonts · Benjamin Gleitzman</p>
-            <a href="/soundfonts/fluidr3/NOTICE.txt" target="_blank" rel="noreferrer">
-              출처 및 라이선스
-            </a>
-          </ScoreBackingDisclosure>
-        )}
+          <span className="score-sound-choice">
+            <select
+              aria-label="악보 재생 악기 선택"
+              value={usingRecording ? 'recording' : instrument}
+              disabled={disabled}
+              onChange={(event) => {
+                stop();
+                onChange(event.target.value as SoundfontInstrumentId | 'recording');
+              }}
+            >
+              {(!compact || usingRecording) && (
+                <option value="recording">내 악기 소리로 재생</option>
+              )}
+              {soundfontsForNotation(notation).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            {previewButton}
+          </span>
+        </div>
       </div>
       {!compact && (
         <>
