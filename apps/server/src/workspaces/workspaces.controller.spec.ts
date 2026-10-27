@@ -7,7 +7,17 @@ import type { StorageService } from '../media/storage.service.js';
 import type { SeparationService } from '../media/separation.service.js';
 import type { AuthenticatedUser } from '../common/auth/auth.service.js';
 import { isBandScore } from './score-policy.js';
-import { canWriteDocument } from './document-policy.js';
+import { canWriteDocument, isWorkspaceDocumentKey } from './document-policy.js';
+
+describe('song lyrics', () => {
+  it('accepts shared lyrics text and rejects oversized or malformed values', () => {
+    const key = 'song/song-1/lyrics';
+    assert.ok(isWorkspaceDocumentKey(key));
+    assert.ok(canWriteDocument(key, '', 'First verse\nChorus', 'member', false));
+    assert.equal(canWriteDocument(key, '', 'a'.repeat(50001), 'member', false), false);
+    assert.equal(canWriteDocument(key, '', { text: 'not text' }, 'member', true), false);
+  });
+});
 
 describe('band photo save failures', () => {
   for (const operation of ['create', 'update'] as const) {

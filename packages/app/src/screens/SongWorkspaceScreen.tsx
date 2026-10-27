@@ -16,6 +16,7 @@ import {
 import { SongActions } from '../components/SongActions';
 import { ReferenceVideo } from '../components/ReferenceVideo';
 import { SongPdfLibrary } from '../components/SongPdfLibrary';
+import { SongLyrics } from '../components/SongLyrics';
 import { PracticeStudio } from '../components/PracticeStudio';
 import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
 import { buildAppPath, type ScreenProps, type SongTab } from '../navigation';
@@ -155,6 +156,7 @@ export function SongWorkspaceScreen({
               >
                 악보 작업
               </ActionButton>
+              <SongLyrics key={song.id} songId={song.id} title={song.title} />
             </FlexRow>
             {!!message && <Meta accessibilityLiveRegion="polite">{message}</Meta>}
             <Pressable

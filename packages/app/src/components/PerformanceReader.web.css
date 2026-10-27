@@ -1,0 +1,128 @@
+.performance-reader {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #18211e;
+  color: #edf2ed;
+  box-sizing: border-box;
+}
+.performance-reader::backdrop {
+  background: #0009;
+}
+.performance-reader header,
+.performance-reader footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #26332c;
+  flex-wrap: wrap;
+}
+.performance-reader header h2 {
+  font-size: 18px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.performance-reader button,
+.performance-reader select,
+.performance-reader input {
+  font: inherit;
+}
+.performance-reader button {
+  border: 1px solid #718778;
+  border-radius: 8px;
+  padding: 8px 13px;
+  background: #3c5546;
+  color: #fff;
+  cursor: pointer;
+}
+.performance-reader button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.performance-reader a {
+  color: #a9d7ff;
+}
+.performance-reader label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.performance-reader-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.performance-reader-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  text-align: center;
+  overscroll-behavior: contain;
+}
+.performance-reader-stage canvas {
+  display: block;
+  margin: 0 auto;
+  box-shadow: 0 3px 20px #0006;
+}
+.performance-reader-error {
+  color: #ffd4d4;
+  padding: 12px;
+}
+.performance-reader textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  padding: 18px;
+  background: #fff;
+  color: #20354a;
+  border-radius: 10px;
+  font: 18px/1.8 sans-serif;
+  resize: none;
+}
+.lyrics-paper {
+  max-width: 1000px;
+  margin: auto;
+  padding: 20vh 12px 65vh;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: center;
+  line-height: 1.8;
+}
+.performance-reader-settings {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.performance-reader-settings input[type='range'] {
+  width: 110px;
+}
+.performance-reader-stage.is-editing {
+  display: flex;
+}
+.performance-reader-stage.is-editing textarea {
+  text-align: left;
+}
+@media (max-width: 600px) {
+  .performance-reader header,
+  .performance-reader footer {
+    padding: 10px;
+    gap: 8px;
+  }
+  .performance-reader-stage {
+    padding: 8px;
+  }
+  .performance-reader button {
+    padding: 7px 10px;
+  }
+}
