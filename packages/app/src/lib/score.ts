@@ -1,3 +1,4 @@
+import { clientId } from './clientId';
 import { resolveRhythmSlashes, guitarToneLabels, type GuitarTone } from './scoreGuitar';
 import {
   directionAt,
@@ -298,6 +299,8 @@ export type Score = {
   sync: Record<string, number>;
   instruments?: Record<string, string>;
   capos?: Record<string, number>;
+  keyboardTranspositions?: Record<string, number>;
+  keyboardTransposeNotation?: Record<string, boolean>;
   // Each keyboard has two independent timelines, presented as one logical part.
   keyboardStaves?: Record<string, string>;
   // Two independent drum timelines are drawn together on one percussion staff.
@@ -399,7 +402,7 @@ export function scoreExpressionPerformance(score: Score, part: string): Score {
       rows,
       scoreChordPositions(score, part),
       scoreInstrument(score, part).capo,
-      scoreInstrument(score, part).id === 'bass',
+      scoreInstrument(score, part).id.startsWith('bass'),
     );
   const notes = rows.map((note) => {
     const location = scoreMeasureAtBeat(score, part, at),
@@ -1131,7 +1134,10 @@ export const scoreInstruments = {
   drums: { label: '드럼 · 타악기 오선보', tuning: [] as number[], clef: 'percussion' },
   guitar: { label: '기타 · 표준 튜닝', tuning: [64, 59, 55, 50, 45, 40], clef: 'treble8' },
   dropD: { label: '기타 · Drop D', tuning: [64, 59, 55, 50, 45, 38], clef: 'treble8' },
+  guitarHalfDown: { label: '기타 · 하프 다운', tuning: [63, 58, 54, 49, 44, 39], clef: 'treble8' },
   bass: { label: '베이스 · 4현', tuning: [43, 38, 33, 28], clef: 'bass8' },
+  bassHalfDown: { label: '베이스 · 하프 다운', tuning: [42, 37, 32, 27], clef: 'bass8' },
+  bassDropD: { label: '베이스 · Drop D', tuning: [43, 38, 33, 26], clef: 'bass8' },
   standard: { label: '오선보 · 일반 악기', tuning: [] as number[], clef: 'treble' },
   piano: { label: '키보드 · 오른손', tuning: [] as number[], clef: 'treble' },
   pianoBass: { label: '키보드 · 왼손', tuning: [] as number[], clef: 'bass' },
@@ -1280,11 +1286,11 @@ export function setScoreRhythmSlash(score: Score, id: string, enabled: boolean):
     draft.notes.filter((n) => n.part === note.part),
     scoreChordPositions(draft, note.part),
     scoreInstrument(score, note.part).capo,
-    scoreInstrument(score, note.part).id === 'bass',
+    scoreInstrument(score, note.part).id.startsWith('bass'),
   ).find((n) => n.id === id)!;
   if (resolved.rest || !resolved.tones?.length)
     throw new Error(
-      scoreInstrument(score, note.part).id === 'bass'
+      scoreInstrument(score, note.part).id.startsWith('bass')
         ? '먼저 베이스 음이나 코드 이름을 입력해주세요.'
         : '앞에 코드 운지나 코드 이름을 입력해주세요.',
     );
@@ -1426,7 +1432,7 @@ export function deleteScorePosition(
   id: string,
   string?: number,
   beat?: number,
-  makeId = () => crypto.randomUUID(),
+  makeId = () => clientId(),
 ): Score {
   const note = score.notes.find((item) => item.id === id);
   if (!note) return score;
@@ -1509,6 +1515,19 @@ function blankScoreTime(part: string, length: number, makeId: () => string) {
   return notes;
 }
 
+// Keep every instrument's editable timeline as long as the longest part.
+export function alignScoreMeasures(score: Score, makeId = () => clientId()): Score {
+  const count = Math.max(1, ...score.parts.map((part) => scoreMeasureCount(score, part)));
+  const additions = score.parts.flatMap((part) => {
+    const used = score.notes
+      .filter((note) => note.part === part)
+      .reduce((sum, note) => scoreBeat(sum + note.beats), 0);
+    const remaining = scoreBeat(scoreMeasureStart(score, part, count) - used);
+    return remaining > 0 ? blankScoreTime(part, remaining, makeId) : [];
+  });
+  return additions.length ? { ...score, notes: [...score.notes, ...additions] } : score;
+}
+
 // Splice absolute time in one part; split sustained notes at the edit boundary.
 export function spliceScorePartTime(
   score: Score,
@@ -1571,7 +1590,7 @@ export function editScoreMeasure(
   score: Score,
   bar: number,
   action: 'insert' | 'delete',
-  makeId = () => crypto.randomUUID(),
+  makeId = () => clientId(),
 ): Score {
   const count = Math.max(...score.parts.map((part) => scoreMeasureCount(score, part)));
   if (
@@ -1717,6 +1736,35 @@ export function setScoreDuration(
   beats = scoreBeat(beats);
   offset = scoreBeat(offset);
   if (!current.blank) {
+    // Extending into empty editor beats fills that space instead of lengthening the bar.
+    const delta = scoreBeat(beats - current.beats);
+    const part = score.notes.filter((note) => note.part === current.part);
+    const index = part.indexOf(current);
+    const start = part.slice(0, index).reduce((sum, note) => scoreBeat(sum + note.beats), 0);
+    const location = scoreMeasureAtBeat(score, current.part, start);
+    const end = scoreMeasureStart(score, current.part, location.bar) + location.beats;
+    if (delta > 0 && start + beats <= end) {
+      let remaining = delta;
+      const replacements = new Map<string, ScoreNote | null>();
+      for (let i = index + 1; remaining > 0 && i < part.length && part[i].blank; i++) {
+        const blank = part[i],
+          consumed = Math.min(remaining, blank.beats);
+        replacements.set(
+          blank.id,
+          consumed === blank.beats ? null : { ...blank, beats: scoreBeat(blank.beats - consumed) },
+        );
+        remaining = scoreBeat(remaining - consumed);
+      }
+      if (!remaining) {
+        const notes = score.notes.flatMap((note) => {
+          if (note.id === id) return [{ ...note, beats }];
+          if (!replacements.has(note.id)) return [note];
+          const replacement = replacements.get(note.id);
+          return replacement ? [replacement] : [];
+        });
+        return retimeScore(score, notes, [current.part]);
+      }
+    }
     const notes = score.notes.map((note) => (note.id === id ? { ...note, beats } : note));
     return resizeDurationMeasure(
       score,
@@ -1898,7 +1946,7 @@ export function setScoreDotted(score: Score, ids: string[], enabled: boolean): S
       result,
       note.id,
       scoreBeat((enabled ? base * 1.5 : base) * (note.tuplet ? 2 / 3 : 1)),
-      () => crypto.randomUUID(),
+      () => clientId(),
     );
   }
   return result;
@@ -1946,7 +1994,7 @@ export function setScoreTriplet(score: Score, ids: string[], enabled: boolean): 
   const beats = scoreBeat(written * (enabled ? 2 / 3 : 1));
   let result = score;
   for (const note of [...selected].reverse()) {
-    result = setScoreDuration(result, note.id, beats, () => crypto.randomUUID());
+    result = setScoreDuration(result, note.id, beats, () => clientId());
     result = {
       ...result,
       notes: result.notes.map((item) =>
@@ -2026,6 +2074,8 @@ export function renameScorePart(score: Score, previous: string | null, input: st
     ),
     partMix: renamePartMap(score.partMix, previous, name),
     capos: renamePartMap(score.capos, previous, name),
+    keyboardTranspositions: renamePartMap(score.keyboardTranspositions, previous, name),
+    keyboardTransposeNotation: renamePartMap(score.keyboardTransposeNotation, previous, name),
     multiMeasureRests: renamePartMap(score.multiMeasureRests, previous, name),
     directions: renamePartMap(score.directions, previous, name),
     guitarToneChanges: renamePartMap(score.guitarToneChanges, previous, name),
@@ -2263,6 +2313,12 @@ export function removeScorePart(score: Score, part: string): Score {
     ),
     parts: score.parts.filter((name) => name !== part),
     capos: Object.fromEntries(Object.entries(score.capos ?? {}).filter(([name]) => name !== part)),
+    keyboardTranspositions: Object.fromEntries(
+      Object.entries(score.keyboardTranspositions ?? {}).filter(([name]) => name !== part),
+    ),
+    keyboardTransposeNotation: Object.fromEntries(
+      Object.entries(score.keyboardTransposeNotation ?? {}).filter(([name]) => name !== part),
+    ),
     keyboardStaves: Object.fromEntries(
       Object.entries(score.keyboardStaves ?? {}).filter(
         ([right, left]) => right !== part && left !== part,
@@ -2954,7 +3010,7 @@ export function scoreToMusicXml(score: Score): string {
               writtenNotes,
               scoreChordPositions(score, name),
               scoreInstrument(score, name).capo,
-              scoreInstrument(score, name).id === 'bass',
+              scoreInstrument(score, name).id.startsWith('bass'),
             );
       const slurNumbers = new Map<string, number>();
       const activeSlurs = new Map<number, number>();

@@ -19,6 +19,8 @@ import { LocalFilesController } from './media/local-files.controller.js';
 import { YouTubeController } from './media/youtube.controller.js';
 import { DawProjectsController } from './workspaces/daw-projects.controller.js';
 import { DawProjectsService } from './workspaces/daw-projects.service.js';
+import { ScoreProjectsService } from './workspaces/score-projects.service.js';
+import { ScoreProjectsController } from './workspaces/score-projects.controller.js';
 
 @Module({
   imports: [
@@ -32,6 +34,7 @@ import { DawProjectsService } from './workspaces/daw-projects.service.js';
     DatabaseModule,
   ],
   controllers: [
+    ScoreProjectsController,
     DawProjectsController,
     HealthController,
     WorkspacesController,
@@ -45,6 +48,7 @@ import { DawProjectsService } from './workspaces/daw-projects.service.js';
     YouTubeController,
   ],
   providers: [
+    ScoreProjectsService,
     StorageService,
     SeparationService,
     ProfilePhotoService,

@@ -244,6 +244,15 @@ export function validateScoreDocument(value: unknown): Score {
       if (!Array.isArray(value) || value.length > 32000) throw invalid();
       return value.map((n) => integer(n, 1, 16));
     });
+  if (row.keyboardTransposeNotation !== undefined)
+    score.keyboardTransposeNotation = map(row.keyboardTransposeNotation, isPart, (value) => {
+      if (typeof value !== 'boolean') throw invalid();
+      return value;
+    });
+  if (row.keyboardTranspositions !== undefined)
+    score.keyboardTranspositions = map(row.keyboardTranspositions, isPart, (value) =>
+      integer(value, -12, 12),
+    );
   if (row.capos !== undefined) score.capos = readScoreCapos(row.capos, score.parts);
   if (row.equalWidthRows !== undefined)
     score.equalWidthRows = map(row.equalWidthRows, isPart, (value) => {

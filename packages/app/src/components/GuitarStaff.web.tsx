@@ -117,6 +117,7 @@ export function GuitarStaff({
   inputPitch,
   inputDrumNote,
   showTab,
+  tabOnly = false,
   rangeIds,
   onRangeSelect,
   editable,
@@ -140,7 +141,7 @@ export function GuitarStaff({
   playbackPosition?: ScorePlaybackPosition;
   zoom: number;
   onSelect: (id: string, string?: number, beat?: number) => void;
-  onPartSelect?: (part: string, note?: string) => void;
+  onPartSelect?: (part: string, note?: string, position?: { beat: number; bar?: number }) => void;
   onAppend: (string: number, beat: number, bar?: number) => void;
   onChordSelect: (beat: number) => void;
   emptyBeat: number;
@@ -149,6 +150,7 @@ export function GuitarStaff({
   inputPitch?: number;
   inputDrumNote?: DrumInputNote;
   showTab: boolean;
+  tabOnly?: boolean;
   rangeIds: string[];
   onRangeSelect: (anchor: string, end: string) => void;
   editable: boolean;
@@ -798,6 +800,7 @@ export function GuitarStaff({
         const bottom = hasTab
           ? tabInkBottom + 8 + (hasLyrics ? 24 : 0)
           : Math.max(190, ...positions.map((y) => y + 55));
+        const visibleTop = tabOnly && hasTab ? tabTop - 35 : top;
         const measureBottom = Math.max(bottom - 18, hasTab ? tabInkBottom + 4 : 140);
         return (
           <ScoreSystemViewport
@@ -815,17 +818,18 @@ export function GuitarStaff({
                 playbackBar < system.start + system.count)
             }
             width={(drawingWidth * zoom) / 100}
-            height={((bottom - top) * zoom) / 100}
+            height={((bottom - visibleTop) * zoom) / 100}
           >
             {() => (
               <svg
                 key={line}
                 className="score-system"
+                style={tabOnly && hasTab ? { overflow: 'hidden' } : undefined}
                 fontFamily="Segoe UI Symbol, Malgun Gothic, sans-serif"
                 aria-label={`${system.start + 1}–${system.start + system.count}마디 악보 줄`}
                 width={(drawingWidth * zoom) / 100}
-                height={((bottom - top) * zoom) / 100}
-                viewBox={`0 ${top} ${drawingWidth} ${bottom - top}`}
+                height={((bottom - visibleTop) * zoom) / 100}
+                viewBox={`0 ${visibleTop} ${drawingWidth} ${bottom - visibleTop}`}
               >
                 <line
                   data-playback-cursor

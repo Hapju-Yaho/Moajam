@@ -16,11 +16,24 @@ export const soundfontInstruments = [
 ] as const;
 
 export type SoundfontInstrumentId = (typeof soundfontInstruments)[number]['id'];
+export function soundfontsForNotation(notation: string) {
+  if (notation === 'drums') return soundfontInstruments.filter((item) => item.group === '퍼커션');
+  if (notation.startsWith('bass'))
+    return soundfontInstruments.filter((item) => item.group === '베이스');
+  if (['guitar', 'dropD', 'guitarHalfDown'].includes(notation))
+    return soundfontInstruments.filter((item) => item.group === '기타');
+  if (['piano', 'pianoBass'].includes(notation))
+    return soundfontInstruments.filter(
+      (item) => item.group === '건반·기타 악기' && item.id !== 'choir_aahs',
+    );
+  return soundfontInstruments.filter((item) => item.id === 'choir_aahs');
+}
 export function isSoundfontInstrument(value: unknown): value is SoundfontInstrumentId {
   return soundfontInstruments.some((instrument) => instrument.id === value);
 }
 
 export function defaultSoundfontInstrument(part: string, notation?: string): SoundfontInstrumentId {
+  if (notation === 'standard') return 'choir_aahs';
   if (notation === 'drums' || (!notation && /drum|드럼/i.test(part))) return 'drum_kit';
   if (notation === 'piano' || notation === 'pianoBass') return 'acoustic_grand_piano';
   if (notation?.startsWith('bass') || /bass|베이스/i.test(part)) return 'electric_bass_finger';

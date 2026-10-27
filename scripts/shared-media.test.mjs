@@ -88,6 +88,22 @@ test('band media uses shared revisions and uploads; personal media remains perso
     const snapshot = await encode({ tracks: [{ blob: projectBlob }] }, projectKey, 'member-b');
     assert.deepEqual(snapshot.tracks[0].blob, { __moajamAssetId: 'asset' });
     assert.equal(calls.filter((call) => call[0] === 'upload').length, uploadCount);
+    const scoreKey = `score-project/${band}/${projectId}`;
+    const scoreSnapshot = await encode({ referenceAudio: projectBlob }, scoreKey, 'member-b');
+    assert.deepEqual(scoreSnapshot.referenceAudio, { __moajamAssetId: 'asset' });
+    assert.equal(calls.filter((call) => call[0] === 'upload').length, uploadCount);
+    const newScoreAudio = new Blob(['score audio'], { type: 'audio/wav' });
+    await encode({ referenceAudio: newScoreAudio }, scoreKey, 'member-b');
+    assert.equal(calls.filter((call) => call[0] === 'upload').at(-1)[4], band);
+    document = { revision: 1, value: { data: { notes: [] } } };
+    await readRemoteMedia(scoreKey);
+    await writeRemoteMedia(scoreKey, { notes: [] });
+    assert.ok(
+      calls.some(
+        (call) =>
+          call[0] === 'PUT' && call[1] === `/workspaces/${band}/score-projects/${projectId}`,
+      ),
+    );
     assert.equal(
       projectCalls.some((call) => call[0].startsWith('personal')),
       false,

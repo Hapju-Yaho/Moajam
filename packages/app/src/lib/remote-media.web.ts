@@ -3,6 +3,13 @@ import { readPersonal, writePersonal, assertPersonalUnchanged } from './personal
 const assets = new WeakMap<Blob, { user: string; scope?: string; id: Promise<string> }>();
 const bandRevisions = new Map<string, number>();
 function bandSession(key: string) {
+  const scoreProject =
+    /^score-project\/([0-9a-f]{8}-[0-9a-f-]{27})\/([0-9a-f]{8}-[0-9a-f-]{27})$/i.exec(key);
+  if (scoreProject)
+    return {
+      workspaceId: scoreProject[1],
+      path: `/workspaces/${scoreProject[1]}/score-projects/${scoreProject[2]}`,
+    };
   const project = /^daw-project\/([0-9a-f]{8}-[0-9a-f-]{27})\/([0-9a-f]{8}-[0-9a-f-]{27})$/i.exec(
     key,
   );
@@ -37,7 +44,9 @@ export async function encode(
   if (value instanceof Blob) {
     const band = bandSession(key);
     let cached = assets.get(value);
-    if (!cached || cached.user !== user || cached.scope !== key) {
+    const sameBand =
+      !!band && !!cached?.scope && bandSession(cached.scope)?.workspaceId === band.workspaceId;
+    if (!cached || cached.user !== user || (cached.scope !== key && !sameBand)) {
       const uploaded = uploadRemoteFile(
         value,
         value instanceof File ? value.name : name,

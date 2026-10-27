@@ -1,3 +1,4 @@
+import { keyboardPlaybackScore } from './scoreTuning';
 import { drumStrikes } from './scoreExpression';
 import { createGuitarToneRoute } from './guitarTone.web';
 import {
@@ -359,6 +360,7 @@ export function scheduleScorePassage(
   endBeat: number,
   instrument?: PreparedPlaybackInstrument,
 ) {
+  score = keyboardPlaybackScore(score);
   const performance = scorePerformance(score, part);
   destination = createGuitarToneRoute(
     context,

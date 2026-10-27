@@ -1,4 +1,21 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { keyboardPlaybackScore } from '../lib/scoreTuning';
+import { clientId } from '../lib/clientId';
+import { ScoreTuningControl } from '../components/ScoreTuningControl.web';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+  type PropsWithChildren,
+} from 'react';
+import type { ScoreProjectEditorHandle } from '../lib/scoreProjects.web';
+import { ScorePartMixer } from '../components/ScorePartMixer.web';
+import { ScoreTransportIcon } from '../components/ScoreTransportIcon.web';
+import { scheduleClick } from '../lib/metronome.web';
 import { ScoreSectionToggle } from '../components/ScoreSectionToggle.web';
 import { ScoreSettingsIcon } from '../components/ScoreSettingsIcon.web';
 import { AppShell } from '../components/AppShell';
@@ -10,6 +27,8 @@ import type { ScreenProps } from '../navigation';
 import {
   scoreToMusicXml,
   cleanScoreConnections,
+  alignScoreMeasures,
+  renameScorePart,
   scorePlaybackFrom,
   scorePlaybackPosition,
   scoreMeasureAtBeat,
@@ -32,10 +51,14 @@ import {
   scorePartStaves,
   scorePartOwner,
   ensemblePlaybackScore,
+  addInstrumentPart,
+  removeInstrumentPart,
+  moveInstrumentPart,
+  scoreVisibleParts,
 } from '../lib/scoreParts';
 import { scoreInstrument } from '../lib/score';
 import { GuitarTabEditor } from '../components/GuitarTabEditor.web';
-import { ScoreEditorViewport } from '../components/ScoreEditorViewport.web';
+import { ScoreEditorViewport, type ScoreViewActions } from '../components/ScoreEditorViewport.web';
 import { scoreFromMusicXml } from '../lib/scoreImport.web';
 import { useIdentity } from '../state/Identity';
 import { ScoreInstrumentSample } from '../components/ScoreInstrumentSample.web';
@@ -54,6 +77,7 @@ import {
   scoreDocumentFromStored,
   scoreVersionName,
   reconcileScoreVersions,
+  saveScoreProjectDocument,
   partVersionGroup,
   captureScorePart,
   replaceScorePart,
@@ -75,13 +99,57 @@ import {
   ScoreYouTubeBacking,
   type ScoreYouTubeHandle,
 } from '../components/ScoreYouTubeBacking.web';
+function ScoreScreenShell({
+  children,
+  embedded,
+  bandScore,
+  navigate,
+  entityId,
+}: PropsWithChildren<{
+  embedded: boolean;
+  bandScore: boolean;
+  navigate: ScreenProps['navigate'];
+  entityId?: string;
+}>) {
+  return embedded ? (
+    <>{children}</>
+  ) : (
+    <AppShell
+      activeRoute={bandScore ? 'band-score-editor' : 'score-editor'}
+      onNavigate={navigate}
+      entityId={entityId}
+    >
+      {children}
+    </AppShell>
+  );
+}
 export function ScoreEditorScreen({
   navigate,
   entityId,
   bandScore = false,
   scoreView,
   scorePart,
-}: ScreenProps & { bandScore?: boolean }) {
+  embedded = false,
+  scoreProjectId,
+  scoreProjectName = '',
+  projectControls,
+  projectBridge,
+  onProjectState,
+  onProjectSaved,
+  projectNameDirty = false,
+  onRequestEditClose,
+}: ScreenProps & {
+  bandScore?: boolean;
+  embedded?: boolean;
+  scoreProjectId?: string;
+  scoreProjectName?: string;
+  projectControls?: ReactNode | ((status?: string, actions?: ScoreViewActions) => ReactNode);
+  projectBridge?: RefObject<ScoreProjectEditorHandle | null>;
+  onProjectState?: (state: { dirty: boolean; busy: boolean }) => void;
+  onProjectSaved?: (name: string) => void;
+  projectNameDirty?: boolean;
+  onRequestEditClose?: (close: () => void) => void;
+}) {
   const userId = useIdentity();
   const { workspaceId, workspace, adoptedSongs } = useMockAppState();
   const song = adoptedSongs.find((item) => item.id === entityId);
@@ -93,11 +161,27 @@ export function ScoreEditorScreen({
     structure: '',
   });
   const key = bandScore
-    ? `band-score/${workspaceId}/${entityId}`
+    ? `band-score/${workspaceId}/${entityId}/${scoreProjectId ?? 'legacy'}`
     : `score/${entityId ? workspaceId + '/' + entityId : 'personal'}`;
+  const projectMetadata = useRef({ name: scoreProjectName, onSaved: onProjectSaved });
+  projectMetadata.current = { name: scoreProjectName, onSaved: onProjectSaved };
   const bandStore = useMemo(
-    () => (bandScore ? createBandScoreStore(workspaceId, entityId ?? '', userId) : null),
-    [bandScore, workspaceId, entityId, userId],
+    () =>
+      bandScore
+        ? createBandScoreStore(
+            workspaceId,
+            entityId ?? '',
+            userId,
+            scoreProjectId
+              ? {
+                  id: scoreProjectId,
+                  name: () => projectMetadata.current.name,
+                  onSaved: (name) => projectMetadata.current.onSaved?.(name),
+                }
+              : undefined,
+          )
+        : null,
+    [bandScore, workspaceId, entityId, userId, scoreProjectId],
   );
   const [reload, setReload] = useState(0);
   const [bandSaving, setBandSaving] = useState(false);
@@ -129,14 +213,32 @@ export function ScoreEditorScreen({
   const loadedKey = useRef('');
   const [status, setStatus] = useState('악보 불러오는 중…');
   const [part, setPart] = useState('Guitar');
+  const [mixerFocus, setMixerFocus] = useState<{ part: string; bar: number } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [clipboard, setClipboard] = useState<ScoreClipboardNote[]>([]);
   const [playing, setPlaying] = useState(false);
+  const [metronome, setMetronome] = useState(false);
+  const [transportHost, setTransportHost] = useState<HTMLDivElement | null>(null);
   const [playbackBeat, setPlaybackBeat] = useState<number | null>(null);
   const playbackPosition = useRef<ScorePlaybackPosition['current']>(null);
   const playbackTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const output = useRef<ReturnType<typeof createScoreOutput> | null>(null);
+  const livePartOutputs = useRef(new Map<string, GainNode>());
+  useEffect(() => {
+    const ctx = context.current;
+    if (!ctx || ctx.state === 'closed') return;
+    const names = [...livePartOutputs.current.keys()];
+    const solo = names.some((name) => scorePartMix(score, name).solo);
+    for (const [name, gain] of livePartOutputs.current) {
+      const mix = scorePartMix(score, name);
+      gain.gain.setTargetAtTime(
+        mix.muted || (solo && !mix.solo) ? 0 : mix.volume,
+        ctx.currentTime,
+        0.01,
+      );
+    }
+  }, [score, playing]);
   const volume = Math.max(0, Math.min(1, score.playbackVolume ?? 0.8));
   const changeVolume = (value: number) => {
     const next = Math.max(0, Math.min(1, value));
@@ -189,7 +291,7 @@ export function ScoreEditorScreen({
         : (versionGroup?.appliedVersionId ?? 'original');
   selectedVersionRef.current = versionId;
   useEffect(() => {
-    if (!bandDirty && !bandSaving) return;
+    if (!bandDirty && !bandSaving && !projectNameDirty) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = '';
@@ -210,7 +312,7 @@ export function ScoreEditorScreen({
       window.removeEventListener('beforeunload', warn);
       window.removeEventListener('moajam:before-navigate', navigateAway);
     };
-  }, [bandDirty, bandSaving]);
+  }, [bandDirty, bandSaving, projectNameDirty]);
   const [sampleLoading, setSampleLoading] = useState(false);
   const [soundfontBusy, setSoundfontBusy] = useState(false);
   const savedInstrument = score.playbackInstruments?.[part];
@@ -287,7 +389,7 @@ export function ScoreEditorScreen({
     }
   };
   const [ensemble, setEnsemble] = useState(false);
-  const [playAll, setPlayAll] = useState(false);
+  const [playAll, setPlayAll] = useState(true);
   const [backingExpanded, setBackingExpanded] = useState(true);
   const backingBodyId = useId();
   const [saveFailed, setSaveFailed] = useState(false);
@@ -333,12 +435,12 @@ export function ScoreEditorScreen({
           setVersionLibrary(library);
           const first = library.parts.find((group) => group.part === scorePart) ?? library.parts[0];
           setVersionId(first.appliedVersionId);
-          setPreviewApplied(scoreView === 'applied');
+          setPreviewApplied(!scoreProjectId && scoreView === 'applied');
           setPendingVersion(null);
           setImportedVersion(null);
           const document =
-            scoreView === 'applied'
-              ? library.applied
+            scoreProjectId || scoreView === 'applied'
+              ? { ...library.applied, score: alignScoreMeasures(library.applied.score) }
               : {
                   ...library.applied,
                   score: replaceScorePart(
@@ -384,7 +486,7 @@ export function ScoreEditorScreen({
       void context.current?.close();
       context.current = null;
     };
-  }, [key, userId, bandStore, bandScore, reload, scoreView, scorePart]);
+  }, [key, userId, bandStore, bandScore, reload, scoreView, scorePart, scoreProjectId]);
   useEffect(() => {
     const flush = () => pendingSave.current?.();
     window.addEventListener('pagehide', flush);
@@ -460,7 +562,7 @@ export function ScoreEditorScreen({
     if (!group || editGroup.current !== group) setHistory((all) => [...all.slice(-49), score]);
     editGroup.current = group ?? null;
     setFuture([]);
-    setScore(cleanScoreConnections(next));
+    setScore(cleanScoreConnections(alignScoreMeasures(next)));
   };
   const visible = score.notes.filter((note) => note.part === part);
   const syncNoteIndex = visible.findIndex((note) => note.id === selected);
@@ -483,6 +585,7 @@ export function ScoreEditorScreen({
     stopAudition();
     const ctx = new AudioContext();
     auditionContext.current = ctx;
+    const soundingNote = keyboardPlaybackScore({ ...score, notes: [note] }).notes[0];
     try {
       await ctx.resume();
       if (auditionContext.current !== ctx) return;
@@ -490,14 +593,14 @@ export function ScoreEditorScreen({
         ? await prepareInstrumentSample(instrumentSample)
         : await prepareSoundfontInstrument(
             playbackInstrument,
-            noteTones(note).map((tone) => tone.pitch),
+            noteTones(soundingNote).map((tone) => tone.pitch),
           );
       if (auditionContext.current !== ctx) return;
       const destination = createScoreOutput(ctx, latestVolumes.current.score);
       scheduleScoreNote(
         ctx,
         destination.input,
-        { ...note, beats: 0.7 },
+        { ...soundingNote, beats: 0.7 },
         ctx.currentTime + 0.01,
         120,
         0.7,
@@ -518,6 +621,7 @@ export function ScoreEditorScreen({
     void context.current?.close();
     context.current = null;
     output.current = null;
+    livePartOutputs.current.clear();
     referenceOutput.current = null;
     setPlaying(false);
     setCursor(null);
@@ -539,20 +643,26 @@ export function ScoreEditorScreen({
       );
       return;
     }
-    const playbackParts = audibleScoreParts(score, part, playAll);
+    const audibleParts = audibleScoreParts(score, part, playAll);
+    const playbackParts = playAll ? score.parts : scorePartStaves(score, part);
     if (
-      !playbackParts.some((name) =>
+      !audibleParts.some((name) =>
         score.notes.some((note) => note.part === name && !note.blank && !note.rest),
       )
     ) {
       setAudioMessage('재생할 음표가 없거나 모든 파트가 음소거되어 있어요.');
       return;
     }
+    const soundingScore = keyboardPlaybackScore(score);
     const ensemblePlayback =
       playAll || scorePartStaves(score, part).length > 1
-        ? ensemblePlaybackScore(score, playAll ? score.parts : scorePartStaves(score, part), part)
+        ? ensemblePlaybackScore(
+            soundingScore,
+            playAll ? score.parts : scorePartStaves(score, part),
+            part,
+          )
         : null;
-    const playbackScore = ensemblePlayback?.score ?? score;
+    const playbackScore = ensemblePlayback?.score ?? soundingScore;
     const playbackFrom = ensemblePlayback ? ensemblePlayback.toShared(from) : from;
     const playbackEnd =
       loopEnd === undefined
@@ -588,7 +698,7 @@ export function ScoreEditorScreen({
               ? await prepareInstrumentSample(instrumentSample)
               : await prepareSoundfontInstrument(
                   instrument,
-                  score.notes
+                  playbackScore.notes
                     .filter((n) => n.part === name && !n.rest && !n.blank)
                     .flatMap((n) => noteTones(n).map((t) => t.pitch)),
                 );
@@ -614,11 +724,12 @@ export function ScoreEditorScreen({
       const partOutputs = new Map(
         playbackParts.map((name) => {
           const gain = ctx.createGain();
-          gain.gain.value = scorePartMix(score, name).volume;
+          gain.gain.value = audibleParts.includes(name) ? scorePartMix(score, name).volume : 0;
           gain.connect(destination.input);
           return [name, gain] as const;
         }),
       );
+      livePartOutputs.current = partOutputs;
       const startAt = ctx.currentTime + 0.04;
       if (backing) {
         referenceOutput.current = createScoreOutput(ctx, latestVolumes.current.reference);
@@ -648,6 +759,17 @@ export function ScoreEditorScreen({
           }
           for (const segment of segments) {
             const when = cycleAt + (segment.offset * 60) / score.bpm;
+            if (metronome) {
+              const perBar =
+                ((score.timeSignature?.beats ?? 4) * 4) / (score.timeSignature?.beatType ?? 4);
+              for (let beat = Math.ceil(segment.startBeat); beat < segment.endBeat; beat++)
+                scheduleClick(
+                  ctx,
+                  when + ((beat - segment.startBeat) * 60) / score.bpm,
+                  Math.abs(beat % perBar) < 1e-6,
+                  0.35,
+                );
+            }
             if (backing && backingOutput)
               scheduleScoreBacking(
                 ctx,
@@ -796,8 +918,11 @@ export function ScoreEditorScreen({
   const saveCurrentVersion = async (apply = false) => {
     if (!loaded || bandSaving || fileBusy || previewApplied) return false;
     const document = { score, referenceAudio, instrumentSample };
-    setStatus(apply ? '저장하고 연습에 적용 중…' : '버전 저장 중…');
+    setStatus(
+      scoreProjectId ? '프로젝트 저장 중…' : apply ? '저장하고 연습에 적용 중…' : '버전 저장 중…',
+    );
     const next = await persistVersions((library) => {
+      if (scoreProjectId) return saveScoreProjectDocument(library, document);
       const reconciled = reconcileScoreVersions(library, document);
       const saved = bandDirty
         ? saveScoreVersion(reconciled, versionPart, versionId, document)
@@ -806,9 +931,54 @@ export function ScoreEditorScreen({
     });
     if (!next) return false;
     setSavedDocument(document);
-    setStatus(apply ? '이 버전을 연습에 적용했어요.' : '버전 변경사항을 저장했어요.');
+    setStatus(
+      scoreProjectId
+        ? '프로젝트를 저장했어요.'
+        : apply
+          ? '이 버전을 연습에 적용했어요.'
+          : '버전 변경사항을 저장했어요.',
+    );
     return true;
   };
+  useEffect(() => {
+    onProjectState?.({
+      dirty: bandDirty,
+      busy:
+        (!loaded && !saveFailed) ||
+        bandSaving ||
+        fileBusy ||
+        audioLoading ||
+        sampleLoading ||
+        soundfontBusy,
+    });
+  }, [
+    onProjectState,
+    bandDirty,
+    loaded,
+    bandSaving,
+    fileBusy,
+    audioLoading,
+    sampleLoading,
+    soundfontBusy,
+    saveFailed,
+  ]);
+  if (projectBridge)
+    projectBridge.current = {
+      dirty: bandDirty,
+      busy: !loaded || bandSaving || fileBusy,
+      save: () => saveCurrentVersion(),
+      snapshot: () => {
+        if (!workingLibrary) throw new Error('악보를 먼저 불러와주세요.');
+        const document = { score, referenceAudio, instrumentSample };
+        return storeScoreVersionLibrary(
+          scoreProjectId
+            ? saveScoreProjectDocument(workingLibrary, document)
+            : bandDirty && !previewApplied
+              ? saveScoreVersion(workingLibrary, versionPart, versionId, document)
+              : workingLibrary,
+        );
+      },
+    };
   const openVersion = (library: ScoreVersionLibrary, id: string, targetPart = versionPart) => {
     const preview = id === '@applied';
     // Discarding an unsaved part rename restores the original staff name as well.
@@ -847,6 +1017,11 @@ export function ScoreEditorScreen({
     openVersion(libraryRef.current, id, targetPart);
   };
   const requestPart = (name: string) => {
+    if (scoreProjectId) {
+      setPart(name);
+      setSelected(null);
+      return;
+    }
     if (!score.parts.includes(name)) {
       if (bandDirty) {
         setPendingVersion({ id: 'original', part: name });
@@ -877,7 +1052,7 @@ export function ScoreEditorScreen({
   const createVersion = async (name: string, imported?: ScoreDocument, sourcePart?: string) => {
     if (!workingLibrary || !versionGroup) return false;
     scoreVersionName(versionGroup, name);
-    const id = crypto.randomUUID();
+    const id = clientId();
     const document = { score, referenceAudio, instrumentSample };
     const content = imported
       ? importScorePart(score, versionPart, imported.score, sourcePart ?? imported.score.parts[0])
@@ -923,41 +1098,50 @@ export function ScoreEditorScreen({
     }
   };
   return (
-    <AppShell
-      activeRoute={bandScore ? 'band-score-editor' : 'score-editor'}
-      onNavigate={navigate}
+    <ScoreScreenShell
+      embedded={embedded}
+      bandScore={bandScore}
+      navigate={navigate}
       entityId={entityId}
     >
       <ScoreEditorViewport
+        projectBar={projectControls}
+        onRequestClose={onRequestEditClose}
         initiallyExpanded={scoreView === 'expanded'}
-        title={score.title}
+        title={
+          scoreProjectId ? `${workspace?.name} · ${song?.title} · ${scoreProjectName}` : score.title
+        }
         shared={bandScore}
         status={bandDirty ? '저장하지 않은 변경사항' : status}
         heading={
-          <div className="score-editor-heading">
-            <Meta>
-              합주 도구 · {bandScore ? `${workspace?.name} / ${song?.title}` : '내 작업 · 비공개'}
-            </Meta>
-            <PageHeading>{bandScore ? '밴드 악보 편집' : '악보 편집'}</PageHeading>
-            <ActionButton secondary compact onPress={() => navigate('tools')}>
-              작업 목록
-            </ActionButton>
-            {song && (
-              <ActionButton
-                secondary
-                compact
-                onPress={() =>
-                  navigate('song', {
-                    id: song.id,
-                    workspaceId,
-                    songTab: 'scores',
-                  })
-                }
-              >
-                ← {song.title} 악보 보기로 돌아가기
-              </ActionButton>
-            )}
-          </div>
+          !scoreProjectId && (
+            <div className="score-editor-heading">
+              <Meta>
+                합주 도구 · {bandScore ? `${workspace?.name} / ${song?.title}` : '내 작업 · 비공개'}
+              </Meta>
+              <PageHeading>{bandScore ? '악보 프로젝트' : '악보'}</PageHeading>
+              {!embedded && (
+                <ActionButton secondary compact onPress={() => navigate('tools')}>
+                  작업 목록
+                </ActionButton>
+              )}
+              {song && !embedded && (
+                <ActionButton
+                  secondary
+                  compact
+                  onPress={() =>
+                    navigate('song', {
+                      id: song.id,
+                      workspaceId,
+                      songTab: 'scores',
+                    })
+                  }
+                >
+                  ← {song.title} 악보 보기로 돌아가기
+                </ActionButton>
+              )}
+            </div>
+          )
         }
       >
         <ScoreFileActions
@@ -1043,6 +1227,7 @@ export function ScoreEditorScreen({
             </header>
           }
           versions={
+            !scoreProjectId &&
             versionGroup && (
               <ScoreVersionControls
                 library={versionGroup}
@@ -1272,7 +1457,101 @@ export function ScoreEditorScreen({
               </ActionButton>
             )}
           </div>
+          <ScorePartMixer
+            selectedMeasure={syncLocation?.bar ?? null}
+            score={score}
+            part={part}
+            playing={playing}
+            playbackBeat={playbackBeat}
+            disabled={!loaded || fileBusy || bandSaving || previewApplied}
+            onAddInstrument={(instrument, requestedName) => {
+              const labels: Record<string, string> = {
+                guitar: 'Guitar',
+                electric: 'Electric Guitar',
+                bass: 'Bass',
+                piano: 'Keyboard',
+                drums: 'Drums',
+                standard: 'Vocal',
+              };
+              let name = requestedName || labels[instrument] || 'Instrument';
+              if (!requestedName) {
+                const base = name;
+                for (let i = 2; score.parts.includes(name); i++) name = `${base} ${i}`;
+              }
+              let next = addInstrumentPart(
+                score,
+                name,
+                instrument === 'electric' ? 'guitar' : instrument,
+              );
+              if (instrument === 'electric')
+                next = {
+                  ...next,
+                  playbackInstruments: {
+                    ...next.playbackInstruments,
+                    [name]: 'electric_guitar_clean',
+                  },
+                };
+              edit(next);
+              setPart(name);
+              setSelected(null);
+            }}
+            onRenameInstrument={(previous, name) => {
+              const next = renameScorePart(score, previous, name);
+              edit(next);
+              if (scorePartOwner(score, part) === previous) {
+                setPart(name);
+                setSelected(null);
+              }
+            }}
+            onMoveInstrument={(name, target) => {
+              const from = scoreVisibleParts(score).indexOf(name);
+              if (from === target || from < 0) return;
+              let next = score;
+              const direction = target > from ? 1 : -1;
+              for (let index = from; index !== target; index += direction)
+                next = moveInstrumentPart(next, name, direction);
+              edit(next);
+            }}
+            onRemoveInstrument={() => {
+              const next = alignScoreMeasures(removeInstrumentPart(score, part));
+              edit(next);
+              setPart(scoreVisibleParts(next)[0]);
+              setSelected(null);
+            }}
+            onMeasureSelect={(name, bar) => {
+              requestPart(name);
+              setMixerFocus({ part: name, bar });
+            }}
+            onSelect={requestPart}
+            onEdit={(next) => setScore(next)}
+            volume={volume}
+            onVolumeChange={changeVolume}
+          />
+          <div className="score-transport-host" ref={setTransportHost} />
           <GuitarTabEditor
+            focusMeasure={mixerFocus}
+            transportHost={transportHost}
+            onSeek={(beat, end, repeat) => {
+              stop();
+              void play(beat, end, repeat);
+            }}
+            onTempoChange={(bpm) => edit({ ...score, bpm })}
+            metronomeControl={
+              <button
+                type="button"
+                className="score-metronome"
+                aria-label="메트로놈"
+                title="메트로놈"
+                aria-pressed={metronome}
+                disabled={playing || !loaded}
+                onClick={() => setMetronome(!metronome)}
+              >
+                <ScoreTransportIcon name="metronome" />
+                메트로놈
+                <span className="score-metronome-switch" aria-hidden="true" />
+              </button>
+            }
+            editInExpandedOnly
             partControls={
               <ScoreParts
                 attached
@@ -1307,6 +1586,7 @@ export function ScoreEditorScreen({
               <>
                 <div className="score-sound-settings" aria-label="음색과 내 악기 소리 설정">
                   <ScoreSoundfont
+                    notation={scoreInstrument(score, part).id}
                     compact
                     part={scorePartOwner(score, part)}
                     instrument={playbackInstrument}
@@ -1336,6 +1616,12 @@ export function ScoreEditorScreen({
                     }}
                   />
 
+                  <ScoreTuningControl
+                    score={score}
+                    part={part}
+                    disabled={!loaded || playing || fileBusy || previewApplied}
+                    onEdit={edit}
+                  />
                   <div
                     className="score-recording-settings score-section-body"
                     hidden={!recordingMode}
@@ -1685,6 +1971,6 @@ export function ScoreEditorScreen({
           />
         </div>
       </ScoreEditorViewport>
-    </AppShell>
+    </ScoreScreenShell>
   );
 }

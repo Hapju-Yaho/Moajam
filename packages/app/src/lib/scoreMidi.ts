@@ -1,3 +1,4 @@
+import { keyboardPlaybackScore } from './scoreTuning';
 import { drumStrikes } from './scoreExpression';
 import { guitarToneAt } from './scoreGuitar';
 import {
@@ -67,6 +68,7 @@ export function scoreToMidi(
   input: Score,
   selectedParts: string[] = input.parts,
 ): Uint8Array<ArrayBuffer> {
+  input = keyboardPlaybackScore(input);
   const parts = [...new Set(selectedParts)].filter((part) => input.parts.includes(part));
   if (!parts.length) throw new Error('MIDI로 저장할 파트를 선택해주세요.');
   if (parts.length > 15)

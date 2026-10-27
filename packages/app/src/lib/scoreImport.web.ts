@@ -1,3 +1,4 @@
+import { clientId } from './clientId';
 import { readNoteExpression, readScoreDirections, readScoreNavigation } from './scoreExpression';
 import { readGuitarToneChanges } from './scoreGuitar';
 import {
@@ -19,7 +20,7 @@ import {
 } from './score';
 
 // One rhythmic voice per part; all pitches of a chord share duration and ties.
-export function scoreFromMusicXml(text: string, makeId = () => crypto.randomUUID()): Score {
+export function scoreFromMusicXml(text: string, makeId = () => clientId()): Score {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   const invalid = () =>
     new Error(

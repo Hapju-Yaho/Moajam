@@ -205,17 +205,19 @@ const pageTitles: Record<AppRoute, string> = {
   members: '멤버',
   instrument: '내 악기 추출',
   'score-editor': '악보 편집',
-  'band-score-editor': '밴드 악보 편집',
+  'band-score-editor': '악보 프로젝트',
   settings: '설정',
   help: '도움말',
 };
 
 const activeGroup = (current: AppRoute, target: AppRoute) => {
-  if (target === 'tools') return ['tools', 'score-editor', 'band-score-editor'].includes(current);
+  if (target === 'tools') return ['tools', 'score-editor'].includes(current);
   if (target === 'track-editor') return ['track-editor', 'instrument'].includes(current);
   if (target === 'recommendations') return current === target || current === 'recommendation';
   if (target === 'songs')
-    return ['songs', 'song', 'recommendations', 'recommendation'].includes(current);
+    return ['songs', 'song', 'recommendations', 'recommendation', 'band-score-editor'].includes(
+      current,
+    );
   if (target === 'personal-practice') return current === 'personal-practice';
   return current === target;
 };
@@ -309,7 +311,6 @@ export function AppShell({
     'track-editor',
     'instrument',
     'score-editor',
-    'band-score-editor',
     'personal-practice',
   ].includes(activeRoute);
   const accountPage = activeRoute === 'settings' || activeRoute === 'help';
@@ -336,7 +337,7 @@ export function AppShell({
         }),
     });
   }
-  if (activeRoute === 'song') {
+  if (activeRoute === 'song' || activeRoute === 'band-score-editor') {
     crumbs.push({
       label: '참여 곡',
       onPress: () => onNavigate('songs', { workspaceId: workspace?.id }),

@@ -1,5 +1,9 @@
+import { keyboardKeyIsWritten } from '../lib/scoreTuning';
+import { clientId } from '../lib/clientId';
 import { createPortal } from 'react-dom';
 import { ScoreVoiceIcon } from './ScoreVoiceIcon.web';
+import { ScoreTransportIcon } from './ScoreTransportIcon.web';
+import { ScoreRepeatDialog } from './ScoreRepeatDialog.web';
 import { ScoreToolbarHelp } from './ScoreToolbarHelp.web';
 import { ScoreMeasureIcon } from './ScoreMeasureIcon.web';
 import { useScoreEditorLayout } from './ScoreEditorLayout.web';
@@ -40,8 +44,8 @@ import {
 } from '../lib/scoreMeasureRests';
 import { ScoreEnsemble } from './ScoreEnsemble.web';
 import {
-  enableKeyboardPart,
   enableDrumVoices,
+  enableKeyboardPart,
   scorePartStaves,
   scorePartOwner,
   scoreVoiceCursor,
@@ -80,7 +84,6 @@ import {
   removeScoreString,
   deleteScorePosition,
   scoreInstrument,
-  scoreInstruments,
   setScoreFret,
   setScoreCapo,
   setScoreGraceNote,
@@ -138,7 +141,12 @@ export function GuitarTabEditor({
   ...props
 }: Omit<
   ComponentProps<typeof GuitarTabEditorContent>,
-  'toolTab' | 'voiceToolsHost' | 'settingsHost' | 'onViewToolsHost'
+  | 'toolTab'
+  | 'voiceToolsHost'
+  | 'settingsHost'
+  | 'onViewToolsHost'
+  | 'onBackingHost'
+  | 'onLeftToolsHost'
 > & {
   partControls?: ReactNode;
   onEnsembleChange?: (value: boolean) => void;
@@ -150,16 +158,18 @@ export function GuitarTabEditor({
   const [settingsHost, setSettingsHost] = useState<HTMLDivElement | null>(null);
   const [voiceToolsHost, setVoiceToolsHost] = useState<HTMLDivElement | null>(null);
   const [viewToolsHost, setViewToolsHost] = useState<HTMLDivElement | null>(null);
+  const [leftToolsHost, setLeftToolsHost] = useState<HTMLDivElement | null>(null);
+  const [backingHost, setBackingHost] = useState<HTMLDivElement | null>(null);
   const layout = useScoreEditorLayout();
   const tabs = [
-    ['notes', '음표·주법'],
-    ['measures', '마디·표현'],
-    ['settings', '악보 설정'],
+    ['settings', '음향'],
+    ['notes', '음표'],
+    ['measures', '주법'],
   ] as const;
   const viewTools = (
     <div className="score-edit-view-tools">
       <div className="score-voice-tools-host" ref={setVoiceToolsHost} />
-      {onEnsembleChange && (
+      {onEnsembleChange && !layout.expanded && (
         <div className="score-view-switch" role="group" aria-label="악보 보기 방식">
           <button
             type="button"
@@ -179,31 +189,41 @@ export function GuitarTabEditor({
       )}
     </div>
   );
+  const inspectorTabs = (
+    <nav className="score-expanded-inspector-tabs" aria-label="사이드 패널">
+      <button
+        className="score-mobile-inspector-close"
+        aria-label="악보로 돌아가기"
+        onClick={() => layout.setInspectorOpen(false)}
+      >
+        ← 악보
+      </button>
+      {tabs.map(([tab, label]) => (
+        <button
+          key={tab}
+          aria-pressed={toolTab === tab}
+          onClick={() => {
+            setToolTab(tab);
+            layout.setInspector(tab);
+            layout.setInspectorOpen(true);
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </nav>
+  );
   return (
     <div className="score-editor-tools-host">
-      {partControls}
-      <nav className="score-expanded-inspector-tabs" aria-label="사이드 패널">
-        <button
-          className="score-mobile-inspector-close"
-          aria-label="악보로 돌아가기"
-          onClick={() => layout.setInspectorOpen(false)}
-        >
-          ← 악보
-        </button>
-        {tabs.map(([tab, label]) => (
-          <button
-            key={tab}
-            aria-pressed={toolTab === tab}
-            onClick={() => {
-              setToolTab(tab);
-              layout.setInspector(tab);
-              layout.setInspectorOpen(true);
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+      {!layout.expanded && (
+        <details className="score-part-manager">
+          <summary>파트 관리</summary>
+          {partControls}
+        </details>
+      )}
+      {layout.expanded && leftToolsHost
+        ? createPortal(inspectorTabs, leftToolsHost)
+        : inspectorTabs}
       <div className="score-edit-toolbar">
         <nav className="score-edit-tabs" aria-label="편집 도구">
           {tabs.map(([id, label]) => (
@@ -224,13 +244,26 @@ export function GuitarTabEditor({
         </nav>
         {layout.expanded && viewToolsHost ? createPortal(viewTools, viewToolsHost) : viewTools}
       </div>
-      <div
-        className="score-editor-backing-settings score-section-body"
-        hidden={toolTab !== 'settings'}
-      >
-        {settings}
-        <div className="score-extra-settings" ref={setSettingsHost} />
-      </div>
+      {layout.expanded && backingHost ? (
+        createPortal(
+          <div
+            className="score-editor-backing-settings score-section-body"
+            hidden={toolTab !== 'settings'}
+          >
+            {settings}
+            <div className="score-extra-settings" ref={setSettingsHost} />
+          </div>,
+          backingHost,
+        )
+      ) : (
+        <div
+          className="score-editor-backing-settings score-section-body"
+          hidden={toolTab !== 'settings'}
+        >
+          {settings}
+          <div className="score-extra-settings" ref={setSettingsHost} />
+        </div>
+      )}
       <GuitarTabEditorContent
         key={resetKey}
         {...props}
@@ -238,6 +271,8 @@ export function GuitarTabEditor({
         voiceToolsHost={voiceToolsHost}
         settingsHost={settingsHost}
         onViewToolsHost={setViewToolsHost}
+        onBackingHost={setBackingHost}
+        onLeftToolsHost={setLeftToolsHost}
       />
     </div>
   );
@@ -245,9 +280,12 @@ export function GuitarTabEditor({
 
 function GuitarTabEditorContent({
   toolTab,
+  focusMeasure,
   voiceToolsHost,
   settingsHost,
   onViewToolsHost,
+  onBackingHost,
+  onLeftToolsHost,
   score,
   part,
   selected,
@@ -263,9 +301,6 @@ function GuitarTabEditorContent({
   onRedo,
   canUndo,
   canRedo,
-  volume,
-  onVolumeChange,
-  backingPlayback,
   clipboard,
   onCopy,
   onEditComplete,
@@ -274,12 +309,25 @@ function GuitarTabEditorContent({
   onPartSelect,
   playAll = false,
   readOnly = false,
+  editInExpandedOnly = false,
+  metronomeControl,
+  transportHost,
+  onSeek,
+  onTempoChange,
 }: {
+  focusMeasure?: { part: string; bar: number } | null;
   toolTab: string;
   voiceToolsHost: HTMLDivElement | null;
   settingsHost: HTMLDivElement | null;
   onViewToolsHost: (host: HTMLDivElement | null) => void;
+  onLeftToolsHost: (host: HTMLDivElement | null) => void;
+  onBackingHost: (host: HTMLDivElement | null) => void;
   readOnly?: boolean;
+  editInExpandedOnly?: boolean;
+  metronomeControl?: ReactNode;
+  transportHost?: HTMLDivElement | null;
+  onSeek?: (beat: number, end?: number, repeat?: boolean) => void;
+  onTempoChange?: (bpm: number) => void;
   ensemble?: boolean;
   playAll?: boolean;
   onPartSelect?: (part: string, note?: string) => void;
@@ -323,6 +371,7 @@ function GuitarTabEditorContent({
     [pitch, setPitch] = useState(60);
   const [keyboardInput, setKeyboardInput] = useState<'default' | 'alternate' | number>('default');
   const voicePitches = useRef(new Map<string, number>());
+  const [transportIdentityHost, setTransportIdentityHost] = useState<HTMLDivElement | null>(null);
   const [zoom, setZoom] = useState(100),
     [showTab, setShowTab] = useState(true);
   const [message, setMessage] = useState('');
@@ -376,6 +425,8 @@ function GuitarTabEditorContent({
   }, [measureMenu]);
   const [range, setRange] = useState<{ anchor: string; end: string } | null>(null);
   const [repeatSelection, setRepeatSelection] = useState(false);
+  const [repeatBars, setRepeatBars] = useState<{ start: number; end: number } | null>(null);
+  const [repeatDialog, setRepeatDialog] = useState(false);
   const [selectedAt, setSelectedAt] = useState<{ id: string; beat: number } | null>(null);
   const [emptyBeat, setEmptyBeat] = useState<number | null>(null);
   const [emptyMeasure, setEmptyMeasure] = useState<number | undefined>(undefined);
@@ -387,7 +438,6 @@ function GuitarTabEditorContent({
   const endBeat = score.notes
     .filter((item) => item.part === part)
     .reduce((sum, item) => scoreBeat(sum + item.beats), 0);
-  const audibleVolume = useRef(volume || 0.8);
   const editor = useRef<HTMLDivElement>(null);
   const measureChordInput = useRef<HTMLInputElement>(null);
   const digits = useRef<{ id: string; string: number; value: string; time: number } | null>(null);
@@ -408,7 +458,7 @@ function GuitarTabEditorContent({
     setKeyboardInput(alter === base ? 'default' : alter === alternate ? 'alternate' : alter);
   };
   const multiDrums = isDrums && voiceMultiMode;
-  const multiKeyboard = isKeyboard && voiceMultiMode;
+  const multiKeyboard = isKeyboard;
   const rows = score.notes.filter((note) => note.part === part);
   const chordPositions = scoreChordPositions(score, part);
   const note = rows.find((item) => item.id === selected);
@@ -493,18 +543,22 @@ function GuitarTabEditorContent({
       ? selectedAt.beat
       : noteStart
     : (emptyBeat ?? endBeat);
-  const disabled = !loaded || playing || readOnly;
+  const disabled = !loaded || playing || readOnly || (editInExpandedOnly && !layout.expanded);
   const hasSelection = !!note || emptyBeat !== null;
-  const loopStart = rangeNotes.length
-    ? rows
-        .slice(0, Math.min(rangeStart, rangeEnd))
-        .reduce((sum, item) => scoreBeat(sum + item.beats), 0)
-    : 0;
+  const loopStart = repeatBars
+    ? scoreMeasureStart(score, part, repeatBars.start - 1)
+    : rangeNotes.length
+      ? rows
+          .slice(0, Math.min(rangeStart, rangeEnd))
+          .reduce((sum, item) => scoreBeat(sum + item.beats), 0)
+      : 0;
   const loopEnd =
-    repeatSelection && rangeNotes.length
-      ? rangeNotes.reduce((sum, item) => scoreBeat(sum + item.beats), loopStart)
-      : undefined;
-  const repeatAll = repeatSelection && !rangeNotes.length;
+    repeatSelection && repeatBars
+      ? scoreMeasureStart(score, part, repeatBars.end)
+      : repeatSelection && rangeNotes.length
+        ? rangeNotes.reduce((sum, item) => scoreBeat(sum + item.beats), loopStart)
+        : undefined;
+  const repeatAll = repeatSelection && !repeatBars && !rangeNotes.length;
   const playFrom = repeatSelection ? loopStart : note || emptyBeat !== null ? before : 0;
   const canPlaySelection =
     (playAll
@@ -582,6 +636,18 @@ function GuitarTabEditorContent({
     select(target?.id ?? null, activeString, at);
     measureChordInput.current?.focus({ preventScroll: true });
   };
+  const handledMixerFocus = useRef<typeof focusMeasure>(null);
+  useEffect(() => {
+    if (
+      !focusMeasure ||
+      handledMixerFocus.current === focusMeasure ||
+      focusMeasure.part !== part ||
+      !loaded
+    )
+      return;
+    handledMixerFocus.current = focusMeasure;
+    selectChordPosition(scoreMeasureStart(score, part, focusMeasure.bar));
+  });
   const selectRange = (anchor: string, end: string) => {
     if (disabled) return;
     const first = rows.findIndex((item) => item.id === anchor);
@@ -614,7 +680,7 @@ function GuitarTabEditorContent({
         part,
         copied,
         note && !note.blank ? noteStart : before,
-        () => crypto.randomUUID(),
+        () => clientId(),
       );
       commit(result.score);
       const end = scoreBeat(
@@ -709,7 +775,7 @@ function GuitarTabEditorContent({
     focus();
   };
   const create = (rest = true): ScoreNote => ({
-    id: crypto.randomUUID(),
+    id: clientId(),
     part,
     pitch,
     beats,
@@ -773,7 +839,7 @@ function GuitarTabEditorContent({
   };
   const prepareInput = (item: ScoreNote) => {
     const prepared = note?.blank
-      ? setScoreDuration(score, note.id, beats, () => crypto.randomUUID(), before - noteStart)
+      ? setScoreDuration(score, note.id, beats, () => clientId(), before - noteStart)
       : note
         ? score
         : emptyMeasure !== undefined
@@ -782,9 +848,9 @@ function GuitarTabEditorContent({
               item,
               emptyMeasure,
               scoreBeat(before - scoreMeasureStart(score, part, emptyMeasure)),
-              () => crypto.randomUUID(),
+              () => clientId(),
             )
-          : appendScoreNoteAt(score, item, before, () => crypto.randomUUID());
+          : appendScoreNoteAt(score, item, before, () => clientId());
     return !note || note.blank
       ? {
           ...prepared,
@@ -994,13 +1060,13 @@ function GuitarTabEditorContent({
             score,
             rangeNotes.map((item) => item.id),
             value,
-            () => crypto.randomUUID(),
+            () => clientId(),
           ),
           true,
         );
         setSelectedAt(null);
       } else if (note && !note.blank && note.beats !== value) {
-        commit(setScoreDuration(score, note.id, value, () => crypto.randomUUID()));
+        commit(setScoreDuration(score, note.id, value, () => clientId()));
         setSelectedAt(null);
       }
       setBeats(value);
@@ -1238,7 +1304,7 @@ function GuitarTabEditorContent({
         score,
         item,
         firstBeat + scoreBarBeats(score) - item.beats,
-        () => crypto.randomUUID(),
+        () => clientId(),
       );
       let at = 0;
       const first = next.notes
@@ -1313,19 +1379,31 @@ function GuitarTabEditorContent({
     }
   };
   const toggleVoice = (index: number) => {
+    if (isKeyboard) {
+      selectVoice(index, true);
+      return;
+    }
     const both = multiDrums || multiKeyboard;
     const activeIndex = part === voiceOwner ? 0 : 1;
     if (both) selectVoice(index === 0 ? 1 : 0);
     else if (index !== activeIndex) selectVoice(index, true);
     // Keep the last active voice on; clicking it again cannot leave an empty editing mode.
   };
-  const selectStaffPart = (voice: string, id?: string) => {
+  const selectStaffPart = (
+    voice: string,
+    id?: string,
+    position?: { beat: number; bar?: number },
+  ) => {
     if ((isDrums || isKeyboard) && scorePartOwner(score, voice) === voiceOwner) {
       const bars = scoreMeasures(score, voice);
-      const bar = id
-        ? bars.findIndex((fragments) => fragments.some((f) => f.note.id === id))
-        : location.bar;
-      const offset = bars[bar]?.find((f) => f.note.id === id)?.offset ?? location.offset;
+      const bar = position
+        ? (position.bar ?? scoreMeasureAtBeat(score, voice, position.beat).bar)
+        : id
+          ? bars.findIndex((fragments) => fragments.some((f) => f.note.id === id))
+          : location.bar;
+      const offset = position
+        ? position.beat - scoreMeasureStart(score, voice, bar)
+        : (bars[bar]?.find((f) => f.note.id === id)?.offset ?? location.offset);
       selectVoice(voice === voiceOwner ? 0 : 1, multiDrums || multiKeyboard, {
         ...location,
         bar: Math.max(0, bar),
@@ -1579,6 +1657,187 @@ function GuitarTabEditorContent({
       insert(create());
     }
   };
+  const tempoControl = (
+    <label className="score-bpm">
+      BPM
+      <input
+        key={score.bpm}
+        aria-label="악보 BPM"
+        type="number"
+        min="30"
+        max="300"
+        step="1"
+        defaultValue={score.bpm}
+        disabled={!loaded || playing || readOnly}
+        onBlur={(event) => {
+          const raw = Number(event.currentTarget.value);
+          const bpm =
+            event.currentTarget.value.trim() && Number.isFinite(raw)
+              ? Math.max(30, Math.min(300, Math.round(raw)))
+              : score.bpm;
+          event.currentTarget.value = String(bpm);
+          if (bpm !== score.bpm) {
+            if (onTempoChange) onTempoChange(bpm);
+            else commit({ ...score, bpm });
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === 'Escape') {
+            event.preventDefault();
+            if (event.key === 'Escape') event.currentTarget.value = String(score.bpm);
+            event.currentTarget.blur();
+            focus();
+          }
+        }}
+      />
+    </label>
+  );
+  const zoomControl = (
+    <div className="score-zoom">
+      <button aria-label="악보 축소" onClick={() => setZoom(Math.max(60, zoom - 10))}>
+        −
+      </button>
+      <span>{zoom}%</span>
+      <button aria-label="악보 확대" onClick={() => setZoom(Math.min(160, zoom + 10))}>
+        +
+      </button>
+    </div>
+  );
+  const transportBars = Math.max(
+    1,
+    ...(playAll ? score.parts : displayParts).map((name) => scoreMeasureCount(score, name)),
+  );
+  const transportBar =
+    playbackBeat !== null
+      ? scoreMeasureAtBeat(score, part, playbackBeat).bar
+      : hasSelection
+        ? location.bar
+        : 0;
+  const seekBar = (bar: number) => {
+    const target = scoreMeasureStart(score, part, Math.max(0, Math.min(transportBars - 1, bar)));
+    selectChordPosition(target);
+    if (playing)
+      onSeek?.(
+        repeatSelection
+          ? Math.max(loopStart, Math.min(target, (loopEnd ?? endBeat) - 0.001))
+          : target,
+        loopEnd,
+        repeatAll,
+      );
+  };
+  const instrumentHeading = (
+    <div className="score-expanded-scorebar">
+      <strong>{scorePartOwner(score, part)}</strong>
+      <span>
+        {instrument.label} {instrument.capo ? `· 카포 ${instrument.capo}` : ''}
+      </span>
+      <div className="score-expanded-view-controls">
+        <div className="score-expanded-view-tools-host" ref={onViewToolsHost} />
+        {instrument.tuning.length > 0 && (
+          <button aria-pressed={showTab} onClick={() => setShowTab(!showTab)}>
+            {showTab ? '오선 + TAB' : 'TAB'}
+          </button>
+        )}
+        {!transportHost && (
+          <>
+            <button aria-label="악보 축소" onClick={() => setZoom(Math.max(60, zoom - 10))}>
+              −
+            </button>
+            <span>{zoom}%</span>
+            <button aria-label="악보 확대" onClick={() => setZoom(Math.min(160, zoom + 10))}>
+              ＋
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+  const transport = (
+    <div className="guitar-toolbar score-transport" data-docked={!!transportHost}>
+      {layout.expanded && (
+        <div className="score-transport-identity" ref={setTransportIdentityHost} />
+      )}
+      <div className="score-transport-main">
+        <div className="score-transport-tempo">
+          {metronomeControl}
+          {tempoControl}
+        </div>
+        <div className="score-transport-buttons" role="group" aria-label="악보 재생 도구">
+          <button
+            aria-label="첫 마디"
+            title="첫 마디"
+            disabled={!loaded}
+            onClick={() => seekBar(0)}
+          >
+            <ScoreTransportIcon name="first" />
+          </button>
+          <button
+            aria-label="이전 마디"
+            title="이전 마디"
+            disabled={!loaded || transportBar <= 0}
+            onClick={() => seekBar(transportBar - 1)}
+          >
+            <ScoreTransportIcon name="previous" />
+          </button>
+          <span className="score-transport-play-slot">
+            <span className="score-transport-location">
+              {transportBar + 1} / {transportBars}마디
+              {repeatSelection && repeatBars ? ` · ${repeatBars.start}~${repeatBars.end} 반복` : ''}
+            </span>{' '}
+            <button
+              className="score-play"
+              aria-label={playing ? '악보 정지' : '악보 재생'}
+              title={playing ? '정지 · Space' : '재생 · Space'}
+              disabled={!loaded || (!playing && !canPlaySelection)}
+              onClick={() => {
+                onPlay(playFrom, loopEnd, repeatAll);
+                focus();
+              }}
+            >
+              <ScoreTransportIcon name={playing ? 'stop' : 'play'} />
+            </button>
+          </span>
+          <button
+            aria-label="다음 마디"
+            title="다음 마디"
+            disabled={!loaded || transportBar >= transportBars - 1}
+            onClick={() => seekBar(transportBar + 1)}
+          >
+            <ScoreTransportIcon name="next" />
+          </button>
+          <button
+            aria-label="끝 마디"
+            title="끝 마디"
+            disabled={!loaded}
+            onClick={() => seekBar(transportBars - 1)}
+          >
+            <ScoreTransportIcon name="last" />
+          </button>
+          <button
+            className="score-loop-toggle"
+            aria-label="구간 반복"
+            title={
+              repeatSelection && repeatBars
+                ? `${repeatBars.start}~${repeatBars.end}마디 반복 · 클릭하여 해제`
+                : '반복 마디 설정'
+            }
+            aria-pressed={repeatSelection || repeatDialog}
+            disabled={!loaded}
+            onClick={() => {
+              if (repeatSelection) {
+                setRepeatSelection(false);
+                if (playing) onSeek?.(playbackBeat ?? playFrom);
+              } else setRepeatDialog(true);
+            }}
+          >
+            <ScoreTransportIcon name="loop" />
+          </button>
+        </div>
+
+        {zoomControl}
+      </div>
+    </div>
+  );
   return (
     <div
       className="guitar-editor"
@@ -1611,360 +1870,125 @@ function GuitarTabEditorContent({
       onKeyDown={keys}
       data-tool-tab={toolTab}
       data-expanded={layout.expanded}
+      data-preview-only={editInExpandedOnly && !layout.expanded}
     >
-      <div className="score-expanded-scorebar">
-        <strong>{scorePartOwner(score, part)}</strong>
-        <span>
-          {instrument.label} {instrument.capo ? `· 카포 ${instrument.capo}` : ''}
-        </span>
-        <div className="score-expanded-view-controls">
-          <div className="score-expanded-view-tools-host" ref={onViewToolsHost} />
-          {instrument.tuning.length > 0 && (
-            <button aria-pressed={showTab} onClick={() => setShowTab(!showTab)}>
-              {showTab ? '오선 + TAB' : '오선'}
-            </button>
-          )}
-          <button aria-label="악보 축소" onClick={() => setZoom(Math.max(60, zoom - 10))}>
-            −
-          </button>
-          <span>{zoom}%</span>
-          <button aria-label="악보 확대" onClick={() => setZoom(Math.min(160, zoom + 10))}>
-            ＋
-          </button>
-        </div>
+      <div className="score-left-tools-header">
+        {layout.expanded && transportIdentityHost
+          ? createPortal(instrumentHeading, transportIdentityHost)
+          : instrumentHeading}
+        <div ref={onLeftToolsHost} />
       </div>
-      <div className="guitar-toolbar score-transport">
-        <div className="score-expanded-transport-position">
-          <strong>
-            {currentLocation.bar + 1}마디 · {Number((currentLocation.offset + 1).toFixed(2))}박
-          </strong>
-          <span>
-            {Math.floor(((playbackBeat ?? before) * 60) / score.bpm / 60)}:
-            {String(Math.floor(((playbackBeat ?? before) * 60) / score.bpm) % 60).padStart(2, '0')}
-          </span>
-        </div>
-        <button
-          className="score-play"
-          aria-label={playing ? '■ 정지' : repeatSelection ? '▶ 구간 반복' : '▶ 선택 위치부터'}
-          title={playing ? '정지 · Space' : '선택 위치부터 재생 · Space'}
-          disabled={!loaded || (!playing && !canPlaySelection)}
-          onClick={() => {
-            onPlay(playFrom, loopEnd, repeatAll);
-            focus();
+      {transportHost ? createPortal(transport, transportHost) : transport}
+      {repeatDialog && (
+        <ScoreRepeatDialog
+          maxBars={transportBars}
+          initial={repeatBars ?? { start: 1, end: transportBars }}
+          onClose={() => setRepeatDialog(false)}
+          onApply={(range) => {
+            setRepeatBars(range);
+            setRepeatSelection(true);
+            setRepeatDialog(false);
+            if (playing)
+              onSeek?.(
+                scoreMeasureStart(score, part, range.start - 1),
+                scoreMeasureStart(score, part, range.end),
+                false,
+              );
           }}
-        >
-          <svg
-            className="score-transport-play-icon"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            fill="currentColor"
-          >
-            <path d={playing ? 'M6 6h12v12H6z' : 'M7 4l14 8-14 8z'} />
-          </svg>
-          <span className="score-transport-play-text">
-            {playing ? '■ 정지' : repeatSelection ? '▶ 구간 반복' : '▶ 선택 위치부터'}
-          </span>
-        </button>
-        <button
-          disabled={
-            disabled ||
-            !(playAll ? score.notes.length : score.notes.some((n) => displayParts.includes(n.part)))
-          }
-          onClick={() => {
-            onPlay(0, undefined, repeatSelection);
-            focus();
-          }}
-          aria-label="처음부터"
-          title="처음부터"
-          className="score-play-from-start"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
-            <path d="M5 4h2v16H5zm14 0L8 12l11 8z" />
-          </svg>
-        </button>
-        <label
-          className="score-check"
-          title="선택 구간 반복 · 구간을 선택하지 않으면 처음부터 끝까지 반복"
-        >
-          <input
-            type="checkbox"
-            checked={repeatSelection}
-            disabled={disabled}
-            onChange={(event) => {
-              setRepeatSelection(event.target.checked);
-              focus();
-            }}
-          />
-          구간 반복
-        </label>
-        <label className="score-bpm">
-          BPM
-          <input
-            key={score.bpm}
-            aria-label="악보 BPM"
-            type="number"
-            min="30"
-            max="300"
-            step="1"
-            defaultValue={score.bpm}
-            disabled={disabled}
-            onBlur={(event) => {
-              const raw = Number(event.currentTarget.value);
-              const bpm =
-                event.currentTarget.value.trim() && Number.isFinite(raw)
-                  ? Math.max(30, Math.min(300, Math.round(raw)))
-                  : score.bpm;
-              event.currentTarget.value = String(bpm);
-              if (bpm !== score.bpm) commit({ ...score, bpm });
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === 'Escape') {
-                event.preventDefault();
-                if (event.key === 'Escape') event.currentTarget.value = String(score.bpm);
-                event.currentTarget.blur();
+        />
+      )}
+      <div className="score-detail-inspector">
+        <div className="guitar-toolbar score-note-tools" role="group" aria-label="길이와 쉼표">
+          <div className="score-expanded-history">
+            <button
+              aria-label="크게 보기 실행 취소"
+              disabled={!canUndo || disabled}
+              onClick={() => {
+                onUndo();
                 focus();
+              }}
+            >
+              ↶
+            </button>
+            <button
+              aria-label="크게 보기 다시 실행"
+              disabled={!canRedo || disabled}
+              onClick={() => {
+                onRedo();
+                focus();
+              }}
+            >
+              ↷
+            </button>
+            <span>음표 입력</span>
+          </div>
+          <span className="score-tool-group-label">길이 · 쉼표</span>
+          {lengths.map((length) => (
+            <ScoreToolButton
+              key={length.value}
+              className="note-length"
+              icon={length.glyph}
+              aria-label={length.label}
+              title={length.label}
+              aria-pressed={base === length.value}
+              disabled={disabled}
+              onClick={() => duration(length.value)}
+            >
+              <b>{length.glyph}</b>
+              <small>
+                {length.value === 0.125 ? '1/8' : length.value === 0.0625 ? '1/16' : length.value}박
+              </small>
+            </ScoreToolButton>
+          ))}
+          <ScoreToolButton
+            aria-label="점음표"
+            aria-pressed={dotted}
+            title="점음표 · 원래 길이의 절반을 더함 (.)"
+            disabled={disabled || base < 0.125 || base > 4}
+            onClick={toggleDot}
+          >
+            • 점
+          </ScoreToolButton>
+          <ScoreToolButton
+            type="button"
+            aria-label="셋잇단음표"
+            aria-pressed={triplet}
+            title="같은 길이의 세 음을 선택하거나 첫 음을 선택해 적용 · 빈 칸에서는 셋잇단음표 입력 모드"
+            disabled={disabled || dotted}
+            onClick={toggleTriplet}
+          >
+            셋잇단음표 3
+          </ScoreToolButton>
+          <ScoreToolButton
+            aria-pressed={!!note?.rest && !note.blank}
+            disabled={disabled}
+            onClick={rest}
+          >
+            𝄽 쉼표
+          </ScoreToolButton>
+          <ScoreToolButton
+            disabled={disabled}
+            title="현재 악기의 마디 전체를 쉼표로 바꾸고 다음 마디로 이동"
+            onClick={() => {
+              try {
+                const next = inputScoreMeasureRest(score, part, location.bar);
+                const bar = location.bar + 1,
+                  at = scoreMeasureStart(next, part, bar);
+                commit(next);
+                select(null, activeString, at, bar);
+                focus();
+              } catch (error) {
+                setMessage((error as Error).message);
               }
             }}
-          />
-        </label>
-        <button
-          aria-label="악보 실행 취소"
-          disabled={!canUndo || disabled}
-          onClick={() => {
-            onUndo();
-            focus();
-          }}
-        >
-          ↶
-        </button>
-        <button
-          aria-label="악보 다시 실행"
-          disabled={!canRedo || disabled}
-          onClick={() => {
-            onRedo();
-            focus();
-          }}
-        >
-          ↷
-        </button>
-        {backingPlayback && (
-          <label className="score-transport-backing" title="연결된 반주를 악보와 함께 재생">
-            <input
-              type="checkbox"
-              aria-label="반주 악보와 함께 재생"
-              checked={backingPlayback.enabled}
-              disabled={backingPlayback.disabled}
-              onChange={(event) => backingPlayback.onChange(event.target.checked)}
-            />
-            <span>반주 함께 재생</span>
-          </label>
-        )}
-        <div className="score-volume">
-          <button
-            aria-label={volume === 0 ? '악보 음소거 해제' : '악보 음소거'}
-            onClick={() => {
-              if (volume > 0) {
-                audibleVolume.current = volume;
-                onVolumeChange(0);
-              } else onVolumeChange(audibleVolume.current);
-            }}
-            disabled={!loaded}
           >
-            <svg
-              className="score-transport-volume-icon"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M4 9h4l5-4v14l-5-4H4z" />
-              <path
-                d={volume === 0 ? 'M17 9l5 6m0-6-5 6' : 'M17 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14'}
-              />
-            </svg>
-            <span className="score-transport-volume-text">
-              {volume === 0 ? '음소거 해제' : '음소거'}
-            </span>
-          </button>
-          <input
-            type="range"
-            aria-label="악보 재생 음량"
-            min="0"
-            max="1"
-            step="0.01"
-            value={volume}
-            aria-valuetext={`${Math.round(volume * 100)}%`}
-            disabled={!loaded}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              if (value > 0) audibleVolume.current = value;
-              onVolumeChange(value);
-            }}
-          />
-          <output>{Math.round(volume * 100)}%</output>
-        </div>
-        <div className="score-zoom">
-          <button aria-label="악보 축소" onClick={() => setZoom(Math.max(60, zoom - 10))}>
-            −
-          </button>
-          <span>{zoom}%</span>
-          <button aria-label="악보 확대" onClick={() => setZoom(Math.min(160, zoom + 10))}>
-            +
-          </button>
-        </div>
-        <div className="score-expanded-timeline">
-          <input
-            type="range"
-            aria-label="재생 시작 위치"
-            min="0"
-            max={Math.max(1, endBeat)}
-            step="0.25"
-            value={Math.min(endBeat, playbackBeat ?? before)}
-            disabled={playing || !loaded || !endBeat}
-            onChange={(event) => selectChordPosition(Number(event.target.value))}
-          />
-        </div>
-      </div>
-      <div className="guitar-toolbar score-note-tools" role="group" aria-label="길이와 쉼표">
-        <div className="score-expanded-history">
-          <button
-            aria-label="크게 보기 실행 취소"
-            disabled={!canUndo || disabled}
-            onClick={() => {
-              onUndo();
-              focus();
-            }}
-          >
-            ↶
-          </button>
-          <button
-            aria-label="크게 보기 다시 실행"
-            disabled={!canRedo || disabled}
-            onClick={() => {
-              onRedo();
-              focus();
-            }}
-          >
-            ↷
-          </button>
-          <span>음표 입력</span>
-        </div>
-        <span className="score-tool-group-label">길이 · 쉼표</span>
-        {lengths.map((length) => (
-          <ScoreToolButton
-            key={length.value}
-            className="note-length"
-            icon={length.glyph}
-            aria-label={length.label}
-            title={length.label}
-            aria-pressed={base === length.value}
-            disabled={disabled}
-            onClick={() => duration(length.value)}
-          >
-            <b>{length.glyph}</b>
-            <small>
-              {length.value === 0.125 ? '1/8' : length.value === 0.0625 ? '1/16' : length.value}박
-            </small>
+            마디 쉼표 입력
           </ScoreToolButton>
-        ))}
-        <ScoreToolButton
-          aria-label="점음표"
-          aria-pressed={dotted}
-          title="점음표 · 원래 길이의 절반을 더함 (.)"
-          disabled={disabled || base < 0.125 || base > 4}
-          onClick={toggleDot}
-        >
-          • 점
-        </ScoreToolButton>
-        <ScoreToolButton
-          type="button"
-          aria-label="셋잇단음표"
-          aria-pressed={triplet}
-          title="같은 길이의 세 음을 선택하거나 첫 음을 선택해 적용 · 빈 칸에서는 셋잇단음표 입력 모드"
-          disabled={disabled || dotted}
-          onClick={toggleTriplet}
-        >
-          셋잇단음표 3
-        </ScoreToolButton>
-        <ScoreToolButton
-          aria-pressed={!!note?.rest && !note.blank}
-          disabled={disabled}
-          onClick={rest}
-        >
-          𝄽 쉼표
-        </ScoreToolButton>
-        <ScoreToolButton
-          disabled={disabled}
-          title="현재 악기의 마디 전체를 쉼표로 바꾸고 다음 마디로 이동"
-          onClick={() => {
-            try {
-              const next = inputScoreMeasureRest(score, part, location.bar);
-              const bar = location.bar + 1,
-                at = scoreMeasureStart(next, part, bar);
-              commit(next);
-              select(null, activeString, at, bar);
-              focus();
-            } catch (error) {
-              setMessage((error as Error).message);
-            }
-          }}
-        >
-          마디 쉼표 입력
-        </ScoreToolButton>
-      </div>
-      <div className="score-detail-inspector">
+        </div>
+
+        <div className="score-backing-inspector-host" ref={onBackingHost} />
         {renderSettings(
           <>
-            <div
-              className="guitar-inputbar score-instrument-settings"
-              role="group"
-              aria-label="파트 악기 설정"
-            >
-              <label>
-                악기 · 튜닝{' '}
-                <select
-                  aria-label="파트 악기와 튜닝"
-                  value={instrument.id}
-                  disabled={disabled || scorePartStaves(score, part).length > 1}
-                  onChange={(event) => {
-                    try {
-                      commit(
-                        event.target.value === 'piano'
-                          ? enableKeyboardPart(score, part)
-                          : {
-                              ...score,
-                              instruments: { ...score.instruments, [part]: event.target.value },
-                            },
-                      );
-                    } catch (error) {
-                      setMessage((error as Error).message);
-                    }
-                    digits.current = null;
-                    setString(1);
-                  }}
-                >
-                  {Object.entries(scoreInstruments).map(([id, item]) => (
-                    <option key={id} value={id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {instrument.tuning.length > 0 && (
-                <label className="score-check">
-                  <input
-                    type="checkbox"
-                    checked={showTab}
-                    onChange={(event) => setShowTab(event.target.checked)}
-                  />
-                  TAB 표시
-                </label>
-              )}
-            </div>
             <div className="guitar-inputbar score-layout-settings">
               <label>
                 줄 간격{' '}
@@ -2494,7 +2518,7 @@ function GuitarTabEditorContent({
               type="button"
               aria-label="리듬 슬래시 입력"
               title={
-                instrument.id === 'bass'
+                instrument.id.startsWith('bass')
                   ? '앞의 베이스 음을 선택한 길이로 다시 연주'
                   : '앞 코드를 선택한 길이로 다시 연주'
               }
@@ -2684,7 +2708,7 @@ function GuitarTabEditorContent({
         )}
 
         {isDrums && (
-          <div className="score-measure-tools">
+          <div className="score-measure-tools score-percussion-tools">
             <ScoreExpressionTools
               mode="percussion"
               score={score}
@@ -2697,7 +2721,7 @@ function GuitarTabEditorContent({
             />
           </div>
         )}
-        <div className="score-measure-tools">
+        <div className="score-measure-tools score-dynamic-tools">
           {' '}
           <ScoreExpressionTools
             score={score}
@@ -2709,7 +2733,7 @@ function GuitarTabEditorContent({
             onError={setMessage}
           />
         </div>
-        <div className="score-measure-tools">
+        <div className="score-measure-tools score-navigation-tools">
           {' '}
           <ScoreExpressionTools
             mode="navigation"
@@ -2755,7 +2779,7 @@ function GuitarTabEditorContent({
                   tuplet: undefined,
                   beats: remaining,
                 };
-                commit(appendScoreMeasureNote(score, item, bar, used, () => crypto.randomUUID()));
+                commit(appendScoreMeasureNote(score, item, bar, used, () => clientId()));
                 select(item.id);
               } catch (error) {
                 setMessage((error as Error).message);
@@ -3009,6 +3033,13 @@ function GuitarTabEditorContent({
                 ? '합주 악보'
                 : `${scorePartOwner(score, part)} · ${partInstrumentLabel(score, part)}`}
             </p>
+            {!!score.keyboardTranspositions?.[voiceOwner] &&
+              !keyboardKeyIsWritten(score, voiceOwner) && (
+                <p className="score-key-adjustment">
+                  {score.keyboardTranspositions[voiceOwner]! > 0 ? '+' : ''}
+                  {score.keyboardTranspositions[voiceOwner]}키 조정
+                </p>
+              )}
             {instrument.tuning.length > 0 && (
               <small>
                 튜닝 {[...instrument.openTuning].reverse().map(pitchName).join(' – ')} ·{' '}
@@ -3024,7 +3055,7 @@ function GuitarTabEditorContent({
             activeVoice={
               (isDrums && !multiDrums) || (isKeyboard && !multiKeyboard) ? part : undefined
             }
-            otherVoiceOpacity={0.3}
+            otherVoiceOpacity={isKeyboard ? 1 : 0.3}
             onMeasureContextMenu={(bar, x, y) => {
               const line = systems.findIndex(
                 (row) => bar >= row.start && bar < row.start + row.count,
@@ -3048,7 +3079,7 @@ function GuitarTabEditorContent({
             cursor={cursor}
             playbackBeat={playbackBeat}
             playbackPosition={playbackPosition}
-            zoom={zoom}
+            zoom={zoom * 0.8}
             onSelect={select}
             onDeleteMeasureRest={deleteMeasureRest}
             onAppend={(row, at, bar) => select(null, row, at, bar)}
@@ -3073,7 +3104,8 @@ function GuitarTabEditorContent({
                   }
                 : undefined
             }
-            showTab={showTab}
+            showTab={true}
+            tabOnly={!showTab}
           />
         </div>
       </div>

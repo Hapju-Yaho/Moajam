@@ -126,9 +126,11 @@ export function Notifications({
       const route: AppRoute =
         item.kind === 'RECOMMENDATION'
           ? 'recommendation'
-          : item.kind.startsWith('REHEARSAL')
-            ? 'rehearsals'
-            : 'song';
+          : item.kind === 'SCORE_SHARED'
+            ? 'band-score-editor'
+            : item.kind.startsWith('REHEARSAL')
+              ? 'rehearsals'
+              : 'song';
       go(route, {
         workspaceId: item.workspaceId,
         id: item.entityId ?? undefined,

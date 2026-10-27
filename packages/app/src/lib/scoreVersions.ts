@@ -1,3 +1,4 @@
+import { clientId } from './clientId';
 import { validateScoreDocument, type ScoreDocument } from './scoreFile';
 import { scorePartOwner, scorePartStaves, scoreVisibleParts } from './scoreParts';
 import { renameScorePart, type Score, type ScoreNote } from './score';
@@ -9,6 +10,8 @@ export const PART_VERSION_FIELDS = [
   'directions',
   'guitarToneChanges',
   'capos',
+  'keyboardTranspositions',
+  'keyboardTransposeNotation',
   'systemLayout',
   'equalWidthRows',
   'playbackInstruments',
@@ -223,6 +226,18 @@ const changeGroup = (
   ...library,
   parts: library.parts.map((group) => (group.part === part ? transform(group) : group)),
 });
+export function saveScoreProjectDocument(
+  library: ScoreVersionLibrary,
+  document: ScoreDocument,
+): ScoreVersionLibrary {
+  let next = reconcileScoreVersions(library, document);
+  for (const group of next.parts) {
+    next = saveScoreVersion(next, group.part, group.appliedVersionId, document);
+    next = applyScoreVersion(next, group.part, group.appliedVersionId);
+  }
+  return { ...next, applied: document };
+}
+
 export function saveScoreVersion(
   library: ScoreVersionLibrary,
   part: string,
@@ -391,7 +406,7 @@ export function importScorePart(
   if (from.length > to.length)
     throw new Error('양손·손발 악보는 같은 성부 구조의 파트로 가져와주세요.');
   const snapshot = captureScorePart(source, sourcePart);
-  const ids = new Map(snapshot.notes.map((note) => [note.id, crypto.randomUUID()]));
+  const ids = new Map(snapshot.notes.map((note) => [note.id, clientId()]));
   return {
     notes: snapshot.notes.map((note) => ({
       ...note,

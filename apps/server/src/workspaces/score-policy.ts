@@ -28,6 +28,8 @@ export function isBandScore(value: unknown): boolean {
     'directions',
     'guitarToneChanges',
     'capos',
+    'keyboardTranspositions',
+    'keyboardTransposeNotation',
     'systemLayout',
     'equalWidthRows',
     'playbackInstruments',
@@ -131,6 +133,29 @@ export function isBandScore(value: unknown): boolean {
 function isSingleBandScore(value: unknown): boolean {
   if (!object(value) || JSON.stringify(value).length > 950000) return false;
   if (typeof value.title !== 'string' || value.title.length > 1000 || !number(value.bpm, 30, 300))
+    return false;
+  if (
+    value.keyboardTranspositions !== undefined &&
+    (!object(value.keyboardTranspositions) ||
+      Object.entries(value.keyboardTranspositions).some(
+        ([part, offset]) =>
+          !Array.isArray(value.parts) ||
+          !value.parts.includes(part) ||
+          !number(offset, -12, 12) ||
+          !Number.isInteger(offset),
+      ))
+  )
+    return false;
+  if (
+    value.keyboardTransposeNotation !== undefined &&
+    (!object(value.keyboardTransposeNotation) ||
+      Object.entries(value.keyboardTransposeNotation).some(
+        ([part, applied]) =>
+          !Array.isArray(value.parts) ||
+          !value.parts.includes(part) ||
+          typeof applied !== 'boolean',
+      ))
+  )
     return false;
   const parts = value.parts;
   if (

@@ -228,6 +228,18 @@ export class WorkspacesController {
     });
     if (!item) throw new NotFoundException('이 알림에 접근할 수 없어요.');
     if (item.kind === 'NOTICE' || item.kind === 'REHEARSAL_CANCELLED') return { available: true };
+    const metadata = item.metadata as { projectId?: unknown } | null;
+    if (item.kind === 'SCORE_SHARED' && typeof metadata?.projectId === 'string') {
+      const project = await this.db.scoreProject.findFirst({
+        where: {
+          id: metadata.projectId,
+          workspaceId: item.workspaceId,
+          songId: item.entityId ?? '',
+          deletedAt: null,
+        },
+      });
+      if (!project) return { available: false };
+    }
     const key =
       item.kind === 'RECOMMENDATION'
         ? 'recommendations'

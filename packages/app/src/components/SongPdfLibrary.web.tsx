@@ -1,4 +1,5 @@
 import { ScheduleDialog } from './ScheduleDialog';
+import { PdfScoreReader } from './PdfScoreReader.web';
 import './StudioConfirm.web.css';
 import './SongPdfLibrary.web.css';
 import { useEffect, useRef, useState } from 'react';
@@ -81,6 +82,10 @@ export function SongPdfLibrary({
                   if (generation.current === request)
                     setError('PDF를 열지 못했어요. 목록에서 다시 선택해주세요.');
                 });
+            } else if (file.blob) {
+              const url = URL.createObjectURL(file.blob);
+              urls.current.push(url);
+              setPreview({ name: file.name, url });
             }
           }
         }
@@ -221,30 +226,6 @@ export function SongPdfLibrary({
                 </ActionButton>
               </header>
               <div className="song-pdf-body">
-                {preview && (
-                  <section aria-label="선택한 PDF 악보" style={{ marginBottom: 20 }}>
-                    <h3>{preview.name}</h3>
-                    <div
-                      style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 12 }}
-                    >
-                      <a href={preview.url} target="_blank" rel="noopener noreferrer">
-                        새 창에서 크게 보기
-                      </a>
-                      <button onClick={() => setPreview(null)}>미리보기 닫기</button>
-                    </div>
-                    <iframe
-                      title={preview.name + ' PDF 미리보기'}
-                      src={preview.url}
-                      style={{
-                        width: '100%',
-                        height: '60vh',
-                        border: '1px solid #dce4ef',
-                        borderRadius: 8,
-                      }}
-                    />
-                    <p>PDF가 표시되지 않으면 새 창에서 열어주세요.</p>
-                  </section>
-                )}
                 <p className="song-pdf-description">
                   파트별 PDF를 추가하거나 선택해 바로 볼 수 있어요.
                 </p>
@@ -462,6 +443,16 @@ export function SongPdfLibrary({
           </div>
         )}
       </ScheduleDialog>
+      {preview &&
+        createPortal(
+          <PdfScoreReader
+            key={preview.url}
+            name={preview.name}
+            url={preview.url}
+            onClose={() => setPreview(null)}
+          />,
+          document.body,
+        )}
     </>
   );
 }
