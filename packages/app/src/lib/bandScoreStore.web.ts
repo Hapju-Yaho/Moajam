@@ -2,14 +2,22 @@ import { api, serverConfigured } from './remote';
 import { encode, decode } from './remote-media.web';
 import { readMedia, writeMedia } from './mediaStore.web';
 import { readScoreVersionLibrary, type StoredScore } from './scoreVersions';
+import { readScoreProject, writeScoreProject } from './scoreProjects.web';
 export type { StoredScore } from './scoreVersions';
-type RevisionDocument = { revision: number; value: { data: StoredScore } };
+type RevisionDocument = { revision: number; value: { data: StoredScore }; name?: string };
 export const scoreConflictMessage =
   '다른 멤버가 악보를 수정했어요. 내 작업을 파일로 저장한 뒤 최신 악보를 불러와주세요.';
 
 // Each open editor owns its revision. Reading in another editor must never advance it.
-export function createBandScoreStore(workspaceId: string, songId: string, user: string) {
-  const key = `band-score/${workspaceId}/${songId}`;
+export function createBandScoreStore(
+  workspaceId: string,
+  songId: string,
+  user: string,
+  project?: { id: string; name: () => string; onSaved: (name: string) => void },
+) {
+  const key = project
+    ? `score-project/${workspaceId}/${project.id}`
+    : `band-score/${workspaceId}/${songId}`;
   const path = `/workspaces/${encodeURIComponent(workspaceId)}/scores/${encodeURIComponent(songId)}`;
   let revision: number | undefined;
   let saving = false;
@@ -18,9 +26,11 @@ export function createBandScoreStore(workspaceId: string, songId: string, user: 
     async load(): Promise<StoredScore | undefined> {
       if (saving) throw new Error('저장이 끝난 뒤 다시 불러와주세요.');
       const request = ++loadRequest;
-      const document = serverConfigured
-        ? await api<RevisionDocument | null>(path, 'GET', undefined, user)
-        : await readMedia<RevisionDocument>(key, 'band-shared');
+      const document = project
+        ? await readScoreProject(workspaceId, songId, project.id)
+        : serverConfigured
+          ? await api<RevisionDocument | null>(path, 'GET', undefined, user)
+          : await readMedia<RevisionDocument>(key, 'band-shared');
       const value = serverConfigured
         ? ((await decode(document?.value.data, user, key)) as StoredScore | undefined)
         : document?.value.data;
@@ -28,6 +38,7 @@ export function createBandScoreStore(workspaceId: string, songId: string, user: 
       if (value) readScoreVersionLibrary(value);
       if (request !== loadRequest) throw new Error('새로운 불러오기 요청이 시작됐어요.');
       revision = document?.revision ?? 0;
+      if (project && typeof document?.name === 'string') project.onSaved(document.name);
       return value;
     },
     async save(value: StoredScore): Promise<void> {
@@ -36,7 +47,22 @@ export function createBandScoreStore(workspaceId: string, songId: string, user: 
       readScoreVersionLibrary(value);
       saving = true;
       try {
-        if (serverConfigured) {
+        if (project) {
+          const encoded = serverConfigured
+            ? ((await encode(value, key, user)) as StoredScore)
+            : value;
+          const name = project.name();
+          const result = await writeScoreProject(
+            workspaceId,
+            songId,
+            project.id,
+            revision!,
+            encoded,
+            name,
+          );
+          revision = result.revision;
+          project.onSaved(name);
+        } else if (serverConfigured) {
           const encoded = await encode(value, key, user);
           if (JSON.stringify(encoded).length > 950000)
             throw new Error(

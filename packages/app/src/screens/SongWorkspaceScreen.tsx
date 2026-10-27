@@ -146,7 +146,7 @@ export function SongWorkspaceScreen({
                 songId={song.id}
                 title={song.title}
                 assetId={assetId}
-                buttonLabel="악보 보기"
+                buttonLabel="PDF 악보 보기"
                 initialOpen={tab === 'scores'}
               />
               <ActionButton
@@ -154,7 +154,7 @@ export function SongWorkspaceScreen({
                 compact
                 onPress={() => navigate('band-score-editor', { id: song.id, workspaceId })}
               >
-                악보 작업
+                악보 프로젝트 열기
               </ActionButton>
               <SongLyrics key={song.id} songId={song.id} title={song.title} />
             </FlexRow>

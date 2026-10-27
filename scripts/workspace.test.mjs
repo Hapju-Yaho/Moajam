@@ -189,7 +189,7 @@ test('feedback links retain the selected band and song and target the feedback s
 test('tool links retain explicit band/song context and return to the correct detail tab', () => {
   const context = { route: 'song', workspaceId: 'other band', entityId: 'other song' };
   for (const [route, pathname] of [
-    ['band-score-editor', '/tools/scores'],
+    ['band-score-editor', '/workspaces/band%20%2F%20a/songs/song%20%2F%20b/score'],
     ['track-editor', '/tools/tracks'],
     ['score-editor', '/tools/scores/personal'],
   ]) {
@@ -198,14 +198,22 @@ test('tool links retain explicit band/song context and return to the correct det
       'https://example.test',
     );
     assert.equal(url.pathname, pathname);
-    assert.equal(url.searchParams.get('workspaceId'), 'band / a');
-    assert.equal(url.searchParams.get('songId'), 'song / b');
+    if (route !== 'band-score-editor') {
+      assert.equal(url.searchParams.get('workspaceId'), 'band / a');
+      assert.equal(url.searchParams.get('songId'), 'song / b');
+    }
     const back = new URL(
       buildAppPath(
         'song',
         {
-          workspaceId: url.searchParams.get('workspaceId'),
-          id: url.searchParams.get('songId'),
+          workspaceId:
+            route === 'band-score-editor'
+              ? decodeURIComponent(url.pathname.split('/')[2])
+              : url.searchParams.get('workspaceId'),
+          id:
+            route === 'band-score-editor'
+              ? decodeURIComponent(url.pathname.split('/')[4])
+              : url.searchParams.get('songId'),
           songTab: route === 'track-editor' ? 'tracks' : 'scores',
         },
         { route, workspaceId: 'other' },

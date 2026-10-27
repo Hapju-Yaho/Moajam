@@ -49,6 +49,9 @@ const { createBandScoreStore } = await import(
     './remote': remoteUrl,
     './mediaStore.web': mediaUrl,
     './remote-media.web': codecUrl,
+    './scoreProjects.web': url(
+      'export async function readScoreProject() { throw new Error("Unexpected project read"); } export async function writeScoreProject() { throw new Error("Unexpected project write"); }',
+    ),
   })
 );
 const remote = await import(remoteUrl);
@@ -116,7 +119,7 @@ test('band and personal editor links remain separate and preserve song context',
   const context = { route: 'practice', workspaceId: 'band', entityId: 'song' };
   assert.equal(
     buildAppPath('band-score-editor', undefined, context),
-    '/tools/scores?workspaceId=band&songId=song',
+    '/workspaces/band/songs/song/score',
   );
   assert.equal(
     buildAppPath('score-editor', undefined, context),

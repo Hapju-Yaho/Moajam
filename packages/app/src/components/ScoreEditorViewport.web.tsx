@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import './ScoreEditorViewport.web.css';
+import './ScoreProjectWorkspace.web.css';
 import { ScoreEditorLayoutContext, type ScoreInspectorTab } from './ScoreEditorLayout.web';
 
 const shortcuts = [
@@ -57,6 +58,13 @@ const shortcuts = [
     ],
   ],
 ] as const;
+export type ScoreViewActions = {
+  shortcuts: ReactNode;
+  edit: ReactNode;
+  file: ReactNode;
+  toggleMenu?: () => void;
+  menuOpen?: boolean;
+};
 
 export function ScoreEditorViewport({
   children,
@@ -65,22 +73,45 @@ export function ScoreEditorViewport({
   shared = false,
   status,
   initiallyExpanded = false,
+  projectBar,
+  onRequestClose,
 }: PropsWithChildren<{
   heading?: ReactNode;
   title?: string;
   shared?: boolean;
   status?: string;
   initiallyExpanded?: boolean;
+  projectBar?: ReactNode | ((status?: string, actions?: ScoreViewActions) => ReactNode);
+  onRequestClose?: (close: () => void) => void;
 }>) {
   const root = useRef<HTMLDivElement>(null);
   const fullscreenButton = useRef<HTMLButtonElement>(null);
   const helpButton = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const [projectActionsOpen, setProjectActionsOpen] = useState(false);
+  const [mixerHost, setMixerHost] = useState<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const titleId = useId();
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspector, setInspector] = useState<ScoreInspectorTab>('notes');
   const [filePanel, setFilePanel] = useState<'file' | null>(null);
+  useEffect(() => {
+    setProjectActionsOpen(false);
+  }, [expanded]);
+  useEffect(() => {
+    if (!projectActionsOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest('.score-project-actions, .score-project-actions-toggle')
+      )
+        return;
+      setProjectActionsOpen(false);
+    };
+    document.addEventListener('pointerdown', dismiss, true);
+    return () => document.removeEventListener('pointerdown', dismiss, true);
+  }, [projectActionsOpen]);
   // ScrollView uses translateZ(0), which contains fixed descendants. The top layer
   // escapes that containing block without remounting the editor or using fullscreen.
   useLayoutEffect(() => {
@@ -98,7 +129,11 @@ export function ScoreEditorViewport({
     let branch: HTMLElement | null = root.current;
     while (branch && branch !== document.body) {
       for (const sibling of branch.parentElement?.children ?? []) {
-        if (sibling !== branch && sibling instanceof HTMLElement) {
+        if (
+          sibling !== branch &&
+          sibling instanceof HTMLElement &&
+          !(sibling instanceof HTMLDialogElement)
+        ) {
           siblings.push({
             node: sibling,
             inert: sibling.inert,
@@ -113,7 +148,7 @@ export function ScoreEditorViewport({
     const escape = (event: KeyboardEvent) => {
       if (
         event.key !== 'Escape' ||
-        dialog.current?.open ||
+        document.querySelector('dialog[open]') ||
         root.current?.querySelector('.score-measure-menu') ||
         (event.target instanceof HTMLElement && event.target.closest('.score-editable-title input'))
       )
@@ -124,7 +159,8 @@ export function ScoreEditorViewport({
         setFilePanel(null);
         return;
       }
-      setExpanded(false);
+      if (onRequestClose) onRequestClose(() => setExpanded(false));
+      else setExpanded(false);
       fullscreenButton.current?.focus({ preventScroll: true });
     };
     window.addEventListener('keydown', escape, true);
@@ -137,13 +173,50 @@ export function ScoreEditorViewport({
       });
       window.removeEventListener('keydown', escape, true);
     };
-  }, [expanded, filePanel]);
+  }, [expanded, filePanel, onRequestClose]);
 
-  const toggleFullscreen = () => setExpanded((value) => !value);
+  const toggleFullscreen = () => {
+    if (expanded && onRequestClose) onRequestClose(() => setExpanded(false));
+    else setExpanded((value) => !value);
+  };
 
+  const projectActions = typeof projectBar === 'function';
+  const shortcutsButton = (
+    <button
+      ref={helpButton}
+      type="button"
+      aria-haspopup="dialog"
+      onClick={() => dialog.current?.showModal()}
+    >
+      단축키
+    </button>
+  );
+  const fileButton = (
+    <div className="score-expanded-file-buttons">
+      <button
+        aria-expanded={filePanel === 'file'}
+        onClick={() => setFilePanel(filePanel === 'file' ? null : 'file')}
+      >
+        파일 · 내보내기⌄
+      </button>
+    </div>
+  );
+  const editButton = (
+    <button
+      ref={fullscreenButton}
+      className={expanded ? 'score-edit-exit' : undefined}
+      type="button"
+      aria-pressed={expanded}
+      onClick={() => void toggleFullscreen()}
+    >
+      {expanded ? '편집 종료' : '악보 편집'}
+    </button>
+  );
   return (
     <ScoreEditorLayoutContext.Provider
       value={{
+        mixerHost,
+        projectActionsOpen,
         expanded,
         inspector,
         setInspector,
@@ -160,8 +233,26 @@ export function ScoreEditorViewport({
         data-inspector-open={inspectorOpen}
         data-inspector={inspector}
         data-file-panel={filePanel ?? 'closed'}
+        data-project={!!projectBar}
         popover={expanded ? 'manual' : undefined}
       >
+        {projectBar ? (
+          <div className="score-project-header">
+            {typeof projectBar === 'function'
+              ? projectBar(status, {
+                  shortcuts: shortcutsButton,
+                  edit: editButton,
+                  file: fileButton,
+                  toggleMenu: () => setProjectActionsOpen((value) => !value),
+                  menuOpen: projectActionsOpen,
+                })
+              : projectBar}
+            <div className="score-project-mixer-area">
+              <div className="score-project-mixer-host" ref={setMixerHost} />
+              <div className="score-project-edit-action">{editButton}</div>
+            </div>
+          </div>
+        ) : null}
         <header className="score-editor-viewbar">
           <div className="score-expanded-heading">
             <span className="score-expanded-brand">
@@ -172,7 +263,7 @@ export function ScoreEditorViewport({
             </span>
             <strong>{title || '제목 없는 악보'}</strong>
             <span className="score-expanded-badge">{shared ? '밴드 악보' : '개인 악보'}</span>
-            {status && (
+            {status && !projectBar && (
               <span className="score-expanded-save" role="status">
                 {status}
               </span>
@@ -180,32 +271,20 @@ export function ScoreEditorViewport({
           </div>
           <div className="score-normal-heading">{heading}</div>
           <div className="score-editor-view-actions" role="toolbar" aria-label="악보 화면과 도움말">
-            <div className="score-expanded-file-buttons">
-              <button
-                aria-expanded={filePanel === 'file'}
-                onClick={() => setFilePanel(filePanel === 'file' ? null : 'file')}
-              >
-                파일 · 내보내기⌄
-              </button>
-            </div>
-            <button
-              ref={helpButton}
-              type="button"
-              aria-haspopup="dialog"
-              onClick={() => dialog.current?.showModal()}
-            >
-              단축키
-            </button>
-            <button
-              ref={fullscreenButton}
-              type="button"
-              aria-pressed={expanded}
-              onClick={() => void toggleFullscreen()}
-            >
-              {expanded ? '원래 화면' : '악보 크게 보기'}
-            </button>
+            {!projectActions && fileButton}
+            {!projectActions && (
+              <>
+                {shortcutsButton}
+                {editButton}
+              </>
+            )}
           </div>
         </header>
+        {!expanded && status && !projectBar && (
+          <p className="score-reader-status" role="status">
+            {status}
+          </p>
+        )}
         <div className="score-editor-content">{children}</div>
         <dialog
           ref={dialog}

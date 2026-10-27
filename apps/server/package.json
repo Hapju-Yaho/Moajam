@@ -18,7 +18,9 @@
     "band-photos:migrate": "node scripts/migrate-band-photos.mjs",
     "profiles:migrate": "node scripts/migrate-profile-photos.mjs",
     "daw-projects:migrate": "node scripts/migrate-daw-projects.mjs",
+    "score-projects:migrate": "node scripts/migrate-score-projects.mjs",
     "test:daw-projects": "npm run build && node --test test/daw-projects.test.mjs",
+    "test:score-projects": "npm run build && node --test test/score-projects.test.mjs",
     "test:integration": "npm run build && node --test --test-concurrency=1 test/local-api.test.mjs test/sqlite-defaults.test.mjs test/notifications.test.mjs"
   },
   "dependencies": {

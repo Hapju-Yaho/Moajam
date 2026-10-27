@@ -73,6 +73,15 @@ export function buildAppPath(
     (['song', 'practice', 'personal-practice'].includes(context.route)
       ? context.entityId
       : undefined);
+  if (next === 'band-score-editor') {
+    const scoreParams = new URLSearchParams();
+    if (options?.projectId) scoreParams.set('project', options.projectId);
+    if (options?.scoreView) scoreParams.set('view', options.scoreView);
+    if (options?.scorePart) scoreParams.set('part', options.scorePart);
+    return id
+      ? `${base}/songs/${encodeURIComponent(id)}/score${scoreParams.size ? `?${scoreParams}` : ''}`
+      : `${base}/songs`;
+  }
   const params = id
     ? new URLSearchParams({ workspaceId: bandId, songId: id })
     : new URLSearchParams();
@@ -87,7 +96,6 @@ export function buildAppPath(
     'track-editor': `/tools/tracks${query}`,
     instrument: '/tools/instrument-extractor',
     'score-editor': `/tools/scores/personal${query}`,
-    'band-score-editor': id ? `/tools/scores${query}` : '/tools',
     settings: '/settings',
     help: '/help',
   };
