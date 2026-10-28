@@ -85,6 +85,27 @@
 .score-project-bar .score-project-save {
   background: #446c9d;
 }
+.score-editor-viewport[data-expanded='true'] .score-project-header .score-project-identity {
+  padding-right: 68px;
+}
+.score-editor-viewport .score-project-header .score-project-quick-save {
+  position: absolute;
+  left: 231px;
+  top: 5px;
+  bottom: 5px;
+  width: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+@media (max-width: 900px) {
+  .score-editor-viewport .score-project-header .score-project-quick-save {
+    left: 111px;
+  }
+}
 .score-project-empty {
   background: #22333d;
   border: 1px solid #52646e;
@@ -843,40 +864,6 @@
 .score-editor-viewport[data-expanded='true'] .guitar-editor > .score-note-tools {
   display: none !important;
 }
-.guitar-editor[data-tool-tab='notes'] .score-detail-inspector :is(.score-dynamic-tools) {
-  display: flex;
-}
-.guitar-editor[data-tool-tab='notes']
-  .score-detail-inspector
-  :is(
-    .score-connections,
-    .score-percussion-tools,
-    .score-navigation-tools,
-    .score-measure-actions
-  ) {
-  display: none;
-}
-.guitar-editor[data-tool-tab='measures'] .score-detail-inspector .score-connections {
-  display: flex;
-}
-.guitar-editor[data-tool-tab='measures'] .score-detail-inspector .score-percussion-tools {
-  display: flex;
-}
-.guitar-editor[data-tool-tab='measures']
-  .score-detail-inspector
-  :is(.score-dynamic-tools, .score-navigation-tools, .score-measure-actions) {
-  display: none;
-}
-.guitar-editor[data-tool-tab='settings']
-  .score-detail-inspector
-  :is(.score-navigation-tools, .score-measure-actions, .score-document-settings) {
-  display: flex;
-}
-.guitar-editor[data-tool-tab='settings']
-  .score-detail-inspector
-  :is(.score-connections, .score-percussion-tools, .score-dynamic-tools) {
-  display: none;
-}
 @media (max-width: 1000px) {
   .score-editor-viewport[data-expanded='true'][data-project='true'] {
     left: 0;
@@ -1425,6 +1412,20 @@
 /* Raised tabs join the tool page beneath them, like an open notebook. */
 .score-editor-viewport[data-expanded='true'] .score-left-tools-header {
   background: #20333e;
+}
+.score-editor-viewport[data-expanded='true']
+  .score-left-tools-header
+  .score-mobile-inspector-close {
+  display: none !important;
+}
+.score-editor-viewport[data-expanded='true']
+  .score-left-tools-header
+  .score-expanded-inspector-tabs
+  button {
+  min-width: 0;
+  padding-left: 2px;
+  padding-right: 2px;
+  white-space: nowrap;
 }
 .score-editor-viewport[data-expanded='true']
   .score-left-tools-header

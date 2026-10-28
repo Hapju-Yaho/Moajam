@@ -29,7 +29,7 @@ export function DrumInputPreview({
   layout?: { stemStart: number; stemEnd: number; beamed: boolean; ys: number[] };
 }) {
   const { tone, beats } = note;
-  const color = '#c77830';
+  const color = '#7b8794';
   const y = drumForPitch(tone.pitch)?.y ?? 102;
   const flags = [1, 0.5, 0.25, 0.125].filter((limit) => beats < limit).length;
   const stemX = x - direction * 4.5;
@@ -43,6 +43,7 @@ export function DrumInputPreview({
       data-drum-input-preview={tone.pitch}
       data-preview-written-beats={beats}
       pointerEvents="none"
+      opacity="0.65"
       fill={color}
       stroke={color}
     >

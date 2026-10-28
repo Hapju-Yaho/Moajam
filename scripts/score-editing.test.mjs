@@ -72,12 +72,111 @@ const n = (id, beats = 1, part = 'Guitar') => ({
   accent: false,
 });
 
+test('beat insertion distinguishes before and after selection and preserves other instruments', () => {
+  const score = {
+    title: '',
+    bpm: 120,
+    parts: ['Guitar', 'Bass'],
+    sync: {},
+    notes: [n('a'), n('bass', 4, 'Bass'), n('b'), n('c')],
+  };
+  const blank = { ...n('gap', 0.5), rest: true, blank: true };
+  const before = insertScoreNote(score, blank, 'b', 'before');
+  const after = insertScoreNote(score, blank, 'b', 'after');
+  assert.deepEqual(
+    before.notes.filter((note) => note.part === 'Guitar').map((note) => note.id),
+    ['a', 'gap', 'b', 'c'],
+  );
+  assert.deepEqual(
+    after.notes.filter((note) => note.part === 'Guitar').map((note) => note.id),
+    ['a', 'b', 'gap', 'c'],
+  );
+  assert.deepEqual(
+    before.notes.find((note) => note.part === 'Bass'),
+    score.notes[1],
+  );
+  assert.deepEqual(
+    after.notes.find((note) => note.part === 'Bass'),
+    score.notes[1],
+  );
+  assert.deepEqual(
+    score.notes.map((note) => note.id),
+    ['a', 'bass', 'b', 'c'],
+  );
+});
+
 test('connections use the opposite side of rendered stems, with source preference for mixed stems', () => {
   assert.equal(scoreConnectionSide([1, 1]), -1);
   assert.equal(scoreConnectionSide([-1, -1]), 1);
   assert.equal(scoreConnectionSide([-1, 1]), 1);
   assert.equal(scoreConnectionSide([1, -1]), -1);
   assert.equal(scoreConnectionSide([-1, 1, 1]), -1);
+});
+
+test('inserting into a padded 4/4 bar uses hidden time before expanding the bar', () => {
+  for (const side of ['before', 'after']) {
+    for (const measureLengths of [undefined, { Guitar: {} }]) {
+      const score = {
+        title: '',
+        bpm: 120,
+        parts: ['Guitar', 'Bass'],
+        sync: { next: 10 },
+        measureLengths,
+        notes: [
+          n('a'),
+          n('b'),
+          n('c', 0.5),
+          n('d'),
+          { ...n('pad', 0.5), blank: true, rest: true },
+          n('next', 4),
+          n('bass', 8, 'Bass'),
+        ],
+      };
+      const after = insertScoreNote(score, n('X', 0.5), side === 'before' ? 'a' : 'b', side);
+      assert.equal(scoreMeasureDuration(after, 'Guitar', 0), 4);
+      assert.equal(
+        scoreMeasures(after, 'Guitar')[0]
+          .filter((f) => !f.note.blank)
+          .reduce((sum, f) => sum + f.beats, 0),
+        4,
+      );
+      assert.equal(
+        after.notes.some((note) => note.id === 'pad'),
+        false,
+      );
+      assert.equal(scoreMeasures(after, 'Guitar')[1][0].note.id, 'next');
+      assert.equal(after.sync.next, 10);
+      assert.deepEqual(
+        after.notes.find((note) => note.id === 'bass'),
+        score.notes.at(-1),
+      );
+      assert.equal(score.notes.find((note) => note.id === 'pad').beats, 0.5);
+    }
+  }
+});
+
+test('insertion expands only the deficit and never consumes explicit rests or next-bar blanks', () => {
+  const base = {
+    title: '',
+    bpm: 120,
+    parts: ['Guitar'],
+    sync: {},
+    notes: [n('a', 3.75), { ...n('pad', 0.25), blank: true, rest: true }, n('next', 4)],
+  };
+  const after = insertScoreNote(base, n('X', 0.5), 'a', 'before');
+  assert.equal(scoreMeasureDuration(after, 'Guitar', 0), 4.25);
+  assert.equal(scoreMeasures(after, 'Guitar')[1][0].note.id, 'next');
+  const explicit = {
+    ...base,
+    notes: base.notes.map((note) => (note.id === 'pad' ? { ...note, blank: false } : note)),
+  };
+  const withRest = insertScoreNote(explicit, n('X', 0.5), 'a', 'before');
+  assert.equal(scoreMeasureDuration(withRest, 'Guitar', 0), 4.5);
+  assert.equal(withRest.notes.find((note) => note.id === 'pad').beats, 0.25);
+  const following = { ...base, notes: [n('a', 4), { ...n('next', 4), blank: true, rest: true }] };
+  const withFollowing = insertScoreNote(following, n('X', 0.5), 'a', 'before');
+  assert.equal(withFollowing.notes.find((note) => note.id === 'next').beats, 4);
+  assert.equal(scoreMeasureDuration(withFollowing, 'Guitar', 0), 4.5);
 });
 
 test('connection curves keep narrow note-center spans with pointed ends and a thicker middle', () => {

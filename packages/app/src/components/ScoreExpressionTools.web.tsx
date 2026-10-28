@@ -318,6 +318,25 @@ export function ScoreExpressionTools({
               >
                 𝄇 반복 끝
               </ScoreToolButton>
+              <ScoreToolButton
+                icon="Fine"
+                aria-pressed={!!n.fine}
+                onClick={() => navigation({ fine: !n.fine })}
+              >
+                Fine
+              </ScoreToolButton>
+              <span className="score-toolbar-divider" aria-hidden="true" />
+
+              {(['segno', 'coda', 'toCoda'] as const).map((key) => (
+                <ScoreToolButton
+                  key={key}
+                  icon={{ segno: '𝄋', coda: '𝄌', toCoda: '→𝄌', fine: 'Fine' }[key]}
+                  aria-pressed={!!n[key]}
+                  onClick={() => navigation({ [key]: !n[key] })}
+                >
+                  {{ segno: '𝄋 Segno', coda: '𝄌 Coda', toCoda: 'To Coda', fine: 'Fine' }[key]}
+                </ScoreToolButton>
+              ))}
               <label>
                 반복 괄호{' '}
                 <select
@@ -334,18 +353,6 @@ export function ScoreExpressionTools({
                   <option value="2">2.</option>
                 </select>
               </label>
-              <span className="score-toolbar-divider" aria-hidden="true" />
-
-              {(['segno', 'coda', 'toCoda', 'fine'] as const).map((key) => (
-                <ScoreToolButton
-                  key={key}
-                  icon={{ segno: '𝄋', coda: '𝄌', toCoda: '→𝄌', fine: 'Fine' }[key]}
-                  aria-pressed={!!n[key]}
-                  onClick={() => navigation({ [key]: !n[key] })}
-                >
-                  {{ segno: '𝄋 Segno', coda: '𝄌 Coda', toCoda: 'To Coda', fine: 'Fine' }[key]}
-                </ScoreToolButton>
-              ))}
               <label>
                 돌아가기{' '}
                 <select

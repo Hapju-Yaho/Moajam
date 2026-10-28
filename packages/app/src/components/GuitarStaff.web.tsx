@@ -1,4 +1,6 @@
 import { drumStemLength } from '../lib/drumStroke';
+import { GuitarTechniqueMarks } from './GuitarTechniqueMarks.web';
+import { drumMeasureComplete } from '../lib/scoreDrumEntry';
 import { spellScoreTone, type ScoreTone } from '../lib/score';
 
 function KeyboardInputPreview({ x, y, beats }: { x: number; y: number; beats: number }) {
@@ -40,7 +42,7 @@ import {
 import { ScoreDirectionMarks } from './ScoreDirectionMarks.web';
 import { directionOwner, directionWords, navigationWords } from '../lib/scoreExpression';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { ScoreRhythmFeel } from './ScoreRhythmFeel.web';
 import { DrumNotehead } from './DrumNotehead.web';
 import { GraceNote } from './GraceNote.web';
@@ -97,6 +99,7 @@ function graceOffset(
   tuning: readonly number[],
   fifths: number | undefined,
   hasTab: boolean,
+  renderStaff = true,
 ) {
   if (fragment.note.graceBeats === undefined) return 0;
   const group = fragments.filter(
@@ -106,7 +109,7 @@ function graceOffset(
   const destination = fragments.find(
     (f) => f.offset === fragment.offset && f.note.graceBeats === undefined,
   )?.note;
-  const marks = scoreAccidentalMarks(fragments, fifths);
+  const marks = renderStaff ? scoreAccidentalMarks(fragments, fifths) : [];
   const extra = Math.max(
     0,
     ...(hasTab && destination
@@ -143,11 +146,13 @@ export function GuitarStaff({
   inputBeats,
   inputPitch,
   inputPreview = false,
+  showBeatMarkers = false,
   inputDrumNote,
   showTab,
   tabOnly = false,
   rangeIds,
   onRangeSelect,
+  onBoxSelect,
   editable,
   onMeasureContextMenu,
   onDeleteMeasureRest,
@@ -181,11 +186,13 @@ export function GuitarStaff({
   inputBeats: number;
   inputPitch?: number;
   inputPreview?: boolean;
+  showBeatMarkers?: boolean;
   inputDrumNote?: DrumInputNote;
   showTab: boolean;
   tabOnly?: boolean;
   rangeIds: string[];
   onRangeSelect: (anchor: string, end: string) => void;
+  onBoxSelect?: (ids: string[]) => void;
   editable: boolean;
   onMeasureContextMenu?: (measure: number, x: number, y: number) => void;
   onDeleteMeasureRest?: (bar: number) => void;
@@ -201,6 +208,12 @@ export function GuitarStaff({
     null,
   );
   const suppressClick = useRef(false);
+  const [selectionBox, setSelectionBox] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [measuredWidth, setSystemWidth] = useState(800);
   const [printing, setPrinting] = useState(false);
   useEffect(() => {
@@ -233,7 +246,6 @@ export function GuitarStaff({
     return { measures, notes, partNotes, chords };
   }, [score]);
   useScorePlaybackDisplay(systems, playbackPosition, playbackBeat);
-  const lastPlaybackRow = useRef<SVGSVGElement | null>(null);
   const measuresFor = (name: string) => {
     const result = indexed.measures.get(name);
     if (result instanceof Error) throw result;
@@ -250,65 +262,6 @@ export function GuitarStaff({
     observer.observe(systems.current);
     return () => observer.disconnect();
   }, [layoutWidth]);
-  useEffect(() => {
-    if (playbackBar === null) {
-      lastPlaybackRow.current = null;
-      return;
-    }
-    const measure = systems.current?.querySelector(
-      '[data-playback-active="true"] [data-measure-scroll-target]',
-    );
-    if (!measure) return;
-    const row = measure.closest('svg');
-    if (lastPlaybackRow.current === row) return;
-    const behavior = lastPlaybackRow.current ? 'smooth' : 'instant';
-    lastPlaybackRow.current = row;
-    // Bring the workspace into view before centering its measure, otherwise an
-    // offscreen nested viewport can leave half the measure clipped at its edge.
-    const scrollers: { element: HTMLElement; vertical: boolean; horizontal: boolean }[] = [];
-    let parent = measure.parentElement;
-    while (parent) {
-      const expanded = parent.matches('.score-editor-viewport[data-expanded="true"]');
-      const style = getComputedStyle(parent);
-      const vertical =
-        /(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight;
-      const horizontal =
-        /(auto|scroll)/.test(style.overflowX) && parent.scrollWidth > parent.clientWidth;
-      if (vertical || horizontal) scrollers.unshift({ element: parent, vertical, horizontal });
-      // Fullscreen lives in the top layer; never scroll its inert app ancestors.
-      if (expanded) break;
-      parent = parent.parentElement;
-    }
-    scrollers.forEach(({ element, vertical, horizontal }, index) => {
-      const bounds = (scrollers[index + 1]?.element ?? measure).getBoundingClientRect();
-      const viewport = element.getBoundingClientRect();
-      if (vertical) {
-        const expanded = element.matches('.score-editor-viewport[data-expanded="true"]');
-        const toolbar = expanded
-          ? (element.querySelector('.score-editor-viewbar')?.getBoundingClientRect().height ?? 0)
-          : 0;
-        const top = Math.max(0, viewport.top + element.clientTop) + toolbar;
-        const bottom = Math.min(
-          window.innerHeight,
-          viewport.top + element.clientTop + element.clientHeight,
-        );
-        element.scrollBy({
-          top: (bounds.top + bounds.bottom - top - bottom) / 2,
-          behavior,
-        });
-      }
-      if (horizontal) {
-        element.scrollBy({
-          left:
-            (bounds.left + bounds.right) / 2 -
-            viewport.left -
-            element.clientLeft -
-            element.clientWidth / 2,
-          behavior,
-        });
-      }
-    });
-  }, [playbackBar, part, score.systemLayout, systemWidth, zoom, showTab]);
   useEffect(() => {
     if (playbackBar !== null) return;
     const active = cursor ?? selected;
@@ -357,6 +310,7 @@ export function GuitarStaff({
   };
   const tuning = instrument.tuning;
   const hasTab = showTab && tuning.length > 0;
+  const renderStaff = !(tabOnly && hasTab);
   const chordPositions = indexed.chords.get(part) ?? {};
   const connectedNotes = score.notes.filter(
     (n) =>
@@ -432,7 +386,7 @@ export function GuitarStaff({
         : undefined,
     );
   const chordPadding = (note: ScoreFragment['note']) => {
-    if (isDrums) return 0;
+    if (!renderStaff || isDrums) return 0;
     const ys = noteTones(note).map(toneY);
     const columns = scoreAccidentalColumns(
       ys,
@@ -440,11 +394,18 @@ export function GuitarStaff({
     );
     return Math.max(0, ...columns) + Math.max(0, ...scoreChordHeadOffsets(ys, -1));
   };
-  const isKeyboard = instrument.id === 'piano' || instrument.id === 'pianoBass';
   const clickPitch = (element: SVGGraphicsElement, clientX: number, clientY: number) => {
     const matrix = element.getScreenCTM();
     if (!matrix) return inputPitch ?? 60;
     const point = new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse());
+    if (isDrums)
+      return scoreDrums.reduce(
+        (best, drum) =>
+          Math.abs(drum.y - point.y) < Math.abs((drumForPitch(best)?.y ?? 102) - point.y)
+            ? drum.pitch
+            : best,
+        scoreDrums[0].pitch,
+      );
     const naturals = Array.from({ length: 128 }, (_, pitch) => pitch).filter((pitch) =>
       [0, 2, 4, 5, 7, 9, 11].includes(pitch % 12),
     );
@@ -469,20 +430,26 @@ export function GuitarStaff({
             : undefined,
       }}
       data-layout-width={systemWidth / (zoom / 100)}
-      aria-label={`${part} 오선보${hasTab ? '와 TAB' : ''}`}
+      aria-label={`${part} ${renderStaff ? `오선보${hasTab ? '와 TAB' : ''}` : 'TAB'}`}
       onPointerDown={(event) => {
         suppressClick.current = false;
         if (!editable || event.button !== 0 || event.pointerType === 'touch') return;
         const id = (event.target as Element)
           .closest('[data-score-note]')
           ?.getAttribute('data-score-note');
-        if (!id) return;
-        if (indexed.notes.get(id)?.part !== part) return;
-        drag.current = { anchor: id, end: id, x: event.clientX, y: event.clientY, moved: false };
+        if (id && indexed.notes.get(id)?.part !== part) return;
+        drag.current = {
+          anchor: id ?? '',
+          end: id ?? '',
+          x: event.clientX,
+          y: event.clientY,
+          moved: false,
+        };
       }}
       onPointerMove={(event) => {
         const current = drag.current;
         if (event.buttons !== 1) {
+          setSelectionBox(null);
           drag.current = null;
           return;
         }
@@ -490,15 +457,29 @@ export function GuitarStaff({
         if (!current.moved && Math.hypot(event.clientX - current.x, event.clientY - current.y) < 5)
           return;
         if (!current.moved) event.currentTarget.setPointerCapture(event.pointerId);
-        const cell = document
-          .elementFromPoint(event.clientX, event.clientY)
-          ?.closest('[data-score-note]');
-        const id =
-          cell && systems.current?.contains(cell) ? cell.getAttribute('data-score-note') : null;
-        if (id) {
-          if (!current.moved || current.end !== id) onRangeSelect(current.anchor, id);
-          current.end = id;
-        }
+        const rect = {
+          left: Math.min(current.x, event.clientX),
+          top: Math.min(current.y, event.clientY),
+          width: Math.abs(event.clientX - current.x),
+          height: Math.abs(event.clientY - current.y),
+        };
+        setSelectionBox(rect);
+        const ids = new Set<string>();
+        systems.current
+          ?.querySelectorAll<SVGGraphicsElement>('[data-selection-note]')
+          .forEach((element) => {
+            const bounds = element.getBoundingClientRect();
+            if (
+              bounds.left >= rect.left &&
+              bounds.right <= rect.left + rect.width &&
+              bounds.top >= rect.top &&
+              bounds.bottom <= rect.top + rect.height
+            ) {
+              const id = element.getAttribute('data-selection-note');
+              if (id) ids.add(id);
+            }
+          });
+        onBoxSelect?.([...ids]);
         current.moved = true;
         const workspace = systems.current?.closest<HTMLElement>('.score-workspace');
         if (workspace) {
@@ -510,14 +491,17 @@ export function GuitarStaff({
       onPointerUp={(event) => {
         suppressClick.current = !!drag.current?.moved;
         drag.current = null;
+        setSelectionBox(null);
         if (event.currentTarget.hasPointerCapture(event.pointerId))
           event.currentTarget.releasePointerCapture(event.pointerId);
       }}
       onPointerCancel={() => {
+        setSelectionBox(null);
         drag.current = null;
         suppressClick.current = false;
       }}
       onLostPointerCapture={() => {
+        setSelectionBox(null);
         drag.current = null;
       }}
       onClickCapture={(event) => {
@@ -535,7 +519,32 @@ export function GuitarStaff({
           }
         }
       }}
+      onClick={(event) => {
+        if (
+          editable &&
+          event.target instanceof Element &&
+          !event.target.closest('[role="button"], button, input, select, textarea, a')
+        )
+          onDeselect();
+      }}
     >
+      {selectionBox &&
+        createPortal(
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'fixed',
+              ...selectionBox,
+              border: '1px solid #397dd9',
+              background: '#397dd926',
+              pointerEvents: 'none',
+              zIndex: 10000,
+              boxSizing: 'border-box',
+            }}
+          />,
+          document.body,
+        )}
+
       {notationSystems.map((system, line) => {
         const bars = system.units.map(({ bar, span }) => {
           let fragments = measures[bar] ?? [];
@@ -560,7 +569,10 @@ export function GuitarStaff({
               : [];
           fragments = fragments.filter(
             (fragment) =>
-              !fragment.note.blank || (editable && entryActive && fragment === firstBlank),
+              !fragment.note.blank ||
+              (editable &&
+                ((entryActive && fragment === firstBlank) ||
+                  (activeBar && fragment.note.id === selected))),
           );
           if (peerPart)
             fragments = [
@@ -570,7 +582,8 @@ export function GuitarStaff({
           return { fragments, bar, span, emptyOffsets, barStart, barBeats, displayBeats };
         });
         const keySpacing = 6;
-        const keyWidth = isDrums ? 0 : Math.abs(score.keySignature ?? 0) * keySpacing;
+        const keyWidth =
+          !renderStaff || isDrums ? 0 : Math.abs(score.keySignature ?? 0) * keySpacing;
         const meter = scoreTimeSignature(score);
         const meterExtra =
           Math.max(String(meter.beats).length, String(meter.beatType).length) > 1 ? 8 : 0;
@@ -615,7 +628,7 @@ export function GuitarStaff({
               )
             : bars.map(({ fragments, bar, barStart, barBeats }) => {
                 const notation = fragments.filter(({ note }) => !note.blank);
-                const marks = scoreAccidentalMarks(notation, score.keySignature);
+                const marks = renderStaff ? scoreAccidentalMarks(notation, score.keySignature) : [];
                 const tabWidths = notation.map(({ note, continued }) =>
                   hasTab
                     ? Math.max(
@@ -690,13 +703,16 @@ export function GuitarStaff({
             : layout,
         );
         const drawingWidth = prefix + layouts.reduce((sum, layout) => sum + layout.width, 0) + 1;
-        const positions = bars.flatMap(({ fragments }) =>
-          fragments.flatMap(({ note }) => [
-            ...noteTones(note).map((tone) => toneY(tone)),
-            ...(note.graceSlide ? [staffY(note.graceSlide.pitch)] : []),
-          ]),
-        );
+        const positions = !renderStaff
+          ? []
+          : bars.flatMap(({ fragments }) =>
+              fragments.flatMap(({ note }) => [
+                ...noteTones(note).map((tone) => toneY(tone)),
+                ...(note.graceSlide ? [staffY(note.graceSlide.pitch)] : []),
+              ]),
+            );
         const barBeams = bars.map(({ fragments }) => {
+          if (!renderStaff) return [];
           const beamGroups = drumPair
             ? drumPair.flatMap((voice) => {
                 const indices = fragments.flatMap((fragment, index) =>
@@ -736,37 +752,42 @@ export function GuitarStaff({
           return beams;
         });
         const noteLayouts = bars.map(({ fragments }, column) =>
-          fragments.map(({ note, beats: actualBeats }, index) => {
-            const beats = writtenScoreBeats(note, actualBeats);
-            const ys = note.slash && !isDrums ? [102] : noteTones(note).map((t) => toneY(t));
-            const beam = barBeams[column].find((b) => b.indices.includes(index));
-            const flags = [1, 0.5, 0.25, 0.125].filter((limit) => beats < limit).length;
-            const direction =
-              beam?.direction ??
-              (drumPair ? (note.part === drumPair[0] ? -1 : 1) : scoreStemDirection(ys));
-            const stemStart = direction === -1 ? Math.max(...ys) : Math.min(...ys);
-            const stemEnd =
-              beam?.top ??
-              (direction === -1 ? Math.min(...ys) : Math.max(...ys)) +
-                direction *
-                  (isDrums
-                    ? drumStemLength(noteTones(note), flags, false)
-                    : 25 + Math.max(0, flags - 2) * 5);
-            const hasMark =
-              isDrums && noteTones(note).some((t) => !!drumNotation(t).mark && t.pitch !== 44);
-            const end = beats < 4 ? stemEnd : direction === -1 ? Math.min(...ys) : Math.max(...ys);
-            const accentY = end + (direction === -1 ? -8 - (hasMark ? 12 : 0) : 18);
-            const stickingY = accentY + (note.accent || note.marcato ? direction * 16 : 0);
-            const top = Math.min(
-              ...ys.map((y) => y - 6),
-              direction === -1 && beats < 4 ? stemEnd : Infinity,
-              hasMark ? stemEnd - 13 : Infinity,
-              note.accent || note.marcato ? accentY - 13 : Infinity,
-              note.sticking ? stickingY - 12 : Infinity,
-              note.slurTo || note.tuplet ? Math.min(...ys) - 65 : Infinity,
-            );
-            return { ys, flags, direction, stemStart, stemEnd, accentY, stickingY, top };
-          }),
+          !renderStaff
+            ? []
+            : fragments.map(({ note, beats: actualBeats }, index) => {
+                const beats = writtenScoreBeats(note, actualBeats);
+                const ys = note.slash && !isDrums ? [102] : noteTones(note).map((t) => toneY(t));
+                const beam = barBeams[column].find((b) => b.indices.includes(index));
+                const flags = [1, 0.5, 0.25, 0.125].filter((limit) => beats < limit).length;
+                const direction =
+                  beam?.direction ??
+                  (drumPair ? (note.part === drumPair[0] ? -1 : 1) : scoreStemDirection(ys));
+                const stemStart = direction === -1 ? Math.max(...ys) : Math.min(...ys);
+                const stemEnd =
+                  beam?.top ??
+                  (direction === -1 ? Math.min(...ys) : Math.max(...ys)) +
+                    direction *
+                      (isDrums
+                        ? drumStemLength(noteTones(note), flags, false)
+                        : 25 + Math.max(0, flags - 2) * 5);
+                const hasMark =
+                  isDrums && noteTones(note).some((t) => !!drumNotation(t).mark && t.pitch !== 44);
+                const end =
+                  beats < 4 ? stemEnd : direction === -1 ? Math.min(...ys) : Math.max(...ys);
+                const accentY = end + (direction === -1 ? -8 - (hasMark ? 12 : 0) : 18);
+                const stickingY = accentY + (note.accent || note.marcato ? direction * 16 : 0);
+                const top = !renderStaff
+                  ? 0
+                  : Math.min(
+                      ...ys.map((y) => y - 6),
+                      direction === -1 && beats < 4 ? stemEnd : Infinity,
+                      hasMark ? stemEnd - 13 : Infinity,
+                      note.accent || note.marcato ? accentY - 13 : Infinity,
+                      note.sticking ? stickingY - 12 : Infinity,
+                      note.slurTo || note.tuplet ? Math.min(...ys) - 65 : Infinity,
+                    );
+                return { ys, flags, direction, stemStart, stemEnd, accentY, stickingY, top };
+              }),
         );
         const directionCounts = bars.map(
           ({ bar }) =>
@@ -795,25 +816,37 @@ export function GuitarStaff({
             ([beat, chord]) => chord && +beat >= barStart && +beat < barStart + barBeats,
           ),
         );
-        const top = Math.min(
-          // Reserve space for high cymbals and their marks without shifting rows as the cursor moves.
-          isDrums && editable ? -24 : Infinity,
-          ...directionCounts.map((count, column) =>
-            count ? directionBaselines[column] - (count - 1) * 16 - 16 : Infinity,
-          ),
-          ...noteLayouts.flat().map((n) => n.top - 6),
-          line === 0 && showTempo && system.start === 0 ? 0 : hasChords ? 40 : 54,
-          ...positions.map(
-            (y) =>
-              y -
-              (bars.some(({ fragments }) =>
-                fragments.some(({ note }) => note.slurTo || note.tuplet),
-              )
-                ? 65
-                : 48),
+        const hasGuitarTechniques = bars.some(({ fragments }) =>
+          fragments.some(({ note }) =>
+            noteTones(note).some((tone) => tone.bend || tone.harmonic || tone.palmMute),
           ),
         );
-        const tabTop = Math.max(190, ...positions.map((y) => y + 55));
+        const top = !renderStaff
+          ? 0
+          : Math.min(
+              hasGuitarTechniques ? -20 : Infinity,
+              // Reserve space for high cymbals and their marks without shifting rows as the cursor moves.
+              isDrums && editable ? -24 : Infinity,
+              ...directionCounts.map((count, column) =>
+                count ? directionBaselines[column] - (count - 1) * 16 - 16 : Infinity,
+              ),
+              ...noteLayouts.flat().map((n) => n.top - 6),
+              line === 0 && showTempo && system.start === 0 ? 0 : hasChords ? 40 : 54,
+              ...positions.map(
+                (y) =>
+                  y -
+                  (bars.some(({ fragments }) =>
+                    fragments.some(({ note }) => note.slurTo || note.tuplet),
+                  )
+                    ? 65
+                    : 48),
+              ),
+            );
+        const tabTop = renderStaff
+          ? Math.max(210, ...positions.map((y) => y + 80))
+          : 110 + Math.max(0, ...directionCounts) * 16;
+        const chordY = hasTab ? tabTop - 12 : hasChords ? top + 36 : Math.min(top + 36, 62);
+        const metronomeY = hasTab ? tabTop - (hasGuitarTechniques ? 62 : 44) : 52;
         // A zero system gap should not retain a fixed empty footer. Reserve only
         // the room actually needed below the last TAB line (stems, grace links,
         // tuplets and lyrics), then add the user's gap outside the SVG.
@@ -846,9 +879,10 @@ export function GuitarStaff({
             )
           : 0;
         const bottom = hasTab
-          ? tabInkBottom + 8 + (hasLyrics ? 24 : 0)
+          ? Math.max(tabInkBottom + 8, tabBottom + (hasGuitarTechniques ? 86 : 0)) +
+            (hasLyrics ? 24 : 0)
           : Math.max(190, ...positions.map((y) => y + 55));
-        const visibleTop = tabOnly && hasTab ? tabTop - 35 : top;
+        const visibleTop = top;
         const measureBottom = Math.max(bottom - 18, hasTab ? tabInkBottom + 4 : 140);
         return (
           <ScoreSystemViewport
@@ -857,6 +891,10 @@ export function GuitarStaff({
               (editable || playbackBeat !== null) && notationSystems.length > 12 && !printing
             }
             initialVisible={line < 2}
+            playbackPosition={playbackPosition}
+            playing={playbackBeat !== null}
+            playbackStart={scoreMeasureStart(score, part, Math.max(0, system.start - 1))}
+            playbackEnd={scoreMeasureStart(score, part, system.start + system.count)}
             active={
               (hasSelection &&
                 selectedBar >= system.start &&
@@ -872,28 +910,16 @@ export function GuitarStaff({
               <svg
                 key={line}
                 className="score-system"
-                style={tabOnly && hasTab ? { overflow: 'hidden' } : undefined}
                 fontFamily="Segoe UI Symbol, Malgun Gothic, sans-serif"
                 aria-label={`${system.start + 1}–${system.start + system.count}마디 악보 줄`}
                 width={(drawingWidth * zoom) / 100}
                 height={((bottom - visibleTop) * zoom) / 100}
                 viewBox={`0 ${visibleTop} ${drawingWidth} ${bottom - visibleTop}`}
               >
-                <line
-                  data-playback-cursor
-                  visibility="hidden"
-                  x1="0"
-                  x2="0"
-                  y1="65"
-                  y2={measureBottom}
-                  stroke="#52946d"
-                  strokeWidth="2"
-                  pointerEvents="none"
-                />
                 {line === 0 && showTempo && system.start === 0 && (
                   <text
                     x="8"
-                    y={top + 60}
+                    y={renderStaff ? top + 60 : 20}
                     fontSize="16"
                     fontWeight="600"
                     fill="#344b3e"
@@ -917,65 +943,71 @@ export function GuitarStaff({
                 {line === 0 && showTempo && system.start === 0 && (
                   <ScoreRhythmFeel feel={score.rhythmFeel ?? 'straight'} x={8} y={top + 2} />
                 )}
-                {[82, 92, 102, 112, 122].map((y) => (
-                  <line
-                    key={y}
-                    x1="0"
-                    x2={drawingWidth - 1}
-                    y1={y}
-                    y2={y}
-                    stroke="#9aa49f"
-                    strokeWidth=".8"
-                  />
-                ))}
-                <g aria-label="줄 시작 음자리표와 박자표">
-                  {isDrums ? (
-                    <g aria-label="드럼 음자리표" fill="#293e34">
-                      <rect x="10" y="92" width="6" height="20" />
-                      <rect x="19" y="92" width="6" height="20" />
-                    </g>
-                  ) : (
-                    <text x="10" y="116" fontSize="44">
-                      {instrument.clef === 'bass8' || instrument.clef === 'bass' ? '𝄢' : '𝄞'}
-                    </text>
-                  )}
-                  {(instrument.clef === 'bass8' || instrument.clef === 'treble8') && (
-                    <text x="23" y="137" fontSize="9">
-                      8
-                    </text>
-                  )}
-                  <text x={timeSignatureX} y="99" fontSize="18" fontWeight="700">
-                    {scoreTimeSignature(score).beats}
-                  </text>
-                  <text x={timeSignatureX} y="119" fontSize="18" fontWeight="700">
-                    {scoreTimeSignature(score).beatType}
-                  </text>
-                  {Array.from(
-                    { length: isDrums ? 0 : Math.abs(score.keySignature ?? 0) },
-                    (_, index) => {
-                      const sharp = (score.keySignature ?? 0) > 0;
-                      const steps = sharp
-                        ? [0, 15, -5, 10, 25, 5, 20]
-                        : [20, 5, 25, 10, 30, 15, 35];
-                      return (
-                        <text
-                          key={index}
-                          x={48 + index * keySpacing}
-                          y={
-                            82 +
-                            steps[index] +
-                            (instrument.clef === 'bass8' || instrument.clef === 'bass' ? 10 : 0) +
-                            5
-                          }
-                          fontSize="22"
-                          aria-label={sharp ? '조표 샵' : '조표 플랫'}
-                        >
-                          {sharp ? '♯' : '♭'}
+                {renderStaff && (
+                  <>
+                    {[82, 92, 102, 112, 122].map((y) => (
+                      <line
+                        key={y}
+                        x1="0"
+                        x2={drawingWidth - 1}
+                        y1={y}
+                        y2={y}
+                        stroke="#9aa49f"
+                        strokeWidth=".8"
+                      />
+                    ))}
+                    <g aria-label="줄 시작 음자리표와 박자표">
+                      {isDrums ? (
+                        <g aria-label="드럼 음자리표" fill="#293e34">
+                          <rect x="10" y="92" width="6" height="20" />
+                          <rect x="19" y="92" width="6" height="20" />
+                        </g>
+                      ) : (
+                        <text x="10" y="116" fontSize="44">
+                          {instrument.clef === 'bass8' || instrument.clef === 'bass' ? '𝄢' : '𝄞'}
                         </text>
-                      );
-                    },
-                  )}
-                </g>
+                      )}
+                      {(instrument.clef === 'bass8' || instrument.clef === 'treble8') && (
+                        <text x="23" y="137" fontSize="9">
+                          8
+                        </text>
+                      )}
+                      <text x={timeSignatureX} y="99" fontSize="18" fontWeight="700">
+                        {scoreTimeSignature(score).beats}
+                      </text>
+                      <text x={timeSignatureX} y="119" fontSize="18" fontWeight="700">
+                        {scoreTimeSignature(score).beatType}
+                      </text>
+                      {Array.from(
+                        { length: isDrums ? 0 : Math.abs(score.keySignature ?? 0) },
+                        (_, index) => {
+                          const sharp = (score.keySignature ?? 0) > 0;
+                          const steps = sharp
+                            ? [0, 15, -5, 10, 25, 5, 20]
+                            : [20, 5, 25, 10, 30, 15, 35];
+                          return (
+                            <text
+                              key={index}
+                              x={48 + index * keySpacing}
+                              y={
+                                82 +
+                                steps[index] +
+                                (instrument.clef === 'bass8' || instrument.clef === 'bass'
+                                  ? 10
+                                  : 0) +
+                                5
+                              }
+                              fontSize="22"
+                              aria-label={sharp ? '조표 샵' : '조표 플랫'}
+                            >
+                              {sharp ? '♯' : '♭'}
+                            </text>
+                          );
+                        },
+                      )}
+                    </g>
+                  </>
+                )}
                 {hasTab &&
                   tuning.map((open, i) => (
                     <g key={i}>
@@ -992,6 +1024,16 @@ export function GuitarStaff({
                       </text>
                     </g>
                   ))}
+                {!renderStaff && (
+                  <g aria-label="TAB 박자표" fontSize="14" fontWeight="700">
+                    <text x={44} y={tabTop + 16}>
+                      {meter.beats}
+                    </text>
+                    <text x={44} y={tabTop + 34}>
+                      {meter.beatType}
+                    </text>
+                  </g>
+                )}
                 {hasTab && (
                   <g aria-label="줄 시작 TAB" fontSize="13" fontWeight="700">
                     {['T', 'A', 'B'].map((letter, index) => (
@@ -1009,26 +1051,10 @@ export function GuitarStaff({
                 {bars.map(({ fragments, bar, span, emptyOffsets, barStart, barBeats }, column) => {
                   const { width, xAt } = layouts[column];
                   const beams = barBeams[column];
-                  const origin =
-                    prefix + layouts.slice(0, column).reduce((sum, l) => sum + l.width, 0);
                   const endBeat = barStart + barBeats * span;
-                  const nextX = origin + width + (layouts[column + 1]?.xAt(0) ?? 0);
-                  const points =
-                    span > 1
-                      ? [
-                          [barStart, origin],
-                          [endBeat, nextX],
-                        ]
-                      : [
-                          ...new Set([
-                            0,
-                            ...fragments.map((f) => f.offset).filter((at) => at < barBeats),
-                            barBeats,
-                          ]),
-                        ]
-                          .sort((a, b) => a - b)
-                          .map((at) => [barStart + at, at === barBeats ? nextX : origin + xAt(at)]);
-                  const marks = scoreAccidentalMarks(fragments, score.keySignature);
+                  const marks = renderStaff
+                    ? scoreAccidentalMarks(fragments, score.keySignature)
+                    : [];
                   const hitRegions = scoreBeatHitRegions(
                     [...fragments.map(({ offset }) => offset), ...emptyOffsets],
                     width,
@@ -1036,8 +1062,6 @@ export function GuitarStaff({
                   );
                   const staffHitTop = Math.min(82, top + 42);
                   const staffHitBottom = hasTab ? tabTop - 10 : bottom - 20;
-                  const playHere =
-                    playbackBeat !== null && playbackBar! >= bar && playbackBar! < bar + span;
                   const previewHere =
                     hasSelection &&
                     indexed.notes.get(selected ?? '')?.graceBeats === undefined &&
@@ -1060,7 +1084,9 @@ export function GuitarStaff({
                   const invalid =
                     !score.directions?.[directionOwner(score, part)]?.[bar]?.measureRepeat &&
                     fragments.some(({ note }) => !note.blank) &&
-                    (written !== scoreBarBeats(score) || barBeats !== scoreBarBeats(score));
+                    (isDrums
+                      ? !drumMeasureComplete(fragments, scoreBarBeats(score))
+                      : written !== scoreBarBeats(score) || barBeats !== scoreBarBeats(score));
                   const selectedHere =
                     hasSelection &&
                     (selectedBar === bar ||
@@ -1072,7 +1098,7 @@ export function GuitarStaff({
                     !!score.directions?.[directionOwner(score, part)]?.[bar]?.measureRepeat &&
                     !selectedHere;
                   const repeat = score.repeats?.[bar];
-                  const selectKeyboardPosition = (
+                  const selectInputPosition = (
                     element: SVGGraphicsElement,
                     clientX: number,
                     clientY: number,
@@ -1081,35 +1107,65 @@ export function GuitarStaff({
                     const point = matrix
                       ? new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse())
                       : new DOMPoint(0, 102);
-                    const clickedOffset = chordOffsets.reduce(
+                    const pitch = !renderStaff ? undefined : clickPitch(element, clientX, clientY);
+                    const inputVoice =
+                      isDrums && drumPair
+                        ? drumPair[[35, 36, 44].includes(pitch ?? 60) ? 1 : 0]
+                        : part;
+                    const inputFragments = fragments.filter((f) => f.note.part === inputVoice);
+                    const anchors = [
+                      ...new Set([...chordOffsets, ...inputFragments.map((f) => f.offset)]),
+                    ];
+                    const clickedOffset = anchors.reduce(
                       (nearest, value) =>
                         Math.abs(xAt(value) - point.x) < Math.abs(xAt(nearest) - point.x)
                           ? value
                           : nearest,
                       0,
                     );
-                    const lastEnd = fragments.reduce(
+                    const lastEnd = inputFragments.reduce(
                       (end, fragment) =>
                         fragment.note.blank ? end : Math.max(end, fragment.offset + fragment.beats),
                       0,
                     );
+                    const nearNote = inputFragments.find(
+                      (f) => !f.note.blank && f.offset === clickedOffset,
+                    );
+                    const afterNote =
+                      nearNote && point.x > xAt(nearNote.offset) + 10
+                        ? nearNote.offset + nearNote.beats
+                        : clickedOffset;
                     const offset =
-                      lastEnd < barBeats && point.x >= xAt(lastEnd) ? lastEnd : clickedOffset;
-                    const target = fragments.find(
+                      lastEnd < barBeats && point.x >= xAt(lastEnd)
+                        ? lastEnd
+                        : afterNote < barBeats
+                          ? afterNote
+                          : clickedOffset;
+                    const target = inputFragments.find(
                       (fragment) =>
                         fragment.offset <= offset && fragment.offset + fragment.beats > offset,
                     );
-                    const pitch = clickPitch(element, clientX, clientY);
-                    if (target) onSelect(target.note.id, 1, barStart + offset, pitch);
-                    else onAppend(1, barStart + offset, bar, pitch);
+                    const row =
+                      hasTab && point.y >= tabTop - 12
+                        ? Math.max(
+                            1,
+                            Math.min(tuning.length, Math.round((point.y - tabTop) / 20) + 1),
+                          )
+                        : isDrums
+                          ? scoreDrums.findIndex((drum) => drum.pitch === pitch) + 1
+                          : selectedString;
+                    const previewPitch =
+                      !renderStaff || (hasTab && point.y >= tabTop - 12) ? undefined : pitch;
+                    if (target) onSelect(target.note.id, row, barStart + offset, previewPitch);
+                    else onAppend(row, barStart + offset, bar, previewPitch);
                   };
                   const selectRestMeasure = (event?: {
                     currentTarget: SVGGraphicsElement;
                     clientX: number;
                     clientY: number;
                   }) => {
-                    if (isKeyboard && event) {
-                      selectKeyboardPosition(event.currentTarget, event.clientX, event.clientY);
+                    if (event) {
+                      selectInputPosition(event.currentTarget, event.clientX, event.clientY);
                       return;
                     }
                     if (!editable) return;
@@ -1130,11 +1186,54 @@ export function GuitarStaff({
                         onMeasureContextMenu(bar, event.clientX, event.clientY);
                       }}
                       transform={`translate(${prefix + layouts.slice(0, column).reduce((sum, layout) => sum + layout.width, 0)}, 0)`}
-                      data-playback-active={playHere ? 'true' : undefined}
                       data-playback-start={barStart}
                       data-playback-end={endBeat}
-                      data-playback-points={JSON.stringify(points)}
+                      data-playback-measure="true"
                     >
+                      {showBeatMarkers && (
+                        <g
+                          aria-label="마디 박자 표시"
+                          className="score-metronome-indicator"
+                          data-preview={
+                            playbackBeat === null && bar > (hasSelection ? selectedBar : 0)
+                              ? 'true'
+                              : undefined
+                          }
+                          visibility={
+                            playbackBeat === null &&
+                            (hasSelection
+                              ? selectedBar >= bar - 1 && selectedBar < bar + span
+                              : bar <= 1)
+                              ? 'visible'
+                              : 'hidden'
+                          }
+                          data-metronome-unit={4 / (score.timeSignature?.beatType ?? 4)}
+                          pointerEvents="none"
+                        >
+                          {Array.from({ length: score.timeSignature?.beats ?? 4 }, (_, i) => (
+                            <circle
+                              key={i}
+                              className="score-metronome-dot"
+                              data-metronome-beat={i}
+                              cx={xAt(i * (4 / (score.timeSignature?.beatType ?? 4)))}
+                              cy={metronomeY}
+                              r={i === 0 ? 5 : 3.5}
+                            />
+                          ))}
+                        </g>
+                      )}
+                      {previewHere && (
+                        <rect
+                          data-editing-measure-background="true"
+                          x="0"
+                          y={Math.max(65, visibleTop)}
+                          width={width}
+                          height={measureBottom - Math.max(65, visibleTop)}
+                          fill="#94a3b8"
+                          fillOpacity=".14"
+                          pointerEvents="none"
+                        />
+                      )}
                       <rect
                         data-playback-measure-background
                         x="0"
@@ -1167,8 +1266,8 @@ export function GuitarStaff({
                           tabIndex={0}
                           aria-label={`${bar + 1}마디 선택`}
                           onClick={(event) => {
-                            if (isKeyboard) {
-                              selectKeyboardPosition(
+                            if (editable) {
+                              selectInputPosition(
                                 event.currentTarget,
                                 event.clientX,
                                 event.clientY,
@@ -1225,7 +1324,7 @@ export function GuitarStaff({
                             pointerEvents="none"
                           >
                             {[
-                              { id: 'staff', top: 82, bottom: 122 },
+                              ...(renderStaff ? [{ id: 'staff', top: 82, bottom: 122 }] : []),
                               ...(hasTab
                                 ? [
                                     {
@@ -1271,12 +1370,15 @@ export function GuitarStaff({
                       {score.barlines?.[bar] === 'double' && !repeat?.end && (
                         <g aria-label="겹세로선" pointerEvents="none" stroke="#293e34">
                           {[
-                            { top: 82, bottom: 122 },
+                            ...(renderStaff ? [{ top: 82, bottom: 122 }] : []),
                             ...(hasTab
                               ? [{ top: tabTop, bottom: tabTop + (tuning.length - 1) * 20 }]
                               : []),
                           ].map((surface, i) => (
-                            <g key={i} aria-label={i ? 'TAB 겹세로선' : '오선 겹세로선'}>
+                            <g
+                              key={i}
+                              aria-label={!renderStaff || i ? 'TAB 겹세로선' : '오선 겹세로선'}
+                            >
                               {[width - 5, width - 1].map((x) => (
                                 <line
                                   key={x}
@@ -1327,7 +1429,7 @@ export function GuitarStaff({
                             >
                               <rect
                                 x={hit.left}
-                                y={hasChords ? top + 20 : Math.min(top + 20, 46)}
+                                y={chordY - 16}
                                 width={hit.right - hit.left}
                                 height="22"
                                 fill="transparent"
@@ -1335,7 +1437,8 @@ export function GuitarStaff({
                               <title>{`${bar + 1}마디 ${offset + 1}박 코드 편집`}</title>
                               <text
                                 x={xAt(offset)}
-                                y={hasChords ? top + 36 : Math.min(top + 36, 62)}
+                                y={chordY}
+                                textAnchor="middle"
                                 fill="#345648"
                                 fontSize="14"
                                 fontWeight="600"
@@ -1374,14 +1477,16 @@ export function GuitarStaff({
                         xAt={xAt}
                         barBeats={barBeats}
                       />
-                      <line
-                        data-barline="staff"
-                        x1={width}
-                        x2={width}
-                        y1="82"
-                        y2="122"
-                        stroke="#5f6c65"
-                      />
+                      {renderStaff && (
+                        <line
+                          data-barline="staff"
+                          x1={width}
+                          x2={width}
+                          y1="82"
+                          y2="122"
+                          stroke="#5f6c65"
+                        />
+                      )}
                       {hasTab && (
                         <line
                           data-barline="tab"
@@ -1397,14 +1502,26 @@ export function GuitarStaff({
                           const beats = writtenScoreBeats(note, actualBeats);
                           const beam = beams.find(({ indices }) => indices.includes(index));
                           const { flags, ys, direction, stemStart, stemEnd, accentY, stickingY } =
-                            noteLayouts[column][index];
+                            noteLayouts[column][index] ?? {
+                              flags: 0,
+                              ys: [],
+                              direction: -1,
+                              stemStart: 0,
+                              stemEnd: 0,
+                              accentY: 0,
+                              stickingY: 0,
+                            };
                           if (note.graceBeats !== undefined) return null;
                           const x = xAt(offset),
                             tones = tabTones(note, tuning);
-                          const headOffsets = isDrums
-                            ? ys.map(() => 0)
-                            : scoreChordHeadOffsets(ys, direction);
-                          const accidentalColumns = scoreAccidentalColumns(ys, marks[index]);
+                          const headOffsets = !renderStaff
+                            ? []
+                            : isDrums
+                              ? ys.map(() => 0)
+                              : scoreChordHeadOffsets(ys, direction);
+                          const accidentalColumns = renderStaff
+                            ? scoreAccidentalColumns(ys, marks[index])
+                            : [];
                           const accidentalX = x + Math.min(0, ...headOffsets) - 9;
                           const hit = hitRegions.get(offset)!;
                           const cursorWidth = Math.min(
@@ -1452,361 +1569,379 @@ export function GuitarStaff({
                                   fill="#e0eee5"
                                 />
                               )}
-                              <g
-                                role="button"
-                                tabIndex={0}
-                                aria-label={`${drumPair ? (upperVoice ? '위 성부 ' : '아래 성부 ') : ''}${bar + 1}마디 ${offset + 1}박 ${
-                                  note.blank
-                                    ? '빈 박'
-                                    : note.rest
-                                      ? '쉼표'
-                                      : noteTones(note)
-                                          .map(
-                                            (tone) =>
-                                              `${isDrums ? drumLabel(tone.pitch, tone.drumTechnique) : pitchName(tone.pitch)}${tone.dead ? ' 데드노트' : tone.ghost ? ' 고스트노트' : ''}`,
-                                          )
-                                          .join(' ')
-                                } ${Number(actualBeats.toFixed(3))}박 길이${note.tuplet ? ' 셋잇단음표' : ''}${note.staccato && !note.rest ? ' 스타카토' : ''}`}
-                                aria-pressed={chosen || rangeIds.includes(note.id)}
-                                onClick={(event) => {
-                                  if (isKeyboard && note.blank) {
-                                    selectKeyboardPosition(
-                                      event.currentTarget,
-                                      event.clientX,
-                                      event.clientY,
-                                    );
-                                    return;
-                                  }
-                                  const matrix = event.currentTarget.getScreenCTM();
-                                  const pitches = noteTones(note);
-                                  if (!matrix || !pitches.length) {
-                                    onSelect(note.id, undefined, barStart + offset);
-                                    return;
-                                  }
-                                  const point = new DOMPoint(
-                                    event.clientX,
-                                    event.clientY,
-                                  ).matrixTransform(matrix.inverse());
-                                  const index = pitches.reduce(
-                                    (nearest, tone, i) =>
-                                      Math.hypot(
-                                        toneY(tone) - point.y,
-                                        x + headOffsets[i] - point.x,
-                                      ) <
-                                      Math.hypot(
-                                        toneY(pitches[nearest]) - point.y,
-                                        x + headOffsets[nearest] - point.x,
-                                      )
-                                        ? i
-                                        : nearest,
-                                    0,
-                                  );
-                                  if (
-                                    isKeyboard &&
-                                    (Math.abs(toneY(pitches[index]) - point.y) > 7 ||
-                                      Math.abs(x + headOffsets[index] - point.x) > 10)
-                                  ) {
-                                    selectKeyboardPosition(
-                                      event.currentTarget,
-                                      event.clientX,
-                                      event.clientY,
-                                    );
-                                    return;
-                                  }
-                                  onSelect(
-                                    note.id,
-                                    isDrums
-                                      ? Math.max(
-                                          1,
-                                          scoreDrums.findIndex(
-                                            (drum) => drum.pitch === pitches[index].pitch,
-                                          ) + 1,
-                                        )
-                                      : tuning.length
-                                        ? (tones[index]?.string ?? 1)
-                                        : index + 1,
-                                    barStart + offset,
-                                  );
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    onSelect(note.id, undefined, barStart + offset);
-                                  }
-                                }}
-                              >
-                                <rect
-                                  x={hit.left}
-                                  y={noteHitTop}
-                                  width={hit.right - hit.left}
-                                  height={noteHitBottom - noteHitTop}
-                                  fill="transparent"
-                                />
-                                {note.graceSlide && !continued && !note.rest && !note.blank && (
-                                  <GraceSlide
-                                    x={x}
-                                    y={staffY(note.graceSlide.pitch)}
-                                    targetY={staffY(note.pitch)}
-                                  />
-                                )}
-                                {!hasTab && !isDrums && !isKeyboard && chosen && (
-                                  <rect
-                                    x={x - cursorWidth / 2}
-                                    y={
-                                      inputY(
-                                        isDrums
-                                          ? drumAtRow(selectedString).pitch
-                                          : (inputPitch ??
-                                              noteTones(note)[selectedString - 1]?.pitch ??
-                                              note.pitch),
-                                      ) - 10
+                              {renderStaff && (
+                                <g
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={`${drumPair ? (upperVoice ? '위 성부 ' : '아래 성부 ') : ''}${bar + 1}마디 ${offset + 1}박 ${
+                                    note.blank
+                                      ? '빈 박'
+                                      : note.rest
+                                        ? '쉼표'
+                                        : noteTones(note)
+                                            .map(
+                                              (tone) =>
+                                                `${isDrums ? drumLabel(tone.pitch, tone.drumTechnique) : pitchName(tone.pitch)}${tone.dead ? ' 데드노트' : tone.ghost ? ' 고스트노트' : ''}`,
+                                            )
+                                            .join(' ')
+                                  } ${Number(actualBeats.toFixed(3))}박 길이${note.tuplet ? ' 셋잇단음표' : ''}${note.staccato && !note.rest ? ' 스타카토' : ''}`}
+                                  aria-pressed={chosen || rangeIds.includes(note.id)}
+                                  onClick={(event) => {
+                                    if (note.blank) {
+                                      selectInputPosition(
+                                        event.currentTarget,
+                                        event.clientX,
+                                        event.clientY,
+                                      );
+                                      return;
                                     }
-                                    width={cursorWidth}
-                                    height="20"
-                                    fill="none"
-                                    stroke="#c77830"
+                                    const matrix = event.currentTarget.getScreenCTM();
+                                    const pitches = noteTones(note);
+                                    if (!matrix || !pitches.length) {
+                                      onSelect(note.id, undefined, barStart + offset);
+                                      return;
+                                    }
+                                    const point = new DOMPoint(
+                                      event.clientX,
+                                      event.clientY,
+                                    ).matrixTransform(matrix.inverse());
+                                    const index = pitches.reduce(
+                                      (nearest, tone, i) =>
+                                        Math.hypot(
+                                          toneY(tone) - point.y,
+                                          x + headOffsets[i] - point.x,
+                                        ) <
+                                        Math.hypot(
+                                          toneY(pitches[nearest]) - point.y,
+                                          x + headOffsets[nearest] - point.x,
+                                        )
+                                          ? i
+                                          : nearest,
+                                      0,
+                                    );
+                                    if (
+                                      Math.abs(toneY(pitches[index]) - point.y) > 7 ||
+                                      Math.abs(x + headOffsets[index] - point.x) > 10
+                                    ) {
+                                      selectInputPosition(
+                                        event.currentTarget,
+                                        event.clientX,
+                                        event.clientY,
+                                      );
+                                      return;
+                                    }
+                                    onSelect(
+                                      note.id,
+                                      isDrums
+                                        ? Math.max(
+                                            1,
+                                            scoreDrums.findIndex(
+                                              (drum) => drum.pitch === pitches[index].pitch,
+                                            ) + 1,
+                                          )
+                                        : tuning.length
+                                          ? (tones[index]?.string ?? 1)
+                                          : index + 1,
+                                      barStart + offset,
+                                    );
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      onSelect(note.id, undefined, barStart + offset);
+                                    }
+                                  }}
+                                >
+                                  <rect
+                                    x={hit.left}
+                                    y={noteHitTop}
+                                    width={hit.right - hit.left}
+                                    height={noteHitBottom - noteHitTop}
+                                    fill="transparent"
                                   />
-                                )}
-                                {note.blank ||
-                                measureRestBars.has(bar) ||
-                                (note.rest && drumPair) ? null : note.rest ? (
-                                  <g>
-                                    <text
-                                      aria-label={
-                                        drumPair
-                                          ? upperVoice
-                                            ? '위 성부 쉼표'
-                                            : '아래 성부 쉼표'
-                                          : '오선 쉼표'
-                                      }
-                                      x={x - 7}
-                                      y={restY}
-                                      fontSize="24"
-                                    >
-                                      {beats >= 4
-                                        ? '𝄻'
-                                        : beats >= 2
-                                          ? '𝄼'
-                                          : beats >= 1
-                                            ? '𝄽'
-                                            : beats >= 0.5
-                                              ? '𝄾'
-                                              : beats >= 0.25
-                                                ? '𝄿'
-                                                : beats >= 0.125
-                                                  ? '\u{1D140}'
-                                                  : '\u{1D141}'}
-                                    </text>
-                                    {DOTTED_SCORE_BEATS.includes(beats) && (
-                                      <circle
-                                        aria-label="점음표 점"
-                                        cx={x + 11}
-                                        cy={restY - 10}
-                                        r="1.6"
-                                        fill="#293e34"
-                                      />
-                                    )}
-                                  </g>
-                                ) : note.slash && !isDrums ? (
-                                  <RhythmSlash
-                                    x={x}
-                                    y={102}
-                                    beats={beats}
-                                    stemEnd={stemEnd}
-                                    direction={direction}
-                                    beamed={!!beam}
-                                    staccato={note.staccato}
-                                    accent={note.accent}
-                                  />
-                                ) : (
-                                  noteTones(note).map((tone, toneIndex) => {
-                                    const y = toneY(tone),
-                                      ledgers: number[] = [];
-                                    const stemX = x - direction * 4.5;
-                                    const headX = x + headOffsets[toneIndex];
-                                    for (let line = 132; line <= y; line += 10) ledgers.push(line);
-                                    for (let line = 72; line >= y; line -= 10) ledgers.push(line);
-                                    return (
-                                      <g
-                                        key={toneIndex}
-                                        data-keyboard-selected={
-                                          isKeyboard &&
-                                          !inputPreview &&
-                                          chosen &&
-                                          selectedString === toneIndex + 1
-                                            ? true
-                                            : undefined
+                                  {note.graceSlide && !continued && !note.rest && !note.blank && (
+                                    <GraceSlide
+                                      x={x}
+                                      y={staffY(note.graceSlide.pitch)}
+                                      targetY={staffY(note.pitch)}
+                                    />
+                                  )}
+                                  {note.blank ||
+                                  measureRestBars.has(bar) ||
+                                  (note.rest && drumPair) ? null : note.rest ? (
+                                    <g>
+                                      <text
+                                        aria-label={
+                                          drumPair
+                                            ? upperVoice
+                                              ? '위 성부 쉼표'
+                                              : '아래 성부 쉼표'
+                                            : '오선 쉼표'
                                         }
-                                        data-staff-tone={toneIndex}
-                                        data-midi-pitch={tone.pitch}
-                                        data-natural-pitch={tone.naturalPitch}
+                                        x={x - 7}
+                                        y={restY}
+                                        fontSize="24"
                                       >
-                                        {(isDrums ? [] : ledgers).map((line) => (
-                                          <line
-                                            key={line}
-                                            x1={headX - 9}
-                                            x2={headX + 9}
-                                            y1={line}
-                                            y2={line}
-                                            stroke="#536159"
-                                          />
-                                        ))}
-                                        {!isDrums && marks[index][toneIndex] && (
-                                          <text
-                                            data-tone-accidental={toneIndex}
-                                            x={accidentalX - accidentalColumns[toneIndex]}
-                                            y={y + 4}
-                                            fontSize="14"
-                                            textAnchor="end"
-                                          >
-                                            {marks[index][toneIndex]}
-                                          </text>
-                                        )}
-                                        {isDrums && note.slash ? (
-                                          <path
-                                            aria-label="슬래시 기보"
-                                            d={`M${x - 5} ${y + 7}l10 -14`}
-                                            stroke="currentColor"
-                                            strokeWidth="3"
-                                          />
-                                        ) : isDrums ? (
-                                          <DrumNotehead
-                                            showLedger
-                                            stemX={stemX}
-                                            tone={tone}
-                                            x={x}
-                                            y={y}
-                                            beats={beats}
-                                            stemEnd={stemEnd}
-                                            stemBase={
-                                              direction === -1 ? Math.min(...ys) : Math.max(...ys)
-                                            }
-                                            flags={flags}
-                                            beamed={!!beam}
-                                          />
-                                        ) : tone.dead ? (
-                                          <path
-                                            aria-label={
-                                              isDrums
-                                                ? `${drumLabel(tone.pitch)} X 음표`
-                                                : '뮤트 X 음표'
-                                            }
-                                            d={`M${headX - 4} ${y - 4}l8 8m-8 0l8 -8`}
-                                            stroke="#293e34"
-                                            strokeWidth="1.4"
-                                            fill="none"
-                                          />
-                                        ) : (
-                                          <ellipse
-                                            cx={headX}
-                                            cy={y}
-                                            rx="5"
-                                            ry="3.3"
-                                            transform={`rotate(-18 ${headX} ${y})`}
-                                            fill={beats >= 2 ? '#fffefb' : '#293e34'}
-                                            stroke="#293e34"
-                                            strokeWidth="1.1"
-                                          />
-                                        )}
-                                        {beats < 4 && Math.abs(headOffsets[toneIndex]) > 9 && (
-                                          <line
-                                            x1={stemX}
-                                            x2={headX}
-                                            y1={y}
-                                            y2={y}
-                                            stroke="#293e34"
-                                            strokeWidth="1.1"
-                                          />
-                                        )}
-                                        {beats < 4 && toneIndex === 0 && (
-                                          <line
-                                            data-stem-direction={direction === -1 ? 'up' : 'down'}
-                                            x1={stemX}
-                                            x2={stemX}
-                                            y1={stemStart}
-                                            y2={stemEnd}
-                                            stroke="#293e34"
-                                            strokeWidth="1.1"
-                                          />
-                                        )}
-                                        <NoteFlags
-                                          x={stemX}
-                                          y={stemEnd}
-                                          count={beam || toneIndex !== 0 ? 0 : flags}
-                                          direction={direction}
+                                        {beats >= 4
+                                          ? '𝄻'
+                                          : beats >= 2
+                                            ? '𝄼'
+                                            : beats >= 1
+                                              ? '𝄽'
+                                              : beats >= 0.5
+                                                ? '𝄾'
+                                                : beats >= 0.25
+                                                  ? '𝄿'
+                                                  : beats >= 0.125
+                                                    ? '\u{1D140}'
+                                                    : '\u{1D141}'}
+                                      </text>
+                                      {DOTTED_SCORE_BEATS.includes(beats) && (
+                                        <circle
+                                          aria-label="점음표 점"
+                                          cx={x + 11}
+                                          cy={restY - 10}
+                                          r="1.6"
+                                          fill="#293e34"
                                         />
-                                        {DOTTED_SCORE_BEATS.includes(beats) && (
-                                          <circle
-                                            aria-label="점음표 점"
-                                            cx={headX + (tone.ghost ? 14 : 8.5)}
-                                            cy={(y - 82) % 10 === 0 ? y - 5 : y}
-                                            r="1.3"
-                                            fill="#293e34"
+                                      )}
+                                    </g>
+                                  ) : note.slash && !isDrums ? (
+                                    <RhythmSlash
+                                      x={x}
+                                      y={102}
+                                      beats={beats}
+                                      stemEnd={stemEnd}
+                                      direction={direction}
+                                      beamed={!!beam}
+                                      staccato={note.staccato}
+                                      accent={note.accent}
+                                    />
+                                  ) : (
+                                    noteTones(note).map((tone, toneIndex) => {
+                                      const y = toneY(tone),
+                                        ledgers: number[] = [];
+                                      const drumSelected =
+                                        isDrums && chosen && drumAtRow(selectedString).y === y;
+                                      const stemX = x - direction * 4.5;
+                                      const headX = x + headOffsets[toneIndex];
+                                      for (let line = 132; line <= y; line += 10)
+                                        ledgers.push(line);
+                                      for (let line = 72; line >= y; line -= 10) ledgers.push(line);
+                                      return (
+                                        <g
+                                          key={toneIndex}
+                                          data-drum-selected={drumSelected ? 'true' : undefined}
+                                          style={drumSelected ? { color: '#c77830' } : undefined}
+                                          data-keyboard-selected={
+                                            !isDrums &&
+                                            !hasTab &&
+                                            !inputPreview &&
+                                            chosen &&
+                                            selectedString === toneIndex + 1
+                                              ? true
+                                              : undefined
+                                          }
+                                          data-staff-tone={toneIndex}
+                                          data-midi-pitch={tone.pitch}
+                                          data-natural-pitch={tone.naturalPitch}
+                                        >
+                                          <rect
+                                            data-selection-note={note.id}
+                                            x={headX - 6}
+                                            y={y - 5}
+                                            width={12}
+                                            height={10}
+                                            fill="transparent"
+                                            pointerEvents="none"
                                           />
-                                        )}
-                                        {tone.ghost && !tone.dead && (
-                                          <g aria-label="약하게 연주 괄호" fill="#65786c">
-                                            <text x={headX - 11} y={y + 4} fontSize="14">
-                                              (
+                                          {(isDrums ? [] : ledgers).map((line) => (
+                                            <line
+                                              key={line}
+                                              x1={headX - 9}
+                                              x2={headX + 9}
+                                              y1={line}
+                                              y2={line}
+                                              stroke="#536159"
+                                            />
+                                          ))}
+                                          {!isDrums && marks[index][toneIndex] && (
+                                            <text
+                                              data-tone-accidental={toneIndex}
+                                              x={accidentalX - accidentalColumns[toneIndex]}
+                                              y={y + 4}
+                                              fontSize="14"
+                                              textAnchor="end"
+                                            >
+                                              {marks[index][toneIndex]}
                                             </text>
-                                            <text x={headX + 7} y={y + 4} fontSize="14">
-                                              )
-                                            </text>
-                                          </g>
-                                        )}
-                                        {note.staccato &&
-                                          !continued &&
-                                          toneIndex === 0 &&
-                                          tone.drumTechnique !== 'choke' && (
-                                            <circle
-                                              aria-label="스타카토 표시"
-                                              cx={headX}
-                                              cy={
-                                                isDrums && [49, 57, 52, 55].includes(tone.pitch)
-                                                  ? stemEnd - 9
-                                                  : direction === -1
-                                                    ? Math.max(...ys) + 12
-                                                    : Math.min(...ys) - 12
+                                          )}
+                                          {isDrums && note.slash ? (
+                                            <path
+                                              aria-label="슬래시 기보"
+                                              d={`M${x - 5} ${y + 7}l10 -14`}
+                                              stroke="currentColor"
+                                              strokeWidth="3"
+                                            />
+                                          ) : isDrums ? (
+                                            <DrumNotehead
+                                              showLedger
+                                              color={drumSelected ? '#c77830' : undefined}
+                                              stemX={stemX}
+                                              tone={tone}
+                                              x={x}
+                                              y={y}
+                                              beats={beats}
+                                              stemEnd={stemEnd}
+                                              stemBase={
+                                                direction === -1 ? Math.min(...ys) : Math.max(...ys)
                                               }
-                                              r="1.8"
+                                              flags={flags}
+                                              beamed={!!beam}
+                                            />
+                                          ) : tone.dead ? (
+                                            <path
+                                              aria-label={
+                                                isDrums
+                                                  ? `${drumLabel(tone.pitch)} X 음표`
+                                                  : '뮤트 X 음표'
+                                              }
+                                              d={`M${headX - 4} ${y - 4}l8 8m-8 0l8 -8`}
+                                              stroke="#293e34"
+                                              strokeWidth="1.4"
+                                              fill="none"
+                                            />
+                                          ) : tone.harmonic === 'natural' ? (
+                                            <path
+                                              d={`M${headX} ${y - 5}l6 5 -6 5 -6 -5Z`}
+                                              fill="#fffefb"
+                                              stroke="#293e34"
+                                            />
+                                          ) : (
+                                            <ellipse
+                                              cx={headX}
+                                              cy={y}
+                                              rx="5"
+                                              ry="3.3"
+                                              transform={`rotate(-18 ${headX} ${y})`}
+                                              fill={beats >= 2 ? '#fffefb' : '#293e34'}
+                                              stroke="#293e34"
+                                              strokeWidth="1.1"
+                                            />
+                                          )}
+                                          <GuitarTechniqueMarks
+                                            tone={tone}
+                                            beats={note.beats}
+                                            x={headX}
+                                            y={y}
+                                            tabY={
+                                              hasTab && tone.string
+                                                ? tabTop + (tone.string - 1) * 20
+                                                : undefined
+                                            }
+                                            footerY={hasTab ? tabBottom + 55 : undefined}
+                                            width={Math.max(14, xAt(offset + actualBeats) - x - 6)}
+                                          />
+                                          {beats < 4 && Math.abs(headOffsets[toneIndex]) > 9 && (
+                                            <line
+                                              x1={stemX}
+                                              x2={headX}
+                                              y1={y}
+                                              y2={y}
+                                              stroke="#293e34"
+                                              strokeWidth="1.1"
+                                            />
+                                          )}
+                                          {beats < 4 && toneIndex === 0 && (
+                                            <line
+                                              data-stem-direction={direction === -1 ? 'up' : 'down'}
+                                              x1={stemX}
+                                              x2={stemX}
+                                              y1={stemStart}
+                                              y2={stemEnd}
+                                              stroke="#293e34"
+                                              strokeWidth="1.1"
+                                            />
+                                          )}
+                                          <NoteFlags
+                                            x={stemX}
+                                            y={stemEnd}
+                                            count={beam || toneIndex !== 0 ? 0 : flags}
+                                            direction={direction}
+                                          />
+                                          {DOTTED_SCORE_BEATS.includes(beats) && (
+                                            <circle
+                                              aria-label="점음표 점"
+                                              cx={headX + (tone.ghost ? 14 : 8.5)}
+                                              cy={(y - 82) % 10 === 0 ? y - 5 : y}
+                                              r="1.3"
                                               fill="#293e34"
                                             />
                                           )}
-                                        {(continued || continues) && (
-                                          <path
-                                            d={`M${x - (continued ? 20 : 0)} ${y - direction * 10}q15 ${-direction * 12} 30 0`}
-                                            fill="none"
-                                            stroke="#536159"
-                                          />
-                                        )}
-                                      </g>
-                                    );
-                                  })
-                                )}
-                                {note.sticking && !continued && (
-                                  <text
-                                    aria-label="스티킹"
-                                    x={x}
-                                    y={stickingY}
-                                    textAnchor="middle"
-                                    fontSize="12"
-                                  >
-                                    {note.sticking}
-                                  </text>
-                                )}
-                                {(note.accent || note.marcato) && !continued && (
-                                  <text
-                                    x={x}
-                                    aria-label={note.marcato ? '마르카토 표시' : '악센트 표시'}
-                                    y={accentY}
-                                    textAnchor="middle"
-                                    fontSize="17"
-                                  >
-                                    {note.marcato ? '^' : '>'}
-                                  </text>
-                                )}
-                              </g>
+                                          {tone.ghost && !tone.dead && (
+                                            <g aria-label="약하게 연주 괄호" fill="#65786c">
+                                              <text x={headX - 11} y={y + 4} fontSize="14">
+                                                (
+                                              </text>
+                                              <text x={headX + 7} y={y + 4} fontSize="14">
+                                                )
+                                              </text>
+                                            </g>
+                                          )}
+                                          {note.staccato &&
+                                            !continued &&
+                                            toneIndex === 0 &&
+                                            tone.drumTechnique !== 'choke' && (
+                                              <circle
+                                                aria-label="스타카토 표시"
+                                                cx={headX}
+                                                cy={
+                                                  isDrums && [49, 57, 52, 55].includes(tone.pitch)
+                                                    ? stemEnd - 9
+                                                    : direction === -1
+                                                      ? Math.max(...ys) + 12
+                                                      : Math.min(...ys) - 12
+                                                }
+                                                r="1.8"
+                                                fill="#293e34"
+                                              />
+                                            )}
+                                          {(continued || continues) && (
+                                            <path
+                                              d={`M${x - (continued ? 20 : 0)} ${y - direction * 10}q15 ${-direction * 12} 30 0`}
+                                              fill="none"
+                                              stroke="#536159"
+                                            />
+                                          )}
+                                        </g>
+                                      );
+                                    })
+                                  )}
+                                  {note.sticking && !continued && (
+                                    <text
+                                      aria-label="스티킹"
+                                      x={x}
+                                      y={stickingY}
+                                      textAnchor="middle"
+                                      fontSize="12"
+                                    >
+                                      {note.sticking}
+                                    </text>
+                                  )}
+                                  {(note.accent || note.marcato) && !continued && (
+                                    <text
+                                      x={x}
+                                      aria-label={note.marcato ? '마르카토 표시' : '악센트 표시'}
+                                      y={accentY}
+                                      textAnchor="middle"
+                                      fontSize="17"
+                                    >
+                                      {note.marcato ? '^' : '>'}
+                                    </text>
+                                  )}
+                                </g>
+                              )}
                               {hasTab &&
                                 tuning.map((_, row) => {
                                   const tone = tones.find((item) => item.string === row + 1);
@@ -1828,11 +1963,24 @@ export function GuitarStaff({
                                         (chosen && selectedString === row + 1) ||
                                         rangeIds.includes(note.id)
                                       }
-                                      onClick={() =>
-                                        chosen && selectedString === row + 1
-                                          ? onDeselect()
-                                          : onSelect(note.id, row + 1, barStart + offset)
-                                      }
+                                      onClick={(event) => {
+                                        const matrix = event.currentTarget.getScreenCTM();
+                                        const point = matrix
+                                          ? new DOMPoint(
+                                              event.clientX,
+                                              event.clientY,
+                                            ).matrixTransform(matrix.inverse())
+                                          : null;
+                                        if (point && point.x > x + 12) {
+                                          selectInputPosition(
+                                            event.currentTarget,
+                                            event.clientX,
+                                            event.clientY,
+                                          );
+                                          return;
+                                        }
+                                        onSelect(note.id, row + 1, barStart + offset);
+                                      }}
                                       onKeyDown={(event) => {
                                         if (event.key === 'Enter') {
                                           event.preventDefault();
@@ -1863,6 +2011,29 @@ export function GuitarStaff({
                                           chosen && selectedString === row + 1 ? '#c77830' : 'none'
                                         }
                                       />
+                                      {tone && (
+                                        <rect
+                                          data-selection-note={note.id}
+                                          x={x - 7}
+                                          y={tabTop + row * 20 - 7}
+                                          width={14}
+                                          height={14}
+                                          fill="transparent"
+                                          pointerEvents="none"
+                                        />
+                                      )}
+                                      {!renderStaff && tone && (
+                                        <GuitarTechniqueMarks
+                                          tone={tone}
+                                          showStaff={false}
+                                          tabY={tabTop + row * 20}
+                                          x={x}
+                                          y={tabTop + row * 20}
+                                          footerY={tabBottom + 55}
+                                          beats={note.beats}
+                                          width={Math.max(14, xAt(offset + actualBeats) - x - 6)}
+                                        />
+                                      )}
                                       {tone && !note.slash && (
                                         <>
                                           {note.graceSlide &&
@@ -1993,34 +2164,35 @@ export function GuitarStaff({
                               height={bottom - 65}
                               fill="transparent"
                             />
-                            {[102, ...(hasTab ? [tabTop + (tuning.length - 1) * 10] : [])].map(
-                              (center) => (
-                                <g
-                                  key={center}
-                                  data-measure-rest-staff={center === 102 ? 'standard' : 'tab'}
+                            {[
+                              ...(renderStaff ? [102] : []),
+                              ...(hasTab ? [tabTop + (tuning.length - 1) * 10] : []),
+                            ].map((center) => (
+                              <g
+                                key={center}
+                                data-measure-rest-staff={center === 102 ? 'standard' : 'tab'}
+                              >
+                                <path
+                                  d={`M${width * 0.1} ${center - 5}v10M${width * 0.9} ${center - 5}v10`}
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                />
+                                <path
+                                  d={`M${width * 0.1} ${center}H${width * 0.9}`}
+                                  stroke="currentColor"
+                                  strokeWidth="6"
+                                />
+                                <text
+                                  x={width / 2}
+                                  y={center - 25}
+                                  textAnchor="middle"
+                                  fontSize="22"
+                                  fontWeight="600"
                                 >
-                                  <path
-                                    d={`M${width * 0.1} ${center - 5}v10M${width * 0.9} ${center - 5}v10`}
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                  />
-                                  <path
-                                    d={`M${width * 0.1} ${center}H${width * 0.9}`}
-                                    stroke="currentColor"
-                                    strokeWidth="6"
-                                  />
-                                  <text
-                                    x={width / 2}
-                                    y={center - 25}
-                                    textAnchor="middle"
-                                    fontSize="22"
-                                    fontWeight="600"
-                                  >
-                                    {span}
-                                  </text>
-                                </g>
-                              ),
-                            )}
+                                  {span}
+                                </text>
+                              </g>
+                            ))}
                           </g>
                         ) : (
                           drumPair?.flatMap((voice, voiceIndex) =>
@@ -2055,59 +2227,101 @@ export function GuitarStaff({
                             )),
                           )
                         ))}
+                      {(() => {
+                        const ranges: { start: number; end: number }[] = [];
+                        for (const f of fragments) {
+                          if (
+                            !noteTones(f.note).some((t) => t.palmMute) ||
+                            f.note.rest ||
+                            f.note.blank
+                          )
+                            continue;
+                          const start = Math.max(0, Math.floor(f.offset + 1e-7));
+                          const end = Math.min(barBeats, Math.ceil(f.offset + f.beats - 1e-7));
+                          const last = ranges[ranges.length - 1];
+                          if (last && start <= last.end + 1e-7) last.end = Math.max(last.end, end);
+                          else ranges.push({ start, end });
+                        }
+                        return ranges.map((r) => {
+                          const left = xAt(r.start),
+                            right = xAt(r.end);
+                          const y = hasTab ? tabBottom + 55 : top + 18;
+                          return (
+                            <g
+                              key={`pm/${r.start}`}
+                              data-palm-mute-range="true"
+                              pointerEvents="none"
+                              fill="#344b3e"
+                              stroke="#344b3e"
+                            >
+                              <text x={left} y={y} fontSize="10" stroke="none">
+                                P.M.
+                              </text>
+                              <path
+                                d={`M${left} ${y + 5}H${right}v-5`}
+                                fill="none"
+                                strokeDasharray="3 3"
+                              />
+                            </g>
+                          );
+                        });
+                      })()}
                       {hasTab && (
                         <TabRhythm fragments={fragments} tuning={tuning} y={tabTop} xAt={xAt} />
                       )}
-                      {beams.map(({ indices, top, direction }, groupIndex) => (
-                        <g
-                          key={`beams/${groupIndex}`}
-                          opacity={
-                            repeatPattern ? 0 : voiceOpacity(fragments[indices[0]].note.part)
-                          }
-                          aria-label="박 단위 음표 묶음"
-                          pointerEvents="none"
-                          stroke="#293e34"
-                          strokeWidth="2.4"
-                        >
-                          {[0, 1, 2, 3].flatMap((level) =>
-                            indices.flatMap((index, position) => {
-                              const flags = [1, 0.5, 0.25, 0.125].filter(
-                                (limit) =>
-                                  writtenScoreBeats(fragments[index].note, fragments[index].beats) <
-                                  limit,
-                              ).length;
-                              if (flags <= level) return [];
-                              const next = indices[position + 1],
-                                previous = indices[position - 1];
-                              const hasNext =
-                                next !== undefined &&
-                                writtenScoreBeats(fragments[next].note, fragments[next].beats) <
-                                  [1, 0.5, 0.25, 0.125][level];
-                              const hasPrevious =
-                                previous !== undefined &&
-                                writtenScoreBeats(
-                                  fragments[previous].note,
-                                  fragments[previous].beats,
-                                ) < [1, 0.5, 0.25, 0.125][level];
-                              if (!hasNext && hasPrevious) return [];
-                              const x = xAt(fragments[index].offset) - direction * 4.5;
-                              return [
-                                <line
-                                  key={`${level}/${index}`}
-                                  x1={x}
-                                  x2={
-                                    hasNext
-                                      ? xAt(fragments[next].offset) - direction * 4.5
-                                      : x + (position === indices.length - 1 ? -8 : 8)
-                                  }
-                                  y1={top - direction * level * 7}
-                                  y2={top - direction * level * 7}
-                                />,
-                              ];
-                            }),
-                          )}
-                        </g>
-                      ))}
+                      {renderStaff &&
+                        beams.map(({ indices, top, direction }, groupIndex) => (
+                          <g
+                            key={`beams/${groupIndex}`}
+                            opacity={
+                              repeatPattern ? 0 : voiceOpacity(fragments[indices[0]].note.part)
+                            }
+                            aria-label="박 단위 음표 묶음"
+                            pointerEvents="none"
+                            stroke="#293e34"
+                            strokeWidth="2.4"
+                          >
+                            {[0, 1, 2, 3].flatMap((level) =>
+                              indices.flatMap((index, position) => {
+                                const flags = [1, 0.5, 0.25, 0.125].filter(
+                                  (limit) =>
+                                    writtenScoreBeats(
+                                      fragments[index].note,
+                                      fragments[index].beats,
+                                    ) < limit,
+                                ).length;
+                                if (flags <= level) return [];
+                                const next = indices[position + 1],
+                                  previous = indices[position - 1];
+                                const hasNext =
+                                  next !== undefined &&
+                                  writtenScoreBeats(fragments[next].note, fragments[next].beats) <
+                                    [1, 0.5, 0.25, 0.125][level];
+                                const hasPrevious =
+                                  previous !== undefined &&
+                                  writtenScoreBeats(
+                                    fragments[previous].note,
+                                    fragments[previous].beats,
+                                  ) < [1, 0.5, 0.25, 0.125][level];
+                                if (!hasNext && hasPrevious) return [];
+                                const x = xAt(fragments[index].offset) - direction * 4.5;
+                                return [
+                                  <line
+                                    key={`${level}/${index}`}
+                                    x1={x}
+                                    x2={
+                                      hasNext
+                                        ? xAt(fragments[next].offset) - direction * 4.5
+                                        : x + (position === indices.length - 1 ? -8 : 8)
+                                    }
+                                    y1={top - direction * level * 7}
+                                    y2={top - direction * level * 7}
+                                  />,
+                                ];
+                              }),
+                            )}
+                          </g>
+                        ))}
                       {emptyOffsets.map((offset) => {
                         const active =
                           hasSelection &&
@@ -2122,7 +2336,7 @@ export function GuitarStaff({
                             key={`empty/${offset}`}
                             data-empty-active={active ? 'true' : undefined}
                           >
-                            {hasTab && (
+                            {renderStaff && hasTab && (
                               <g
                                 role="button"
                                 tabIndex={0}
@@ -2167,8 +2381,8 @@ export function GuitarStaff({
                                   aria-label={`${bar + 1}마디 ${offset + 1}박 ${hasTab ? `${row + 1}번 줄 ` : ''}빈 칸`}
                                   aria-pressed={focused}
                                   onClick={(event) =>
-                                    isKeyboard
-                                      ? selectKeyboardPosition(
+                                    editable
+                                      ? selectInputPosition(
                                           event.currentTarget,
                                           event.clientX,
                                           event.clientY,
@@ -2200,7 +2414,7 @@ export function GuitarStaff({
                                     height={hasTab ? 20 : staffHitBottom - staffHitTop}
                                     fill="transparent"
                                   />
-                                  {!isDrums && !isKeyboard && (
+                                  {hasTab && (
                                     <rect
                                       className="score-cell-cursor"
                                       x={x - cursorWidth / 2}
@@ -2238,32 +2452,40 @@ export function GuitarStaff({
                             noteTones(fragment.note).some(
                               (tone) => tone.pitch === inputDrumNote.tone.pitch,
                             );
-                          const layout = containsPitch ? noteLayouts[column][index] : undefined;
-                          const direction =
-                            layout?.direction ??
-                            (drumPair
-                              ? part === drumPair[0]
-                                ? -1
-                                : 1
-                              : scoreStemDirection([staffY(inputDrumNote.tone.pitch)]));
+                          if (containsPitch) return null;
+                          const direction = drumPair
+                            ? part === drumPair[0]
+                              ? -1
+                              : 1
+                            : scoreStemDirection([staffY(inputDrumNote.tone.pitch)]);
                           return (
                             <DrumInputPreview
                               note={inputDrumNote}
                               x={previewX}
                               direction={direction}
-                              layout={
-                                layout
-                                  ? {
-                                      ...layout,
-                                      beamed: beams.some((beam) => beam.indices.includes(index)),
-                                    }
-                                  : undefined
-                              }
                             />
                           );
                         })()}
                       {previewHere &&
-                        isKeyboard &&
+                        hasTab &&
+                        (!selected || indexed.notes.get(selected)?.blank) && (
+                          <rect
+                            data-tab-input-preview="true"
+                            x={previewX - 12}
+                            y={tabTop + (selectedString - 1) * 20 - 10}
+                            width={24}
+                            height={20}
+                            rx={2}
+                            fill="#cbd5e1"
+                            fillOpacity=".65"
+                            stroke="#7b8794"
+                            pointerEvents="none"
+                          />
+                        )}
+                      {renderStaff &&
+                        previewHere &&
+                        (!hasTab || inputPreview) &&
+                        !isDrums &&
                         (inputPreview || !selected || indexed.notes.get(selected)?.blank) && (
                           <KeyboardInputPreview
                             x={previewX}
@@ -2271,35 +2493,6 @@ export function GuitarStaff({
                             beats={inputBeats}
                           />
                         )}
-                      {previewHere && !isKeyboard && (
-                        <g
-                          className="score-duration-preview"
-                          role="img"
-                          aria-label={`입력 미리보기 ${inputBeats}박`}
-                          data-preview-beats={inputBeats}
-                          fill="#b96a23"
-                          stroke="#b96a23"
-                          opacity="0.48"
-                          pointerEvents="none"
-                        >
-                          <rect
-                            x={previewX - 3}
-                            y={hasTab ? tabTop + (selectedString - 1) * 20 + 8 : 126}
-                            width={Math.max(
-                              6,
-                              xAt(
-                                Math.min(
-                                  Math.max(barBeats, scoreBarBeats(score)),
-                                  emptyBeat - barStart + inputBeats,
-                                ),
-                              ) - previewX,
-                            )}
-                            height="3"
-                            rx="1.5"
-                            stroke="none"
-                          />
-                        </g>
-                      )}
                       {fragments.map(({ note, offset }, index) => {
                         if (note.graceBeats === undefined) return null;
                         const group = fragments.filter(
@@ -2315,6 +2508,7 @@ export function GuitarStaff({
                             tuning,
                             score.keySignature,
                             hasTab,
+                            renderStaff,
                           );
                         const next = fragments[index + 1]?.note;
                         return (
@@ -2327,9 +2521,16 @@ export function GuitarStaff({
                             note={note}
                             x={graceX}
                             nextX={remaining === 1 ? xAt(offset) : graceX + GRACE_SPACING}
-                            nextY={toneY(
-                              noteTones(next ?? note)[0] ?? { pitch: next?.pitch ?? note.pitch },
-                            )}
+                            tabOnly={!renderStaff}
+                            nextY={
+                              renderStaff
+                                ? toneY(
+                                    noteTones(next ?? note)[0] ?? {
+                                      pitch: next?.pitch ?? note.pitch,
+                                    },
+                                  )
+                                : 0
+                            }
                             nextNote={next}
                             staffY={staffY}
                             tuning={tuning}
@@ -2354,12 +2555,22 @@ export function GuitarStaff({
                       .filter((fragment) => ids.has(fragment.note.id))
                       .map((fragment) => ({
                         ...fragment,
-                        engraving: noteLayouts[column][fragments.indexOf(fragment)],
+                        engraving: noteLayouts[column][fragments.indexOf(fragment)] ?? {
+                          direction: 1 as const,
+                          stemEnd: 0,
+                        },
                         x:
                           prefix +
                           layouts.slice(0, column).reduce((sum, layout) => sum + layout.width, 0) +
                           layouts[column].xAt(fragment.offset) -
-                          graceOffset(fragments, fragment, tuning, score.keySignature, hasTab),
+                          graceOffset(
+                            fragments,
+                            fragment,
+                            tuning,
+                            score.keySignature,
+                            hasTab,
+                            renderStaff,
+                          ),
                       })),
                   );
                   if (!located.length) return null;
@@ -2378,20 +2589,22 @@ export function GuitarStaff({
                   );
                   const edge = (ys: number[], direction: -1 | 1) =>
                     direction === -1 ? Math.min(...ys) : Math.max(...ys);
-                  const staffPoints = located.map(({ x, note, engraving }, index) => {
-                    const sameSide = engraving.direction === side;
-                    const endpoint = index === 0 || index === located.length - 1;
-                    return {
-                      x: x + (sameSide && endpoint ? (index === 0 ? 8 : -8) : 0),
-                      y: edge(
-                        [
-                          ...noteTones(note).map((tone) => toneY(tone)),
-                          ...(!endpoint && sameSide ? [engraving.stemEnd] : []),
-                        ],
-                        side,
-                      ),
-                    };
-                  });
+                  const staffPoints = !renderStaff
+                    ? []
+                    : located.map(({ x, note, engraving }, index) => {
+                        const sameSide = engraving.direction === side;
+                        const endpoint = index === 0 || index === located.length - 1;
+                        return {
+                          x: x + (sameSide && endpoint ? (index === 0 ? 8 : -8) : 0),
+                          y: edge(
+                            [
+                              ...noteTones(note).map((tone) => toneY(tone)),
+                              ...(!endpoint && sameSide ? [engraving.stemEnd] : []),
+                            ],
+                            side,
+                          ),
+                        };
+                      });
                   const tabSide = scoreConnectionSide(
                     located.map((f) => (f.note.graceBeats !== undefined ? -1 : 1)),
                   );
@@ -2407,7 +2620,9 @@ export function GuitarStaff({
                     ...points,
                     ...(!b ? [{ x: x2, y: points.at(-1)!.y }] : []),
                   ];
-                  const staffArc = scoreConnectionArc(extend(staffPoints), side);
+                  const staffArc = renderStaff
+                    ? scoreConnectionArc(extend(staffPoints), side)
+                    : null;
                   const tabArc = hasTab ? scoreConnectionArc(extend(tabPoints), tabSide) : null;
                   return (
                     <g
@@ -2417,11 +2632,13 @@ export function GuitarStaff({
                       fill="#385f4a"
                       stroke="none"
                     >
-                      <path
-                        aria-label={label ? `${label} 오선 연결` : '이음줄(슬러)'}
-                        data-connection-side={side === -1 ? 'above' : 'below'}
-                        d={staffArc.d}
-                      />
+                      {staffArc && (
+                        <path
+                          aria-label={label ? `${label} 오선 연결` : '이음줄(슬러)'}
+                          data-connection-side={side === -1 ? 'above' : 'below'}
+                          d={staffArc.d}
+                        />
+                      )}
                       {hasTab && (
                         <path
                           aria-label={label ? `${label} TAB 연결` : 'TAB 이음줄(슬러)'}
@@ -2430,22 +2647,24 @@ export function GuitarStaff({
                         />
                       )}
                       {label &&
-                        [staffArc, ...(tabArc ? [tabArc] : [])].map((arc, i) => (
-                          <text
-                            key={i}
-                            data-hammer-pull-label={label}
-                            x={arc.labelX}
-                            y={arc.labelY}
-                            textAnchor="middle"
-                            dominantBaseline="central"
-                            fontSize="10"
-                            paintOrder="stroke"
-                            stroke="#fffefb"
-                            strokeWidth="3"
-                          >
-                            {label}
-                          </text>
-                        ))}
+                        [...(staffArc ? [staffArc] : []), ...(tabArc ? [tabArc] : [])].map(
+                          (arc, i) => (
+                            <text
+                              key={i}
+                              data-hammer-pull-label={label}
+                              x={arc.labelX}
+                              y={arc.labelY}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fontSize="10"
+                              paintOrder="stroke"
+                              stroke="#fffefb"
+                              strokeWidth="3"
+                            >
+                              {label}
+                            </text>
+                          ),
+                        )}
                     </g>
                   );
                 })}
@@ -2468,8 +2687,9 @@ export function GuitarStaff({
                     if (!located.length) return null;
                     const x1 = located[0].x - 8,
                       x2 = located.at(-1)!.x + 12;
-                    const y =
-                      drumPair && group[0].part === drumPair[1]
+                    const y = !renderStaff
+                      ? 0
+                      : drumPair && group[0].part === drumPair[1]
                         ? 171
                         : Math.min(
                             ...located.flatMap(({ note }) =>
@@ -2483,26 +2703,30 @@ export function GuitarStaff({
                         pointerEvents="none"
                         aria-label="셋잇단음표 묶음"
                       >
-                        {[y, ...(hasTab ? [tabTop + (tuning.length - 1) * 20 + 23] : [])].map(
-                          (top, i) => (
-                            <g key={i} aria-label={i ? 'TAB 셋잇단음표' : '오선 셋잇단음표'}>
-                              <path
-                                d={`M ${x1} ${top + 5} v -5 H ${(x1 + x2) / 2 - 8} M ${(x1 + x2) / 2 + 8} ${top} H ${x2} v 5`}
-                                stroke="#385f4a"
-                                fill="none"
-                              />
-                              <text
-                                x={(x1 + x2) / 2}
-                                y={top + 4}
-                                textAnchor="middle"
-                                fontSize="12"
-                                fontStyle="italic"
-                              >
-                                3
-                              </text>
-                            </g>
-                          ),
-                        )}
+                        {[
+                          ...(renderStaff ? [y] : []),
+                          ...(hasTab ? [tabTop + (tuning.length - 1) * 20 + 23] : []),
+                        ].map((top, i) => (
+                          <g
+                            key={i}
+                            aria-label={!renderStaff || i ? 'TAB 셋잇단음표' : '오선 셋잇단음표'}
+                          >
+                            <path
+                              d={`M ${x1} ${top + 5} v -5 H ${(x1 + x2) / 2 - 8} M ${(x1 + x2) / 2 + 8} ${top} H ${x2} v 5`}
+                              stroke="#385f4a"
+                              fill="none"
+                            />
+                            <text
+                              x={(x1 + x2) / 2}
+                              y={top + 4}
+                              textAnchor="middle"
+                              fontSize="12"
+                              fontStyle="italic"
+                            >
+                              3
+                            </text>
+                          </g>
+                        ))}
                       </g>
                     );
                   })}
@@ -2513,7 +2737,10 @@ export function GuitarStaff({
                   const located = bars.flatMap(({ fragments }, column) =>
                     fragments.map((fragment, index) => ({
                       ...fragment,
-                      engraving: noteLayouts[column][index],
+                      engraving: noteLayouts[column][index] ?? {
+                        direction: 1 as const,
+                        stemEnd: 0,
+                      },
                       x:
                         prefix +
                         layouts.slice(0, column).reduce((sum, layout) => sum + layout.width, 0) +
@@ -2527,27 +2754,33 @@ export function GuitarStaff({
                   const x2 = b ? b.x : drawingWidth - 5;
                   const fromTones = tabTones(from, tuning),
                     toTones = tabTones(to, tuning);
-                  const side = scoreConnectionSide([
-                    a?.engraving.direction ??
-                      scoreStemDirection(noteTones(from).map((t) => toneY(t))),
-                    b?.engraving.direction ??
-                      scoreStemDirection(noteTones(to).map((t) => toneY(t))),
-                  ]);
+                  const side = !renderStaff
+                    ? 1
+                    : scoreConnectionSide([
+                        a?.engraving.direction ??
+                          scoreStemDirection(noteTones(from).map((t) => toneY(t))),
+                        b?.engraving.direction ??
+                          scoreStemDirection(noteTones(to).map((t) => toneY(t))),
+                      ]);
                   const staffEdge = (note: typeof from) =>
                     side === -1
                       ? Math.min(...noteTones(note).map((t) => toneY(t)))
                       : Math.max(...noteTones(note).map((t) => toneY(t)));
-                  const staffFrom = staffEdge(from),
-                    staffTo = staffEdge(to);
+                  const staffFrom = renderStaff ? staffEdge(from) : 0,
+                    staffTo = renderStaff ? staffEdge(to) : 0;
                   const surfaces = [
-                    {
-                      key: 'staff',
-                      y1: staffFrom,
-                      y2: staffTo,
-                      side,
-                      inset1: noteTones(from).some((tone) => tone.ghost) ? 16 : 7,
-                      inset2: noteTones(to).some((tone) => tone.ghost) ? 16 : 8,
-                    },
+                    ...(renderStaff
+                      ? [
+                          {
+                            key: 'staff',
+                            y1: staffFrom,
+                            y2: staffTo,
+                            side,
+                            inset1: noteTones(from).some((tone) => tone.ghost) ? 16 : 7,
+                            inset2: noteTones(to).some((tone) => tone.ghost) ? 16 : 8,
+                          },
+                        ]
+                      : []),
                     ...(hasTab
                       ? fromTones.map((tone) => ({
                           key: `tab-${tone.string}`,
@@ -2674,10 +2907,14 @@ export function GuitarStaff({
                       );
                       const direction = note[edge] === 'up' ? -1 : 1;
                       const positions = [
-                        {
-                          y: staffY(note.pitch),
-                          inset: noteTones(note).some((tone) => tone.ghost) ? 16 : 8,
-                        },
+                        ...(renderStaff
+                          ? [
+                              {
+                                y: staffY(note.pitch),
+                                inset: noteTones(note).some((tone) => tone.ghost) ? 16 : 8,
+                              },
+                            ]
+                          : []),
                         ...(hasTab
                           ? tabTones(note, tuning).map((tone) => ({
                               y: tabTop + ((tone.string ?? 1) - 1) * 20,

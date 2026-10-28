@@ -319,7 +319,7 @@ test('PDF uses the live drawing width, shared fonts and separate staff/TAB barli
     assert.ok(Math.abs(drawingWidth - width) < 0.01);
     assert.match(markup, /font-family="Segoe UI Symbol, Malgun Gothic, sans-serif"/);
     assert.match(markup, /data-barline="staff"[^>]*y1="82" y2="122"/);
-    assert.match(markup, /data-barline="tab"[^>]*y1="190" y2="290"/);
+    assert.match(markup, /data-barline="tab"[^>]*y1="210" y2="310"/);
   }
   assert.doesNotMatch(scorePdfMarkup(score(), 'Guitar', false), /data-barline="tab"/);
 });
@@ -331,8 +331,8 @@ test('staff keeps rests while TAB omits rest glyphs and centers its label on the
   assert.match(markup, /aria-label="오선 쉼표"/);
   const label = markup.match(/<g aria-label="줄 시작 TAB"[^>]*>(.*?)<\/g>/)?.[1];
   const ys = [...label.matchAll(/ y="([\d.]+)"/g)].map((match) => Number(match[1]));
-  assert.deepEqual(ys, [203, 220, 237]);
-  assert.equal((ys[0] + ys[2]) / 2, (190 + 250) / 2);
+  assert.deepEqual(ys, [223, 240, 257]);
+  assert.equal((ys[0] + ys[2]) / 2, (210 + 270) / 2);
   assert.match(markup, /class="score-measure-number" x="2" y="74"/);
 });
 

@@ -298,6 +298,24 @@ function isSingleBandScore(value: unknown): boolean {
         !note.tones.every(
           (tone: unknown) =>
             object(tone) &&
+            (tone.palmMute === undefined || typeof tone.palmMute === 'boolean') &&
+            (tone.harmonic === undefined ||
+              tone.harmonic === 'natural' ||
+              tone.harmonic === 'pinch') &&
+            (tone.bend === undefined ||
+              (object(tone.bend) &&
+                ['bend', 'release', 'prebend', 'prebend-release'].includes(
+                  String(tone.bend.kind),
+                ) &&
+                [1, 2, 3, 4].includes(Number(tone.bend.amount)) &&
+                typeof tone.bend.amount === 'number' &&
+                ['bendStart', 'bendEnd', 'releaseStart', 'releaseEnd'].every(
+                  (key) =>
+                    (tone.bend as Record<string, unknown>)[key] === undefined ||
+                    (typeof (tone.bend as Record<string, unknown>)[key] === 'number' &&
+                      Number.isFinite((tone.bend as Record<string, unknown>)[key]) &&
+                      Number((tone.bend as Record<string, unknown>)[key]) >= 0),
+                ))) &&
             typeof tone.pitch === 'number' &&
             number(tone.pitch, 0, 127) &&
             Number.isInteger(tone.pitch) &&

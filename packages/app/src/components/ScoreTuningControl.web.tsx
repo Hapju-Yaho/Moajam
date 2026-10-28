@@ -1,4 +1,4 @@
-import { scoreInstrument, scoreInstruments, type Score } from '../lib/score';
+import { scoreInstrument, scoreInstruments, setScoreCapo, type Score } from '../lib/score';
 import { scorePartOwner } from '../lib/scoreParts';
 import {
   scoreTuningChoices,
@@ -33,7 +33,10 @@ export function ScoreTuningControl({
     }
   };
   return (
-    <div className="score-tuning-control">
+    <div
+      className="score-tuning-control"
+      data-fretted={instrument.tuning.length > 0 ? 'true' : undefined}
+    >
       <label>
         {keyboard ? '키 변경' : '튜닝'}
         {keyboard ? (
@@ -75,6 +78,24 @@ export function ScoreTuningControl({
           </select>
         )}
       </label>
+      {instrument.tuning.length > 0 && (
+        <label className="score-capo-control">
+          카포
+          <select
+            aria-label="카포 프렛"
+            value={instrument.capo}
+            disabled={disabled}
+            onChange={(event) => apply(() => setScoreCapo(score, part, Number(event.target.value)))}
+          >
+            <option value={0}>없음</option>
+            {Array.from({ length: 12 }, (_, i) => (
+              <option key={i + 1} value={i + 1}>
+                {i + 1}프렛
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {keyboard && (
         <button
           type="button"

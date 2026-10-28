@@ -640,45 +640,57 @@ export function AppShell({
                 </SpaceMenuReveal>
               </Stack>
               <SpaceMenuReveal id="music-tools" visible={!bandSpace}>
-                <NavItem
+                <View
                   nativeID="tour-music-tools"
-                  active={toolsPage}
-                  accessibilityRole="button"
-                  accessibilityLabel="작업실 메뉴"
-                  accessibilityState={{ expanded: toolsOpen }}
-                  aria-expanded={toolsOpen}
-                  onPress={() => {
-                    setToolsOpen(true);
-                    onNavigate('work-management');
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    borderRadius: 10,
+                    backgroundColor: toolsPage ? '#eaf0fc' : 'transparent',
                   }}
-                  style={{ gap: 12, width: '100%' }}
                 >
-                  <NavIcon>
-                    <AppIcon
-                      name="studio"
-                      size={18}
-                      color={toolsPage ? theme.colors.primary : '#56657c'}
-                    />
-                  </NavIcon>
-                  <NavLabel active={toolsPage} style={{ flex: 1 }}>
-                    작업실
-                  </NavLabel>
+                  <NavItem
+                    active={toolsPage}
+                    accessibilityRole="button"
+                    accessibilityLabel="작업실 메뉴"
+                    onPress={() => {
+                      setToolsOpen(true);
+                      onNavigate('work-management');
+                    }}
+                    style={{ gap: 12, flex: 1, minHeight: 40, paddingRight: 0 }}
+                  >
+                    <NavIcon>
+                      <AppIcon
+                        name="studio"
+                        size={18}
+                        color={toolsPage ? theme.colors.primary : '#56657c'}
+                      />
+                    </NavIcon>
+                    <NavLabel active={toolsPage} style={{ flex: 1 }}>
+                      작업실
+                    </NavLabel>
+                  </NavItem>
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="작업실 하위 메뉴 펼치기 또는 접기"
-                    onPress={(event) => {
-                      event.stopPropagation();
-                      setToolsOpen((open) => !open);
+                    accessibilityState={{ expanded: toolsOpen }}
+                    onPress={() => setToolsOpen((open) => !open)}
+                    style={{
+                      width: 32,
+                      height: 40,
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
-                    style={{ transform: [{ rotate: toolsOpen ? '180deg' : '0deg' }] }}
                   >
-                    <AppIcon
-                      name="chevron-down"
-                      size={16}
-                      color={toolsPage ? theme.colors.primary : '#7b879f'}
-                    />
+                    <View style={{ transform: [{ rotate: toolsOpen ? '180deg' : '0deg' }] }}>
+                      <AppIcon
+                        name="chevron-down"
+                        size={16}
+                        color={toolsPage ? theme.colors.primary : '#7b879f'}
+                      />
+                    </View>
                   </Pressable>
-                </NavItem>
+                </View>
                 <SpaceMenuReveal id="sidebar-workshop-list" visible={toolsOpen}>
                   <Stack gap={2} style={{ paddingLeft: 18, paddingBottom: 6 }}>
                     {nav(toolItems)}

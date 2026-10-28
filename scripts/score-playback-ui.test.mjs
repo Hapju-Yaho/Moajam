@@ -21,10 +21,6 @@ try {
     );
   };
   const playing = () => page.locator('[data-playing-measure="true"]');
-  const lineX = () =>
-    page
-      .locator('[data-playback-cursor][visibility="visible"]')
-      .evaluate((line) => line.transform.baseVal.getItem(0).matrix.e);
   await seek(0.01);
   assert.equal(await playing().count(), 1);
   assert.equal(await playing().getAttribute('aria-label'), '1마디');
@@ -42,10 +38,8 @@ try {
   assert.equal(background.visibility, 'visible');
   assert.ok(background.width > 50 && background.height > 100);
   assert.equal(await page.locator('[data-playing]').count(), 0);
-  assert.equal(
-    await page.locator('[data-playback-cursor][visibility="visible"]').getAttribute('stroke'),
-    '#52946d',
-  );
+  assert.equal(await page.locator('[data-playback-cursor]').count(), 0);
+  assert.equal(await page.locator('[data-playing-note]').count(), 0);
   assert.equal(
     await page
       .locator('[data-grace-note="perf-0"] ellipse')
@@ -69,12 +63,8 @@ try {
       .evaluate((node) => getComputedStyle(node).stroke),
     'rgb(41, 62, 52)',
   );
-  // Adjacent measures share a continuous endpoint, including the leading inset.
-  await seek(3.999, false);
-  const before = await lineX();
+  // Playback only changes the current measure, without a moving cursor.
   await seek(4.001, false);
-  const after = await lineX();
-  assert.ok(after >= before && after - before < 2, `measure transition jumped ${after - before}px`);
   assert.equal(await playing().count(), 1);
   assert.equal(await playing().getAttribute('aria-label'), '2마디');
   // Audio-clock samples animate without a single React commit between beat updates.
@@ -97,7 +87,7 @@ try {
   // An offscreen jump/repeat must materialize its row while retaining virtualization.
   await seek(300.2);
   assert.equal(await playing().getAttribute('aria-label'), '76마디');
-  assert.equal(await page.locator('[data-playback-cursor][visibility="visible"]').count(), 1);
+  assert.equal(await page.locator('[data-playback-cursor]').count(), 0);
   const rows = await page.locator('[data-score-system-viewport]').count();
   assert.ok(rows > 50);
   assert.ok((await page.locator('.score-system').count()) < rows / 2);
@@ -118,7 +108,6 @@ try {
       notes: 2000,
       animationReactCommits: frames.commits,
       medianFrameMs: [...frames.samples].sort((a, b) => a - b)[30],
-      measureBoundaryJumpPx: after - before,
       yellowMeasure: background,
       virtualizedRows: rows,
     }),
