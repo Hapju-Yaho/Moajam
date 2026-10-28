@@ -1,10 +1,12 @@
 import type { PropsWithChildren } from 'react';
+import { ScoreHelpPopover } from './ScoreHelpPopover.web';
 
 export function ScoreBackingDisclosure({
   label,
   help = false,
   children,
 }: PropsWithChildren<{ label: string; help?: boolean }>) {
+  if (help) return <ScoreHelpPopover label={label}>{children}</ScoreHelpPopover>;
   return (
     <details
       className={`score-backing-disclosure${help ? ' score-backing-help' : ''}`}

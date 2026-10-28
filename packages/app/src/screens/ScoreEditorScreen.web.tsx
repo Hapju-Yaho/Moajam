@@ -1,3 +1,4 @@
+import { ScoreReferencePosition } from '../components/ScoreReferencePosition.web';
 import { keyboardPlaybackScore } from '../lib/scoreTuning';
 import { clientId } from '../lib/clientId';
 import { ScoreTuningControl } from '../components/ScoreTuningControl.web';
@@ -222,6 +223,7 @@ export function ScoreEditorScreen({
   const [clipboard, setClipboard] = useState<ScoreClipboardNote[]>([]);
   const [playing, setPlaying] = useState(false);
   const [metronome, setMetronome] = useState(false);
+  const [showBeatMarkers, setShowBeatMarkers] = useState(false);
   const [transportHost, setTransportHost] = useState<HTMLDivElement | null>(null);
   const [playbackBeat, setPlaybackBeat] = useState<number | null>(null);
   const playbackPosition = useRef<ScorePlaybackPosition['current']>(null);
@@ -342,6 +344,8 @@ export function ScoreEditorScreen({
     ],
   );
   const [audioPosition, setAudioPosition] = useState(0);
+  const referenceTime = useRef(0);
+  const referenceClock = useRef<(() => number | null) | null>(() => referenceTime.current);
   const [audioMessage, setAudioMessage] = useState('');
   const [audioLoading, setAudioLoading] = useState(false);
   const audioLoadRequest = useRef(0);
@@ -626,6 +630,7 @@ export function ScoreEditorScreen({
     }
   };
   const stop = () => {
+    if (context.current && hasReference) setAudioPosition(referenceTime.current);
     if (playbackTimer.current !== null) clearInterval(playbackTimer.current);
     playbackTimer.current = null;
     playbackPosition.current = null;
@@ -691,6 +696,7 @@ export function ScoreEditorScreen({
     if (startBeat >= endBeat) return;
     const ctx = new AudioContext();
     context.current = ctx;
+    setSelected(null);
     setPlaying(true);
     setAudioMessage('');
     audio.current?.pause();
@@ -774,7 +780,12 @@ export function ScoreEditorScreen({
             if (metronome) {
               const perBar =
                 ((score.timeSignature?.beats ?? 4) * 4) / (score.timeSignature?.beatType ?? 4);
-              for (let beat = Math.ceil(segment.startBeat); beat < segment.endBeat; beat++)
+              const unit = 4 / (score.timeSignature?.beatType ?? 4);
+              for (
+                let beat = Math.ceil(segment.startBeat / unit - 1e-9) * unit;
+                beat < segment.endBeat;
+                beat += unit
+              )
                 scheduleClick(
                   ctx,
                   when + ((beat - segment.startBeat) * 60) / score.bpm,
@@ -820,6 +831,7 @@ export function ScoreEditorScreen({
         const written = toWritten(beat);
         return ensemblePlayback ? ensemblePlayback.toSelected(written) : written;
       };
+      referenceTime.current = Math.max(0, referenceOffset + (startBeat * 60) / score.bpm);
       let lastPositionUpdate = -Infinity;
       playbackTimer.current = setInterval(() => {
         if (context.current !== ctx) return;
@@ -830,13 +842,6 @@ export function ScoreEditorScreen({
         }
         const elapsedBeats = (clock.elapsed * score.bpm) / 60;
         const beat = scorePlaybackPosition(segments, elapsedBeats);
-        const writtenBeat = ensemblePlayback
-          ? ensemblePlayback.toSelected(toWritten(beat))
-          : toWritten(beat);
-        const location = scoreMeasureAtBeat(score, part, writtenBeat);
-        // React updates the toolbar/visible systems once per written beat. The
-        // playhead reads the unrounded audio position directly every animation frame.
-        setPlaybackBeat(location.start + Math.floor(location.offset));
         if (withYoutube) {
           const seconds = referenceOffset + (beat * 60) / score.bpm;
           youtube.current?.sync(seconds, ctx.currentTime);
@@ -845,11 +850,9 @@ export function ScoreEditorScreen({
         // at the audio scheduler's 40 ms cadence.
         if ((backing || withYoutube) && ctx.currentTime - lastPositionUpdate >= 0.25) {
           lastPositionUpdate = ctx.currentTime;
-          setAudioPosition(
-            Math.max(
-              0,
-              Math.min(backing?.duration ?? Infinity, referenceOffset + (beat * 60) / score.bpm),
-            ),
+          referenceTime.current = Math.max(
+            0,
+            Math.min(backing?.duration ?? Infinity, referenceOffset + (beat * 60) / score.bpm),
           );
         }
       }, 40);
@@ -1479,6 +1482,7 @@ export function ScoreEditorScreen({
             part={part}
             playing={playing}
             playbackBeat={playbackBeat}
+            playbackPosition={playbackPosition}
             disabled={!loaded || fileBusy || bandSaving || previewApplied}
             onAddInstrument={(instrument, requestedName) => {
               const labels: Record<string, string> = {
@@ -1553,20 +1557,34 @@ export function ScoreEditorScreen({
             }}
             onTempoChange={(bpm) => edit({ ...score, bpm })}
             metronomeControl={
-              <button
-                type="button"
-                className="score-metronome"
-                aria-label="메트로놈"
-                title="메트로놈"
-                aria-pressed={metronome}
-                disabled={playing || !loaded}
-                onClick={() => setMetronome(!metronome)}
-              >
-                <ScoreTransportIcon name="metronome" />
-                메트로놈
-                <span className="score-metronome-switch" aria-hidden="true" />
-              </button>
+              <div className="score-metronome-controls">
+                <button
+                  type="button"
+                  className="score-metronome"
+                  aria-label="메트로놈"
+                  title="메트로놈"
+                  aria-pressed={metronome}
+                  disabled={playing || !loaded}
+                  onClick={() => setMetronome(!metronome)}
+                >
+                  <ScoreTransportIcon name="metronome" />
+                  메트로놈
+                  <span className="score-metronome-switch" aria-hidden="true" />
+                </button>
+                <label
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label="악보 위 박자 표시"
+                    checked={showBeatMarkers}
+                    onChange={(e) => setShowBeatMarkers(e.target.checked)}
+                  />
+                  악보 위 표시
+                </label>
+              </div>
             }
+            showBeatMarkers={showBeatMarkers}
             editInExpandedOnly
             partControls={
               <ScoreParts
@@ -1788,27 +1806,37 @@ export function ScoreEditorScreen({
                         />
                       )}
                       {!youtubeSource && (
-                        <ScoreAudioFile
-                          key={audioUrl || 'empty'}
-                          audioRef={audio}
-                          src={audioUrl}
-                          name={score.referenceAudioName || '연결된 음원'}
-                          position={audioPosition}
-                          volume={referenceVolume}
-                          disabled={!loaded || playing || audioLoading || fileBusy || bandSaving}
-                          loading={audioLoading}
-                          scorePlaying={playing}
-                          onFile={(file) => void loadAudio(file)}
-                          onError={setAudioMessage}
-                          onPositionChange={(time) => {
-                            if (playing) return;
-                            setAudioPosition(time);
-                            const current = Object.entries(score.sync)
-                              .filter(([, value]) => value <= time)
-                              .sort((a, b) => b[1] - a[1])[0];
-                            if (current) setCursor(current[0]);
-                          }}
-                        />
+                        <ScoreReferencePosition
+                          clock={referenceClock}
+                          playing={playing}
+                          fallback={audioPosition}
+                        >
+                          {(time) => (
+                            <ScoreAudioFile
+                              key={audioUrl || 'empty'}
+                              audioRef={audio}
+                              src={audioUrl}
+                              name={score.referenceAudioName || '연결된 음원'}
+                              position={time}
+                              volume={referenceVolume}
+                              disabled={
+                                !loaded || playing || audioLoading || fileBusy || bandSaving
+                              }
+                              loading={audioLoading}
+                              scorePlaying={playing}
+                              onFile={(file) => void loadAudio(file)}
+                              onError={setAudioMessage}
+                              onPositionChange={(time) => {
+                                if (playing) return;
+                                setAudioPosition(time);
+                                const current = Object.entries(score.sync)
+                                  .filter(([, value]) => value <= time)
+                                  .sort((a, b) => b[1] - a[1])[0];
+                                if (current) setCursor(current[0]);
+                              }}
+                            />
+                          )}
+                        </ScoreReferencePosition>
                       )}
                       <section className="score-backing-sync" aria-label="악보와 음원 맞추기">
                         <strong>악보와 음원 맞추기</strong>
@@ -1824,16 +1852,24 @@ export function ScoreEditorScreen({
                           <span aria-hidden="true">↔</span>
                           <div>
                             <span>음원 현재 위치</span>
-                            <strong>
-                              {hasReference && (!youtubeSource || youtubeReady)
-                                ? `${Math.floor(audioPosition / 60)
-                                    .toString()
-                                    .padStart(
-                                      2,
-                                      '0',
-                                    )}:${(audioPosition % 60).toFixed(2).padStart(5, '0')}`
-                                : '—'}
-                            </strong>
+                            <ScoreReferencePosition
+                              clock={referenceClock}
+                              playing={playing}
+                              fallback={audioPosition}
+                            >
+                              {(time) => (
+                                <strong>
+                                  {hasReference && (!youtubeSource || youtubeReady)
+                                    ? `${Math.floor(time / 60)
+                                        .toString()
+                                        .padStart(
+                                          2,
+                                          '0',
+                                        )}:${(time % 60).toFixed(2).padStart(5, '0')}`
+                                    : '—'}
+                                </strong>
+                              )}
+                            </ScoreReferencePosition>
                           </div>
                           <button
                             type="button"

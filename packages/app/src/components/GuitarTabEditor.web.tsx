@@ -1,4 +1,10 @@
+import { ScorePlaybackReadout, ScorePlaybackMeasure } from './ScorePlaybackReadout.web';
 import { keyboardKeyIsWritten } from '../lib/scoreTuning';
+import { enterDrumVoice } from '../lib/scoreDrumEntry';
+import { readDrumKeys, defaultDrumKeys } from '../lib/drumKeyMapping';
+import { DrumKeyMapping } from './DrumKeyMapping.web';
+import { useIdentity } from '../state/Identity';
+import { loadPreferences, savePreferences } from '../state/preferencesStorage';
 import { clientId } from '../lib/clientId';
 import { createPortal } from 'react-dom';
 import { ScoreVoiceIcon } from './ScoreVoiceIcon.web';
@@ -313,6 +319,7 @@ function GuitarTabEditorContent({
   readOnly = false,
   editInExpandedOnly = false,
   metronomeControl,
+  showBeatMarkers = false,
   transportHost,
   onSeek,
   onTempoChange,
@@ -327,6 +334,7 @@ function GuitarTabEditorContent({
   readOnly?: boolean;
   editInExpandedOnly?: boolean;
   metronomeControl?: ReactNode;
+  showBeatMarkers?: boolean;
   transportHost?: HTMLDivElement | null;
   onSeek?: (beat: number, end?: number, repeat?: boolean) => void;
   onTempoChange?: (bpm: number) => void;
@@ -368,7 +376,13 @@ function GuitarTabEditorContent({
     [beats, setBeats] = useState(1);
   const [inputTriplet, setInputTriplet] = useState(false);
   const [drumTechnique, setDrumTechnique] = useState<DrumTechnique>('normal');
-  const [voiceMultiMode, setVoiceMultiMode] = useState(false);
+  const [voiceMultiMode, setVoiceMultiMode] = useState(true);
+  const user = useIdentity();
+  const [drumKeys, setDrumKeys] = useState(() =>
+    readDrumKeys(loadPreferences(`drum-key-map/${user}`).mapping),
+  );
+  const [drumKeyMode, setDrumKeyMode] = useState(false);
+  const [drumKeyDialog, setDrumKeyDialog] = useState(false);
   const [fret, setFret] = useState('0'),
     [pitch, setPitch] = useState(60);
   const [keyboardPreview, setKeyboardPreview] = useState(false);
@@ -447,6 +461,7 @@ function GuitarTabEditorContent({
   const instrument = scoreInstrument(score, part);
   const isDrums = instrument.id === 'drums';
   const voiceOwner = scorePartOwner(score, part);
+  useEffect(() => setVoiceMultiMode(true), [voiceOwner]);
   const isKeyboard = instrument.id === 'piano' || !!score.keyboardStaves?.[voiceOwner];
   const isPitchedStaff = !isDrums && !instrument.tuning.length;
   const keyboardAlters = scoreKeyboardInputAlters(pitch, score.keySignature);
@@ -610,11 +625,11 @@ function GuitarTabEditorContent({
       const tone = selectedScoreTone(score, selectedNote, row);
       setFret(String(tone?.fret ?? 0));
       const selectedPitch = tone ?? { pitch: selectedNote.pitch };
-      const base = isKeyboard
+      const base = isPitchedStaff
         ? scoreNaturalPitch(selectedPitch, score.keySignature)
         : selectedPitch.pitch;
       setPitch(base);
-      if (isKeyboard) selectKeyboardAlter(selectedPitch.pitch - base, base);
+      if (isPitchedStaff) selectKeyboardAlter(selectedPitch.pitch - base, base);
       if (!selectedNote.blank && selectedNote.beats <= 4) {
         setBeats(selectedNote.graceBeats ?? selectedNote.beats);
         setInputTriplet(selectedNote.tuplet === 3);
@@ -632,6 +647,38 @@ function GuitarTabEditorContent({
     digits.current = null;
     focus();
   };
+  useEffect(() => {
+    if (!playing) return;
+    onSelect(null);
+    setRange(null);
+    setSelectedAt(null);
+    setEmptyBeat(null);
+    setEmptyMeasure(undefined);
+    setKeyboardPreview(false);
+    digits.current = null;
+  }, [playing, onSelect]);
+  useEffect(() => {
+    if (!selected && !range && emptyBeat === null) return;
+    const clear = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        !(target instanceof Element) ||
+        target.closest(
+          '.score-systems, button, a, input, select, textarea, label, [role="button"], dialog, [role="dialog"]',
+        )
+      )
+        return;
+      onSelect(null);
+      setRange(null);
+      setSelectedAt(null);
+      setEmptyBeat(null);
+      setEmptyMeasure(undefined);
+      setKeyboardPreview(false);
+      digits.current = null;
+    };
+    document.addEventListener('pointerdown', clear);
+    return () => document.removeEventListener('pointerdown', clear);
+  }, [selected, range, emptyBeat, onSelect]);
   const selectChordPosition = (at: number) => {
     let start = 0;
     const target = rows.find((item) => {
@@ -830,6 +877,7 @@ function GuitarTabEditorContent({
           : entered;
       commit(result);
       const changed = result.notes.find((entry) => entry.id === item.id)!;
+      setKeyboardPreview(false);
       const tone = selectedScoreTone(result, changed, activeString);
       if (tone) onAudition({ ...changed, pitch: tone.pitch, tones: [tone] });
       onSelect(item.id);
@@ -916,11 +964,11 @@ function GuitarTabEditorContent({
     focus();
   };
   const inputPitchOrRest = (asRest: boolean, alter = keyboardAlter) => {
-    const enteredPitch = isKeyboard ? pitch + alter : pitch;
-    const enteredTone = { pitch: enteredPitch, ...(isKeyboard ? { naturalPitch: pitch } : {}) };
+    const enteredPitch = isPitchedStaff ? pitch + alter : pitch;
+    const enteredTone = { pitch: enteredPitch, ...(isPitchedStaff ? { naturalPitch: pitch } : {}) };
     const matches = (tone: { pitch: number; naturalPitch?: number }) =>
       tone.pitch === enteredPitch &&
-      (!isKeyboard || scoreNaturalPitch(tone, score.keySignature) === pitch);
+      (!isPitchedStaff || scoreNaturalPitch(tone, score.keySignature) === pitch);
     if (disabled) return;
     if (multiple) {
       setMessage('음정을 입력하려면 한 박을 선택해주세요.');
@@ -959,7 +1007,7 @@ function GuitarTabEditorContent({
             : entry,
         ),
       };
-      if (isKeyboard && !asRest) selectKeyboardAlter(alter);
+      if (isPitchedStaff && !asRest) selectKeyboardAlter(alter);
       commit(result);
       setKeyboardPreview(false);
       if (!asRest) onAudition(result.notes.find((entry) => entry.id === item.id)!);
@@ -981,32 +1029,30 @@ function GuitarTabEditorContent({
       return;
     }
     try {
-      const item = note ?? create();
-      let entered = setScoreDrum(
-        prepareInput(item),
-        item.id,
+      const result = enterDrumVoice(
+        score,
+        part,
+        create(),
+        location.bar,
+        location.offset,
         choice.pitch,
-        false,
         choice.technique,
-        true,
       );
-      if (!note || note.blank)
-        entered = {
-          ...entered,
-          notes: entered.notes.map((n) =>
-            n.id === item.id
-              ? { ...n, accent: articulation.accent, staccato: articulation.staccato }
-              : n,
-          ),
-        };
-      commit(entered);
-      onSelect(item.id);
+      commit(result.score);
+      if (result.voice !== part) onPartSelect?.(result.voice, result.id);
+      else onSelect(result.id);
+      setSelectedAt({ id: result.id, beat: result.beat });
+      setEmptyBeat(null);
+      setEmptyMeasure(undefined);
       setString(choice.row);
       setDrumTechnique(choice.technique);
-      // Audition only the newly entered kit piece, not every simultaneous hit.
-      const performed = directionAt(score, part, location.bar + location.offset / location.beats);
+      const performed = directionAt(
+        result.score,
+        result.voice,
+        location.bar + location.offset / location.beats,
+      );
       onAudition({
-        ...entered.notes.find((n) => n.id === item.id)!,
+        ...result.score.notes.find((n) => n.id === result.id)!,
         playbackGain: performed.gain / 0.7,
         percussionImplement: performed.implement,
         tones: [
@@ -1173,7 +1219,7 @@ function GuitarTabEditorContent({
     const entry = scoreMeasureEntry(score, part, bar);
     const limit = Math.max(scoreBarBeats(score), scoreMeasureDuration(score, part, bar));
     const targets: { id: string | null; beat: number }[] = fragments
-      .filter((item) => !item.note.blank)
+      .filter((item) => !item.note.blank || isDrums)
       .map((item) => ({ id: item.note.id, beat: scoreBeat(start + item.offset) }));
     if (entry.offset < limit) targets.push({ id: entry.id, beat: entry.beat });
     targets.sort((a, b) => a.beat - b.beat);
@@ -1214,8 +1260,7 @@ function GuitarTabEditorContent({
           offset: scoreBeat(before - scoreMeasureStart(score, part, emptyMeasure)),
         }
       : scoreMeasureAtBeat(score, part, before);
-  const currentLocation =
-    playbackBeat === null ? location : scoreMeasureAtBeat(score, part, playbackBeat);
+
   const time = scoreTimeSignature(score);
   const layoutPart = isDrums || isKeyboard ? voiceOwner : part;
   const measureCount = Math.max(
@@ -1478,6 +1523,22 @@ function GuitarTabEditorContent({
       return;
     }
     if (disabled || ctrl) return;
+    if (isDrums && drumKeyMode && !event.altKey) {
+      const mapped = defaultDrumKeys.find(
+        (item) => drumKeys[item.pitch] === event.key.toLowerCase(),
+      );
+      if (mapped) {
+        event.preventDefault();
+        if (!event.repeat)
+          inputDrum({
+            pitch: mapped.pitch,
+            row: scoreDrums.findIndex((drum) => drum.pitch === mapped.pitch) + 1,
+            technique: 'normal',
+            label: mapped.label,
+          });
+        return;
+      }
+    }
     if (
       isPitchedStaff &&
       (event.key === 'Enter' || event.key === '1' || (isKeyboard && event.key === '2'))
@@ -1543,7 +1604,7 @@ function GuitarTabEditorContent({
       if (isPitchedStaff) {
         if (!hasSelection) select(null, 1, before, location.bar);
         setPitch((value) =>
-          isKeyboard
+          isPitchedStaff
             ? nextScoreNaturalPitch(value, event.key === 'ArrowUp' ? 1 : -1)
             : Math.max(24, Math.min(96, value + (event.key === 'ArrowUp' ? 1 : -1))),
         );
@@ -1634,7 +1695,7 @@ function GuitarTabEditorContent({
             );
             return;
           }
-          if (isKeyboard && !note.rest && !note.blank) {
+          if (isPitchedStaff && !note.rest && !note.blank) {
             commit(deleteScorePitch(score, note.id, pitch, keyboardAlter));
             return;
           }
@@ -1719,12 +1780,6 @@ function GuitarTabEditorContent({
     1,
     ...(playAll ? score.parts : displayParts).map((name) => scoreMeasureCount(score, name)),
   );
-  const transportBar =
-    playbackBeat !== null
-      ? scoreMeasureAtBeat(score, part, playbackBeat).bar
-      : hasSelection
-        ? location.bar
-        : 0;
   const seekBar = (bar: number) => {
     const target = scoreMeasureStart(score, part, Math.max(0, Math.min(transportBars - 1, bar)));
     selectChordPosition(target);
@@ -1765,90 +1820,103 @@ function GuitarTabEditorContent({
     </div>
   );
   const transport = (
-    <div className="guitar-toolbar score-transport" data-docked={!!transportHost}>
-      {layout.expanded && (
-        <div className="score-transport-identity" ref={setTransportIdentityHost} />
-      )}
-      <div className="score-transport-main">
-        <div className="score-transport-tempo">
-          {metronomeControl}
-          {tempoControl}
-        </div>
-        <div className="score-transport-buttons" role="group" aria-label="악보 재생 도구">
-          <button
-            aria-label="첫 마디"
-            title="첫 마디"
-            disabled={!loaded}
-            onClick={() => seekBar(0)}
-          >
-            <ScoreTransportIcon name="first" />
-          </button>
-          <button
-            aria-label="이전 마디"
-            title="이전 마디"
-            disabled={!loaded || transportBar <= 0}
-            onClick={() => seekBar(transportBar - 1)}
-          >
-            <ScoreTransportIcon name="previous" />
-          </button>
-          <span className="score-transport-play-slot">
-            <span className="score-transport-location">
-              {transportBar + 1} / {transportBars}마디
-              {repeatSelection && repeatBars ? ` · ${repeatBars.start}~${repeatBars.end} 반복` : ''}
-            </span>{' '}
-            <button
-              className="score-play"
-              aria-label={playing ? '악보 정지' : '악보 재생'}
-              title={playing ? '정지 · Space' : '재생 · Space'}
-              disabled={!loaded || (!playing && !canPlaySelection)}
-              onClick={() => {
-                onPlay(playFrom, loopEnd, repeatAll);
-                focus();
-              }}
-            >
-              <ScoreTransportIcon name={playing ? 'stop' : 'play'} />
-            </button>
-          </span>
-          <button
-            aria-label="다음 마디"
-            title="다음 마디"
-            disabled={!loaded || transportBar >= transportBars - 1}
-            onClick={() => seekBar(transportBar + 1)}
-          >
-            <ScoreTransportIcon name="next" />
-          </button>
-          <button
-            aria-label="끝 마디"
-            title="끝 마디"
-            disabled={!loaded}
-            onClick={() => seekBar(transportBars - 1)}
-          >
-            <ScoreTransportIcon name="last" />
-          </button>
-          <button
-            className="score-loop-toggle"
-            aria-label="구간 반복"
-            title={
-              repeatSelection && repeatBars
-                ? `${repeatBars.start}~${repeatBars.end}마디 반복 · 클릭하여 해제`
-                : '반복 마디 설정'
-            }
-            aria-pressed={repeatSelection || repeatDialog}
-            disabled={!loaded}
-            onClick={() => {
-              if (repeatSelection) {
-                setRepeatSelection(false);
-                if (playing) onSeek?.(playbackBeat ?? playFrom);
-              } else setRepeatDialog(true);
-            }}
-          >
-            <ScoreTransportIcon name="loop" />
-          </button>
-        </div>
+    <ScorePlaybackMeasure
+      score={score}
+      part={part}
+      position={playbackPosition}
+      fallback={playbackBeat}
+      idle={hasSelection ? location.bar : 0}
+    >
+      {(transportBar) => (
+        <div className="guitar-toolbar score-transport" data-docked={!!transportHost}>
+          {layout.expanded && (
+            <div className="score-transport-identity" ref={setTransportIdentityHost} />
+          )}
+          <div className="score-transport-main">
+            <div className="score-transport-tempo">
+              {metronomeControl}
+              {tempoControl}
+            </div>
+            <div className="score-transport-buttons" role="group" aria-label="악보 재생 도구">
+              <button
+                aria-label="첫 마디"
+                title="첫 마디"
+                disabled={!loaded}
+                onClick={() => seekBar(0)}
+              >
+                <ScoreTransportIcon name="first" />
+              </button>
+              <button
+                aria-label="이전 마디"
+                title="이전 마디"
+                disabled={!loaded || transportBar <= 0}
+                onClick={() => seekBar(transportBar - 1)}
+              >
+                <ScoreTransportIcon name="previous" />
+              </button>
+              <span className="score-transport-play-slot">
+                <span className="score-transport-location">
+                  {transportBar + 1} / {transportBars}마디
+                  {repeatSelection && repeatBars
+                    ? ` · ${repeatBars.start}~${repeatBars.end} 반복`
+                    : ''}
+                </span>{' '}
+                <button
+                  className="score-play"
+                  aria-label={playing ? '악보 정지' : '악보 재생'}
+                  title={playing ? '정지 · Space' : '재생 · Space'}
+                  disabled={!loaded || (!playing && !canPlaySelection)}
+                  onClick={() => {
+                    onPlay(playFrom, loopEnd, repeatAll);
+                    focus();
+                  }}
+                >
+                  <ScoreTransportIcon name={playing ? 'stop' : 'play'} />
+                </button>
+              </span>
+              <button
+                aria-label="다음 마디"
+                title="다음 마디"
+                disabled={!loaded || transportBar >= transportBars - 1}
+                onClick={() => seekBar(transportBar + 1)}
+              >
+                <ScoreTransportIcon name="next" />
+              </button>
+              <button
+                aria-label="끝 마디"
+                title="끝 마디"
+                disabled={!loaded}
+                onClick={() => seekBar(transportBars - 1)}
+              >
+                <ScoreTransportIcon name="last" />
+              </button>
+              <button
+                className="score-loop-toggle"
+                aria-label="구간 반복"
+                title={
+                  repeatSelection && repeatBars
+                    ? `${repeatBars.start}~${repeatBars.end}마디 반복 · 클릭하여 해제`
+                    : '반복 마디 설정'
+                }
+                aria-pressed={repeatSelection || repeatDialog}
+                disabled={!loaded}
+                onClick={() => {
+                  if (repeatSelection) {
+                    setRepeatSelection(false);
+                    if (playing)
+                      onSeek?.(playbackPosition?.current?.() ?? playbackBeat ?? playFrom);
+                  } else setRepeatDialog(true);
+                }}
+              >
+                <ScoreTransportIcon name="loop" />
+              </button>
+            </div>
 
-        {zoomControl}
-      </div>
-    </div>
+            {zoomControl}
+          </div>
+        </div>
+      )}
+    </ScorePlaybackMeasure>
   );
   return (
     <div
@@ -2293,6 +2361,16 @@ function GuitarTabEditorContent({
                 현재 기호 입력 · Enter
               </ScoreToolButton>
               <DrumNotationGuide />
+              <ScoreToolButton
+                aria-pressed={drumKeyMode}
+                disabled={disabled}
+                onClick={() => setDrumKeyMode(!drumKeyMode)}
+              >
+                드럼 키 입력
+              </ScoreToolButton>
+              <ScoreToolButton disabled={disabled} onClick={() => setDrumKeyDialog(true)}>
+                키 매핑
+              </ScoreToolButton>
             </>
           ) : instrument.tuning.length ? (
             <>
@@ -2343,7 +2421,7 @@ function GuitarTabEditorContent({
                   onChange={(event) => setPitch(Number(event.target.value))}
                 >
                   {Array.from({ length: 73 }, (_, i) => i + 24)
-                    .filter((p) => !isKeyboard || [0, 2, 4, 5, 7, 9, 11].includes(p % 12))
+                    .filter((p) => !isPitchedStaff || [0, 2, 4, 5, 7, 9, 11].includes(p % 12))
                     .map((p) => (
                       <option key={p} value={p}>
                         {pitchName(p)}
@@ -2359,7 +2437,7 @@ function GuitarTabEditorContent({
               >
                 {isKeyboard ? '현재 음 입력 · Enter' : '음정 입력 · Enter / 1'}
               </ScoreToolButton>
-              {isKeyboard &&
+              {isPitchedStaff &&
                 keyboardAlters.map((alter, index) => (
                   <ScoreToolButton
                     key={alter}
@@ -2376,7 +2454,7 @@ function GuitarTabEditorContent({
                         : '샵 ♯'}
                   </ScoreToolButton>
                 ))}
-              {isKeyboard && (
+              {isPitchedStaff && (
                 <select
                   aria-label="변화음 직접 입력"
                   value=""
@@ -2878,9 +2956,17 @@ function GuitarTabEditorContent({
         <div className="score-range-status" role="status">
           {' '}
           <strong className="score-location-readout" aria-label="현재 마디와 박">
-            {playbackBeat !== null || hasSelection
-              ? `${currentLocation.bar + 1}마디 · ${playbackBeat !== null ? Math.floor(currentLocation.offset) + 1 : Number((currentLocation.offset + 1).toFixed(3))}박`
-              : ''}
+            <ScorePlaybackReadout
+              score={score}
+              part={part}
+              position={playbackPosition}
+              fallback={playbackBeat}
+              idle={
+                hasSelection
+                  ? `${location.bar + 1}마디 · ${Number((location.offset + 1).toFixed(3))}박`
+                  : ''
+              }
+            />
           </strong>
           {multiple
             ? `${rangeNotes.length}개 박 선택 · ${rangeNotes.reduce((sum, item) => scoreBeat(sum + item.beats), 0)}박 길이 · 모든 줄 포함`
@@ -2987,7 +3073,7 @@ function GuitarTabEditorContent({
                     aria-label={label}
                     aria-pressed={enabled}
                     disabled={disabled || !onPartSelect}
-                    title={`${label} · Ctrl+${index + 1} 단독 선택 · Ctrl+M 모두 켜기/해제 · 최소 한 성부 유지`}
+                    title={`${label} · 기본은 손·발 자동 배치 · Ctrl+${index + 1} 한쪽만 편집 · Ctrl+M 모두 편집`}
                     icon={<ScoreVoiceIcon drums={isDrums} lower={index === 1} />}
                     onClick={() => toggleVoice(index)}
                   >
@@ -3062,12 +3148,13 @@ function GuitarTabEditorContent({
             )}
           </header>
           <StaffView
+            showBeatMarkers={showBeatMarkers}
             parts={displayParts}
             onPartSelect={selectStaffPart}
             activeVoice={
               (isDrums && !multiDrums) || (isKeyboard && !multiKeyboard) ? part : undefined
             }
-            otherVoiceOpacity={isKeyboard ? 1 : 0.3}
+            otherVoiceOpacity={isKeyboard || multiDrums ? 1 : 0.3}
             onMeasureContextMenu={(bar, x, y) => {
               const line = systems.findIndex(
                 (row) => bar >= row.start && bar < row.start + row.count,
@@ -3093,6 +3180,12 @@ function GuitarTabEditorContent({
             playbackPosition={playbackPosition}
             zoom={zoom * 0.8}
             onSelect={(id, row, at, inputPitch) => {
+              const clicked = isDrums ? score.notes.find((n) => n.id === id) : undefined;
+              if (clicked && clicked.part !== part) {
+                setString(row ?? activeString);
+                selectStaffPart(clicked.part, id, at === undefined ? undefined : { beat: at });
+                return;
+              }
               select(id, row, at);
               if (inputPitch !== undefined) {
                 setPitch(inputPitch);
@@ -3102,10 +3195,6 @@ function GuitarTabEditorContent({
             }}
             onDeleteMeasureRest={deleteMeasureRest}
             onAppend={(row, at, bar, inputPitch) => {
-              if (!isKeyboard) {
-                select(null, row, at, bar);
-                return;
-              }
               const target = scoreVoiceCursor(
                 score,
                 part,
@@ -3123,8 +3212,8 @@ function GuitarTabEditorContent({
             emptyBeat={before}
             emptyMeasure={note ? undefined : emptyMeasure}
             inputBeats={selectedBeat}
-            inputPitch={isPitchedStaff ? pitch : undefined}
-            inputPreview={isKeyboard && keyboardPreview}
+            inputPitch={!isDrums ? pitch : undefined}
+            inputPreview={!isDrums && keyboardPreview}
             inputDrumNote={
               isDrums
                 ? {
@@ -3146,6 +3235,25 @@ function GuitarTabEditorContent({
           />
         </div>
       </div>
+      {drumKeyDialog && (
+        <DrumKeyMapping
+          mapping={drumKeys}
+          onClose={() => setDrumKeyDialog(false)}
+          onSave={(mapping) => {
+            setDrumKeys(mapping);
+            setDrumKeyMode(true);
+            try {
+              savePreferences({ mapping }, `drum-key-map/${user}`);
+            } catch {
+              setMessage(
+                '키 매핑을 이 기기에 저장하지 못했어요. 현재 편집에서는 사용할 수 있어요.',
+              );
+            }
+            setDrumKeyDialog(false);
+            focus();
+          }}
+        />
+      )}
       {measureMenu && !disabled && (
         <div
           className="score-measure-menu"

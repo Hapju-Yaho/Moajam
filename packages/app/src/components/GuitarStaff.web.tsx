@@ -1,4 +1,5 @@
 import { drumStemLength } from '../lib/drumStroke';
+import { drumMeasureComplete } from '../lib/scoreDrumEntry';
 import { spellScoreTone, type ScoreTone } from '../lib/score';
 
 function KeyboardInputPreview({ x, y, beats }: { x: number; y: number; beats: number }) {
@@ -143,6 +144,7 @@ export function GuitarStaff({
   inputBeats,
   inputPitch,
   inputPreview = false,
+  showBeatMarkers = false,
   inputDrumNote,
   showTab,
   tabOnly = false,
@@ -181,6 +183,7 @@ export function GuitarStaff({
   inputBeats: number;
   inputPitch?: number;
   inputPreview?: boolean;
+  showBeatMarkers?: boolean;
   inputDrumNote?: DrumInputNote;
   showTab: boolean;
   tabOnly?: boolean;
@@ -233,7 +236,6 @@ export function GuitarStaff({
     return { measures, notes, partNotes, chords };
   }, [score]);
   useScorePlaybackDisplay(systems, playbackPosition, playbackBeat);
-  const lastPlaybackRow = useRef<SVGSVGElement | null>(null);
   const measuresFor = (name: string) => {
     const result = indexed.measures.get(name);
     if (result instanceof Error) throw result;
@@ -250,65 +252,6 @@ export function GuitarStaff({
     observer.observe(systems.current);
     return () => observer.disconnect();
   }, [layoutWidth]);
-  useEffect(() => {
-    if (playbackBar === null) {
-      lastPlaybackRow.current = null;
-      return;
-    }
-    const measure = systems.current?.querySelector(
-      '[data-playback-active="true"] [data-measure-scroll-target]',
-    );
-    if (!measure) return;
-    const row = measure.closest('svg');
-    if (lastPlaybackRow.current === row) return;
-    const behavior = lastPlaybackRow.current ? 'smooth' : 'instant';
-    lastPlaybackRow.current = row;
-    // Bring the workspace into view before centering its measure, otherwise an
-    // offscreen nested viewport can leave half the measure clipped at its edge.
-    const scrollers: { element: HTMLElement; vertical: boolean; horizontal: boolean }[] = [];
-    let parent = measure.parentElement;
-    while (parent) {
-      const expanded = parent.matches('.score-editor-viewport[data-expanded="true"]');
-      const style = getComputedStyle(parent);
-      const vertical =
-        /(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight;
-      const horizontal =
-        /(auto|scroll)/.test(style.overflowX) && parent.scrollWidth > parent.clientWidth;
-      if (vertical || horizontal) scrollers.unshift({ element: parent, vertical, horizontal });
-      // Fullscreen lives in the top layer; never scroll its inert app ancestors.
-      if (expanded) break;
-      parent = parent.parentElement;
-    }
-    scrollers.forEach(({ element, vertical, horizontal }, index) => {
-      const bounds = (scrollers[index + 1]?.element ?? measure).getBoundingClientRect();
-      const viewport = element.getBoundingClientRect();
-      if (vertical) {
-        const expanded = element.matches('.score-editor-viewport[data-expanded="true"]');
-        const toolbar = expanded
-          ? (element.querySelector('.score-editor-viewbar')?.getBoundingClientRect().height ?? 0)
-          : 0;
-        const top = Math.max(0, viewport.top + element.clientTop) + toolbar;
-        const bottom = Math.min(
-          window.innerHeight,
-          viewport.top + element.clientTop + element.clientHeight,
-        );
-        element.scrollBy({
-          top: (bounds.top + bounds.bottom - top - bottom) / 2,
-          behavior,
-        });
-      }
-      if (horizontal) {
-        element.scrollBy({
-          left:
-            (bounds.left + bounds.right) / 2 -
-            viewport.left -
-            element.clientLeft -
-            element.clientWidth / 2,
-          behavior,
-        });
-      }
-    });
-  }, [playbackBar, part, score.systemLayout, systemWidth, zoom, showTab]);
   useEffect(() => {
     if (playbackBar !== null) return;
     const active = cursor ?? selected;
@@ -440,11 +383,18 @@ export function GuitarStaff({
     );
     return Math.max(0, ...columns) + Math.max(0, ...scoreChordHeadOffsets(ys, -1));
   };
-  const isKeyboard = instrument.id === 'piano' || instrument.id === 'pianoBass';
   const clickPitch = (element: SVGGraphicsElement, clientX: number, clientY: number) => {
     const matrix = element.getScreenCTM();
     if (!matrix) return inputPitch ?? 60;
     const point = new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse());
+    if (isDrums)
+      return scoreDrums.reduce(
+        (best, drum) =>
+          Math.abs(drum.y - point.y) < Math.abs((drumForPitch(best)?.y ?? 102) - point.y)
+            ? drum.pitch
+            : best,
+        scoreDrums[0].pitch,
+      );
     const naturals = Array.from({ length: 128 }, (_, pitch) => pitch).filter((pitch) =>
       [0, 2, 4, 5, 7, 9, 11].includes(pitch % 12),
     );
@@ -535,6 +485,14 @@ export function GuitarStaff({
           }
         }
       }}
+      onClick={(event) => {
+        if (
+          editable &&
+          event.target instanceof Element &&
+          !event.target.closest('[role="button"], button, input, select, textarea, a')
+        )
+          onDeselect();
+      }}
     >
       {notationSystems.map((system, line) => {
         const bars = system.units.map(({ bar, span }) => {
@@ -560,7 +518,10 @@ export function GuitarStaff({
               : [];
           fragments = fragments.filter(
             (fragment) =>
-              !fragment.note.blank || (editable && entryActive && fragment === firstBlank),
+              !fragment.note.blank ||
+              (editable &&
+                ((entryActive && fragment === firstBlank) ||
+                  (activeBar && fragment.note.id === selected))),
           );
           if (peerPart)
             fragments = [
@@ -813,7 +774,9 @@ export function GuitarStaff({
                 : 48),
           ),
         );
-        const tabTop = Math.max(190, ...positions.map((y) => y + 55));
+        const tabTop = Math.max(210, ...positions.map((y) => y + 80));
+        const chordY = hasTab ? tabTop - 12 : hasChords ? top + 36 : Math.min(top + 36, 62);
+        const metronomeY = hasTab ? tabTop - 44 : 52;
         // A zero system gap should not retain a fixed empty footer. Reserve only
         // the room actually needed below the last TAB line (stems, grace links,
         // tuplets and lyrics), then add the user's gap outside the SVG.
@@ -848,7 +811,7 @@ export function GuitarStaff({
         const bottom = hasTab
           ? tabInkBottom + 8 + (hasLyrics ? 24 : 0)
           : Math.max(190, ...positions.map((y) => y + 55));
-        const visibleTop = tabOnly && hasTab ? tabTop - 35 : top;
+        const visibleTop = tabOnly && hasTab ? tabTop - 64 : top;
         const measureBottom = Math.max(bottom - 18, hasTab ? tabInkBottom + 4 : 140);
         return (
           <ScoreSystemViewport
@@ -857,6 +820,10 @@ export function GuitarStaff({
               (editable || playbackBeat !== null) && notationSystems.length > 12 && !printing
             }
             initialVisible={line < 2}
+            playbackPosition={playbackPosition}
+            playing={playbackBeat !== null}
+            playbackStart={scoreMeasureStart(score, part, Math.max(0, system.start - 1))}
+            playbackEnd={scoreMeasureStart(score, part, system.start + system.count)}
             active={
               (hasSelection &&
                 selectedBar >= system.start &&
@@ -879,17 +846,6 @@ export function GuitarStaff({
                 height={((bottom - visibleTop) * zoom) / 100}
                 viewBox={`0 ${visibleTop} ${drawingWidth} ${bottom - visibleTop}`}
               >
-                <line
-                  data-playback-cursor
-                  visibility="hidden"
-                  x1="0"
-                  x2="0"
-                  y1="65"
-                  y2={measureBottom}
-                  stroke="#52946d"
-                  strokeWidth="2"
-                  pointerEvents="none"
-                />
                 {line === 0 && showTempo && system.start === 0 && (
                   <text
                     x="8"
@@ -1009,25 +965,7 @@ export function GuitarStaff({
                 {bars.map(({ fragments, bar, span, emptyOffsets, barStart, barBeats }, column) => {
                   const { width, xAt } = layouts[column];
                   const beams = barBeams[column];
-                  const origin =
-                    prefix + layouts.slice(0, column).reduce((sum, l) => sum + l.width, 0);
                   const endBeat = barStart + barBeats * span;
-                  const nextX = origin + width + (layouts[column + 1]?.xAt(0) ?? 0);
-                  const points =
-                    span > 1
-                      ? [
-                          [barStart, origin],
-                          [endBeat, nextX],
-                        ]
-                      : [
-                          ...new Set([
-                            0,
-                            ...fragments.map((f) => f.offset).filter((at) => at < barBeats),
-                            barBeats,
-                          ]),
-                        ]
-                          .sort((a, b) => a - b)
-                          .map((at) => [barStart + at, at === barBeats ? nextX : origin + xAt(at)]);
                   const marks = scoreAccidentalMarks(fragments, score.keySignature);
                   const hitRegions = scoreBeatHitRegions(
                     [...fragments.map(({ offset }) => offset), ...emptyOffsets],
@@ -1036,8 +974,6 @@ export function GuitarStaff({
                   );
                   const staffHitTop = Math.min(82, top + 42);
                   const staffHitBottom = hasTab ? tabTop - 10 : bottom - 20;
-                  const playHere =
-                    playbackBeat !== null && playbackBar! >= bar && playbackBar! < bar + span;
                   const previewHere =
                     hasSelection &&
                     indexed.notes.get(selected ?? '')?.graceBeats === undefined &&
@@ -1060,7 +996,9 @@ export function GuitarStaff({
                   const invalid =
                     !score.directions?.[directionOwner(score, part)]?.[bar]?.measureRepeat &&
                     fragments.some(({ note }) => !note.blank) &&
-                    (written !== scoreBarBeats(score) || barBeats !== scoreBarBeats(score));
+                    (isDrums
+                      ? !drumMeasureComplete(fragments, scoreBarBeats(score))
+                      : written !== scoreBarBeats(score) || barBeats !== scoreBarBeats(score));
                   const selectedHere =
                     hasSelection &&
                     (selectedBar === bar ||
@@ -1072,7 +1010,7 @@ export function GuitarStaff({
                     !!score.directions?.[directionOwner(score, part)]?.[bar]?.measureRepeat &&
                     !selectedHere;
                   const repeat = score.repeats?.[bar];
-                  const selectKeyboardPosition = (
+                  const selectInputPosition = (
                     element: SVGGraphicsElement,
                     clientX: number,
                     clientY: number,
@@ -1081,35 +1019,62 @@ export function GuitarStaff({
                     const point = matrix
                       ? new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse())
                       : new DOMPoint(0, 102);
-                    const clickedOffset = chordOffsets.reduce(
+                    const pitch = clickPitch(element, clientX, clientY);
+                    const inputVoice =
+                      isDrums && drumPair ? drumPair[[35, 36, 44].includes(pitch) ? 1 : 0] : part;
+                    const inputFragments = fragments.filter((f) => f.note.part === inputVoice);
+                    const anchors = [
+                      ...new Set([...chordOffsets, ...inputFragments.map((f) => f.offset)]),
+                    ];
+                    const clickedOffset = anchors.reduce(
                       (nearest, value) =>
                         Math.abs(xAt(value) - point.x) < Math.abs(xAt(nearest) - point.x)
                           ? value
                           : nearest,
                       0,
                     );
-                    const lastEnd = fragments.reduce(
+                    const lastEnd = inputFragments.reduce(
                       (end, fragment) =>
                         fragment.note.blank ? end : Math.max(end, fragment.offset + fragment.beats),
                       0,
                     );
+                    const nearNote = inputFragments.find(
+                      (f) => !f.note.blank && f.offset === clickedOffset,
+                    );
+                    const afterNote =
+                      nearNote && point.x > xAt(nearNote.offset) + 10
+                        ? nearNote.offset + nearNote.beats
+                        : clickedOffset;
                     const offset =
-                      lastEnd < barBeats && point.x >= xAt(lastEnd) ? lastEnd : clickedOffset;
-                    const target = fragments.find(
+                      lastEnd < barBeats && point.x >= xAt(lastEnd)
+                        ? lastEnd
+                        : afterNote < barBeats
+                          ? afterNote
+                          : clickedOffset;
+                    const target = inputFragments.find(
                       (fragment) =>
                         fragment.offset <= offset && fragment.offset + fragment.beats > offset,
                     );
-                    const pitch = clickPitch(element, clientX, clientY);
-                    if (target) onSelect(target.note.id, 1, barStart + offset, pitch);
-                    else onAppend(1, barStart + offset, bar, pitch);
+                    const row =
+                      hasTab && point.y >= tabTop - 12
+                        ? Math.max(
+                            1,
+                            Math.min(tuning.length, Math.round((point.y - tabTop) / 20) + 1),
+                          )
+                        : isDrums
+                          ? scoreDrums.findIndex((drum) => drum.pitch === pitch) + 1
+                          : selectedString;
+                    const previewPitch = hasTab && point.y >= tabTop - 12 ? undefined : pitch;
+                    if (target) onSelect(target.note.id, row, barStart + offset, previewPitch);
+                    else onAppend(row, barStart + offset, bar, previewPitch);
                   };
                   const selectRestMeasure = (event?: {
                     currentTarget: SVGGraphicsElement;
                     clientX: number;
                     clientY: number;
                   }) => {
-                    if (isKeyboard && event) {
-                      selectKeyboardPosition(event.currentTarget, event.clientX, event.clientY);
+                    if (event) {
+                      selectInputPosition(event.currentTarget, event.clientX, event.clientY);
                       return;
                     }
                     if (!editable) return;
@@ -1130,11 +1095,54 @@ export function GuitarStaff({
                         onMeasureContextMenu(bar, event.clientX, event.clientY);
                       }}
                       transform={`translate(${prefix + layouts.slice(0, column).reduce((sum, layout) => sum + layout.width, 0)}, 0)`}
-                      data-playback-active={playHere ? 'true' : undefined}
                       data-playback-start={barStart}
                       data-playback-end={endBeat}
-                      data-playback-points={JSON.stringify(points)}
+                      data-playback-measure="true"
                     >
+                      {showBeatMarkers && (
+                        <g
+                          aria-label="마디 박자 표시"
+                          className="score-metronome-indicator"
+                          data-preview={
+                            playbackBeat === null && bar > (hasSelection ? selectedBar : 0)
+                              ? 'true'
+                              : undefined
+                          }
+                          visibility={
+                            playbackBeat === null &&
+                            (hasSelection
+                              ? selectedBar >= bar - 1 && selectedBar < bar + span
+                              : bar <= 1)
+                              ? 'visible'
+                              : 'hidden'
+                          }
+                          data-metronome-unit={4 / (score.timeSignature?.beatType ?? 4)}
+                          pointerEvents="none"
+                        >
+                          {Array.from({ length: score.timeSignature?.beats ?? 4 }, (_, i) => (
+                            <circle
+                              key={i}
+                              className="score-metronome-dot"
+                              data-metronome-beat={i}
+                              cx={xAt(i * (4 / (score.timeSignature?.beatType ?? 4)))}
+                              cy={metronomeY}
+                              r={i === 0 ? 5 : 3.5}
+                            />
+                          ))}
+                        </g>
+                      )}
+                      {previewHere && (
+                        <rect
+                          data-editing-measure-background="true"
+                          x="0"
+                          y={Math.max(65, visibleTop)}
+                          width={width}
+                          height={measureBottom - Math.max(65, visibleTop)}
+                          fill="#94a3b8"
+                          fillOpacity=".14"
+                          pointerEvents="none"
+                        />
+                      )}
                       <rect
                         data-playback-measure-background
                         x="0"
@@ -1167,8 +1175,8 @@ export function GuitarStaff({
                           tabIndex={0}
                           aria-label={`${bar + 1}마디 선택`}
                           onClick={(event) => {
-                            if (isKeyboard) {
-                              selectKeyboardPosition(
+                            if (editable) {
+                              selectInputPosition(
                                 event.currentTarget,
                                 event.clientX,
                                 event.clientY,
@@ -1327,7 +1335,7 @@ export function GuitarStaff({
                             >
                               <rect
                                 x={hit.left}
-                                y={hasChords ? top + 20 : Math.min(top + 20, 46)}
+                                y={chordY - 16}
                                 width={hit.right - hit.left}
                                 height="22"
                                 fill="transparent"
@@ -1335,7 +1343,8 @@ export function GuitarStaff({
                               <title>{`${bar + 1}마디 ${offset + 1}박 코드 편집`}</title>
                               <text
                                 x={xAt(offset)}
-                                y={hasChords ? top + 36 : Math.min(top + 36, 62)}
+                                y={chordY}
+                                textAnchor="middle"
                                 fill="#345648"
                                 fontSize="14"
                                 fontWeight="600"
@@ -1469,8 +1478,8 @@ export function GuitarStaff({
                                 } ${Number(actualBeats.toFixed(3))}박 길이${note.tuplet ? ' 셋잇단음표' : ''}${note.staccato && !note.rest ? ' 스타카토' : ''}`}
                                 aria-pressed={chosen || rangeIds.includes(note.id)}
                                 onClick={(event) => {
-                                  if (isKeyboard && note.blank) {
-                                    selectKeyboardPosition(
+                                  if (note.blank) {
+                                    selectInputPosition(
                                       event.currentTarget,
                                       event.clientX,
                                       event.clientY,
@@ -1502,11 +1511,10 @@ export function GuitarStaff({
                                     0,
                                   );
                                   if (
-                                    isKeyboard &&
-                                    (Math.abs(toneY(pitches[index]) - point.y) > 7 ||
-                                      Math.abs(x + headOffsets[index] - point.x) > 10)
+                                    Math.abs(toneY(pitches[index]) - point.y) > 7 ||
+                                    Math.abs(x + headOffsets[index] - point.x) > 10
                                   ) {
-                                    selectKeyboardPosition(
+                                    selectInputPosition(
                                       event.currentTarget,
                                       event.clientX,
                                       event.clientY,
@@ -1548,24 +1556,6 @@ export function GuitarStaff({
                                     x={x}
                                     y={staffY(note.graceSlide.pitch)}
                                     targetY={staffY(note.pitch)}
-                                  />
-                                )}
-                                {!hasTab && !isDrums && !isKeyboard && chosen && (
-                                  <rect
-                                    x={x - cursorWidth / 2}
-                                    y={
-                                      inputY(
-                                        isDrums
-                                          ? drumAtRow(selectedString).pitch
-                                          : (inputPitch ??
-                                              noteTones(note)[selectedString - 1]?.pitch ??
-                                              note.pitch),
-                                      ) - 10
-                                    }
-                                    width={cursorWidth}
-                                    height="20"
-                                    fill="none"
-                                    stroke="#c77830"
                                   />
                                 )}
                                 {note.blank ||
@@ -1623,6 +1613,8 @@ export function GuitarStaff({
                                   noteTones(note).map((tone, toneIndex) => {
                                     const y = toneY(tone),
                                       ledgers: number[] = [];
+                                    const drumSelected =
+                                      isDrums && chosen && drumAtRow(selectedString).y === y;
                                     const stemX = x - direction * 4.5;
                                     const headX = x + headOffsets[toneIndex];
                                     for (let line = 132; line <= y; line += 10) ledgers.push(line);
@@ -1630,8 +1622,11 @@ export function GuitarStaff({
                                     return (
                                       <g
                                         key={toneIndex}
+                                        data-drum-selected={drumSelected ? 'true' : undefined}
+                                        style={drumSelected ? { color: '#c77830' } : undefined}
                                         data-keyboard-selected={
-                                          isKeyboard &&
+                                          !isDrums &&
+                                          !hasTab &&
                                           !inputPreview &&
                                           chosen &&
                                           selectedString === toneIndex + 1
@@ -1673,6 +1668,7 @@ export function GuitarStaff({
                                         ) : isDrums ? (
                                           <DrumNotehead
                                             showLedger
+                                            color={drumSelected ? '#c77830' : undefined}
                                             stemX={stemX}
                                             tone={tone}
                                             x={x}
@@ -1828,11 +1824,24 @@ export function GuitarStaff({
                                         (chosen && selectedString === row + 1) ||
                                         rangeIds.includes(note.id)
                                       }
-                                      onClick={() =>
-                                        chosen && selectedString === row + 1
-                                          ? onDeselect()
-                                          : onSelect(note.id, row + 1, barStart + offset)
-                                      }
+                                      onClick={(event) => {
+                                        const matrix = event.currentTarget.getScreenCTM();
+                                        const point = matrix
+                                          ? new DOMPoint(
+                                              event.clientX,
+                                              event.clientY,
+                                            ).matrixTransform(matrix.inverse())
+                                          : null;
+                                        if (point && point.x > x + 12) {
+                                          selectInputPosition(
+                                            event.currentTarget,
+                                            event.clientX,
+                                            event.clientY,
+                                          );
+                                          return;
+                                        }
+                                        onSelect(note.id, row + 1, barStart + offset);
+                                      }}
                                       onKeyDown={(event) => {
                                         if (event.key === 'Enter') {
                                           event.preventDefault();
@@ -2167,8 +2176,8 @@ export function GuitarStaff({
                                   aria-label={`${bar + 1}마디 ${offset + 1}박 ${hasTab ? `${row + 1}번 줄 ` : ''}빈 칸`}
                                   aria-pressed={focused}
                                   onClick={(event) =>
-                                    isKeyboard
-                                      ? selectKeyboardPosition(
+                                    editable
+                                      ? selectInputPosition(
                                           event.currentTarget,
                                           event.clientX,
                                           event.clientY,
@@ -2200,7 +2209,7 @@ export function GuitarStaff({
                                     height={hasTab ? 20 : staffHitBottom - staffHitTop}
                                     fill="transparent"
                                   />
-                                  {!isDrums && !isKeyboard && (
+                                  {hasTab && (
                                     <rect
                                       className="score-cell-cursor"
                                       x={x - cursorWidth / 2}
@@ -2238,32 +2247,39 @@ export function GuitarStaff({
                             noteTones(fragment.note).some(
                               (tone) => tone.pitch === inputDrumNote.tone.pitch,
                             );
-                          const layout = containsPitch ? noteLayouts[column][index] : undefined;
-                          const direction =
-                            layout?.direction ??
-                            (drumPair
-                              ? part === drumPair[0]
-                                ? -1
-                                : 1
-                              : scoreStemDirection([staffY(inputDrumNote.tone.pitch)]));
+                          if (containsPitch) return null;
+                          const direction = drumPair
+                            ? part === drumPair[0]
+                              ? -1
+                              : 1
+                            : scoreStemDirection([staffY(inputDrumNote.tone.pitch)]);
                           return (
                             <DrumInputPreview
                               note={inputDrumNote}
                               x={previewX}
                               direction={direction}
-                              layout={
-                                layout
-                                  ? {
-                                      ...layout,
-                                      beamed: beams.some((beam) => beam.indices.includes(index)),
-                                    }
-                                  : undefined
-                              }
                             />
                           );
                         })()}
                       {previewHere &&
-                        isKeyboard &&
+                        hasTab &&
+                        (!selected || indexed.notes.get(selected)?.blank) && (
+                          <rect
+                            data-tab-input-preview="true"
+                            x={previewX - 12}
+                            y={tabTop + (selectedString - 1) * 20 - 10}
+                            width={24}
+                            height={20}
+                            rx={2}
+                            fill="#cbd5e1"
+                            fillOpacity=".65"
+                            stroke="#7b8794"
+                            pointerEvents="none"
+                          />
+                        )}
+                      {previewHere &&
+                        (!hasTab || inputPreview) &&
+                        !isDrums &&
                         (inputPreview || !selected || indexed.notes.get(selected)?.blank) && (
                           <KeyboardInputPreview
                             x={previewX}
@@ -2271,35 +2287,6 @@ export function GuitarStaff({
                             beats={inputBeats}
                           />
                         )}
-                      {previewHere && !isKeyboard && (
-                        <g
-                          className="score-duration-preview"
-                          role="img"
-                          aria-label={`입력 미리보기 ${inputBeats}박`}
-                          data-preview-beats={inputBeats}
-                          fill="#b96a23"
-                          stroke="#b96a23"
-                          opacity="0.48"
-                          pointerEvents="none"
-                        >
-                          <rect
-                            x={previewX - 3}
-                            y={hasTab ? tabTop + (selectedString - 1) * 20 + 8 : 126}
-                            width={Math.max(
-                              6,
-                              xAt(
-                                Math.min(
-                                  Math.max(barBeats, scoreBarBeats(score)),
-                                  emptyBeat - barStart + inputBeats,
-                                ),
-                              ) - previewX,
-                            )}
-                            height="3"
-                            rx="1.5"
-                            stroke="none"
-                          />
-                        </g>
-                      )}
                       {fragments.map(({ note, offset }, index) => {
                         if (note.graceBeats === undefined) return null;
                         const group = fragments.filter(

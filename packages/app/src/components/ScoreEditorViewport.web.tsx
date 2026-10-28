@@ -149,6 +149,7 @@ export function ScoreEditorViewport({
       if (
         event.key !== 'Escape' ||
         document.querySelector('dialog[open]') ||
+        root.current?.querySelector('.score-backing-help-content') ||
         root.current?.querySelector('.score-measure-menu') ||
         (event.target instanceof HTMLElement && event.target.closest('.score-editable-title input'))
       )

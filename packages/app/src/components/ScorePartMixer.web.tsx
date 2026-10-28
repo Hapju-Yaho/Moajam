@@ -1,3 +1,5 @@
+import { useScorePlaybackValue } from '../lib/scorePlaybackSubscription.web';
+import type { ScorePlaybackPosition } from '../lib/scorePlaybackDisplay.web';
 import { mixerInstrumentAppearance } from '../lib/scoreMixerAppearance';
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
@@ -18,6 +20,7 @@ export function ScorePartMixer({
   part,
   playing,
   playbackBeat,
+  playbackPosition,
   disabled,
   onSelect,
   onEdit,
@@ -34,6 +37,7 @@ export function ScorePartMixer({
   part: string;
   playing: boolean;
   playbackBeat: number | null;
+  playbackPosition?: ScorePlaybackPosition;
   disabled: boolean;
   onSelect: (part: string) => void;
   onEdit: (score: Score) => void;
@@ -124,7 +128,14 @@ export function ScorePartMixer({
                     <AppIcon name="chevron-down" size={16} color="currentColor" />
                   </span>
                 </button>
-                악기 · 파트
+                <button
+                  type="button"
+                  className="score-mixer-part-label"
+                  aria-expanded={open}
+                  onClick={() => setOpen(!open)}
+                >
+                  악기 · 파트
+                </button>
                 {layout.expanded && (
                   <span className="score-mixer-actions-heading">
                     <button
@@ -182,11 +193,6 @@ export function ScorePartMixer({
                   const mix = scorePartMix(score, name),
                     staves = scorePartStaves(score, name),
                     measures = staves.map((staff) => scoreMeasures(score, staff));
-                  const current = staves.includes(part)
-                    ? playing && playbackBeat !== null
-                      ? scoreMeasureAtBeat(score, part, playbackBeat).bar
-                      : (selectedMeasure ?? -1)
-                    : -1;
                   const update = (change: Partial<typeof mix>) =>
                     onEdit({
                       ...score,
@@ -346,26 +352,20 @@ export function ScorePartMixer({
                         />
                         <small>{Math.round(mix.volume * 100)}%</small>
                       </label>
-                      <div
-                        data-mixer-lane
-                        className="score-mixer-bars"
-                        aria-label={`${name} 마디별 연주 구간`}
-                      >
-                        {Array.from({ length: bars }, (_, index) => (
-                          <button
-                            type="button"
-                            aria-label={`${name} ${index + 1}마디로 이동`}
-                            disabled={disabled || playing}
-                            onClick={() => onMeasureSelect(name, index)}
-                            key={index}
-                            title={`${index + 1}마디`}
-                            data-notes={measures.some((rows) =>
-                              rows[index]?.some(({ note }) => !note.rest && !note.blank),
-                            )}
-                            data-current={current === index}
-                          />
-                        ))}
-                      </div>
+                      <MixerMeasures
+                        score={score}
+                        part={part}
+                        name={name}
+                        bars={bars}
+                        measures={measures}
+                        active={staves.includes(part)}
+                        playing={playing}
+                        playbackBeat={playbackBeat}
+                        playbackPosition={playbackPosition}
+                        selectedMeasure={selectedMeasure}
+                        disabled={disabled}
+                        onMeasureSelect={onMeasureSelect}
+                      />
                     </div>
                   );
                 })}
@@ -431,4 +431,58 @@ export function ScorePartMixer({
     </section>
   );
   return layout.mixerHost ? createPortal(mixer, layout.mixerHost) : mixer;
+}
+
+function MixerMeasures({
+  score,
+  part,
+  name,
+  bars,
+  measures,
+  active,
+  playing,
+  playbackBeat,
+  playbackPosition,
+  selectedMeasure,
+  disabled,
+  onMeasureSelect,
+}: {
+  score: Score;
+  part: string;
+  name: string;
+  bars: number;
+  measures: ReturnType<typeof scoreMeasures>[];
+  active: boolean;
+  playing: boolean;
+  playbackBeat: number | null;
+  playbackPosition?: ScorePlaybackPosition;
+  selectedMeasure: number | null;
+  disabled: boolean;
+  onMeasureSelect: (part: string, bar: number) => void;
+}) {
+  const current = useScorePlaybackValue(playbackPosition, active && playing, (beat) =>
+    !active
+      ? -1
+      : playing && playbackBeat !== null
+        ? scoreMeasureAtBeat(score, part, beat ?? playbackBeat).bar
+        : (selectedMeasure ?? -1),
+  );
+  return (
+    <div data-mixer-lane className="score-mixer-bars" aria-label={`${name} 마디별 연주 구간`}>
+      {Array.from({ length: bars }, (_, index) => (
+        <button
+          type="button"
+          aria-label={`${name} ${index + 1}마디로 이동`}
+          disabled={disabled || playing}
+          onClick={() => onMeasureSelect(name, index)}
+          key={index}
+          title={`${index + 1}마디`}
+          data-notes={measures.some((rows) =>
+            rows[index]?.some(({ note }) => !note.rest && !note.blank),
+          )}
+          data-current={current === index}
+        />
+      ))}
+    </div>
+  );
 }
