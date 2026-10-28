@@ -24,6 +24,35 @@
   min-width: 100px;
   flex: 1;
 }
+.daw-project-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.daw-project-meta {
+  color: #aebdb3;
+  font-size: 11px;
+}
+.studio-console .project-name-pencil,
+.score-project-bar .project-name-pencil {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: #a3afb4;
+  cursor: pointer;
+}
+.score-project-identity input[readonly] {
+  cursor: default;
+  border-color: transparent;
+}
 .studio-console .daw-project-name {
   background: transparent;
   border: 0;

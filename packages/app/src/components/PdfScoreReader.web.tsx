@@ -6,10 +6,12 @@ export function PdfScoreReader({
   url,
   name,
   onClose,
+  embedded = false,
 }: {
   url: string;
   name: string;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const stage = useRef<HTMLDivElement>(null);
@@ -21,18 +23,18 @@ export function PdfScoreReader({
   const [error, setError] = useState('');
   const [rendering, setRendering] = useState(true);
   useEffect(() => {
-    dialog.current?.showModal();
+    if (!embedded) dialog.current?.showModal();
     const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    if (!embedded) document.body.style.overflow = 'hidden';
     const observer = new ResizeObserver(([entry]) =>
       setWidth(Math.max(100, entry.contentRect.width - 32)),
     );
     if (stage.current) observer.observe(stage.current);
     return () => {
       observer.disconnect();
-      document.body.style.overflow = previous;
+      if (!embedded) document.body.style.overflow = previous;
     };
-  }, []);
+  }, [embedded]);
   useEffect(() => {
     let active = true;
     let destroy: (() => void) | undefined;
@@ -103,7 +105,12 @@ export function PdfScoreReader({
   return (
     <dialog
       ref={dialog}
-      className="performance-reader"
+      open={embedded || undefined}
+      tabIndex={embedded ? 0 : undefined}
+      className={
+        'performance-reader' +
+        (embedded ? ' performance-reader-embedded performance-pdf-embedded' : '')
+      }
       aria-label={name + ' PDF 뷰어'}
       onCancel={(e) => {
         e.preventDefault();
@@ -128,7 +135,7 @@ export function PdfScoreReader({
             <label>
               확대{' '}
               <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))}>
-                {[75, 100, 125, 150, 200].map((n) => (
+                {(embedded ? [50, 75, 100] : [75, 100, 125, 150, 200]).map((n) => (
                   <option key={n} value={n}>
                     {n}%
                   </option>
@@ -138,7 +145,7 @@ export function PdfScoreReader({
             <a href={url} target="_blank" rel="noopener noreferrer">
               새 창에서 열기
             </a>
-            <button onClick={onClose}>닫기</button>
+            <button onClick={onClose}>{embedded ? '악보 목록' : '닫기'}</button>
           </div>
         </header>
         {error && (

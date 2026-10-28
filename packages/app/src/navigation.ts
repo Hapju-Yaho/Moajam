@@ -1,6 +1,7 @@
 export type AppRoute =
   | 'tools'
   | 'track-editor'
+  | 'work-management'
   | 'personal-home'
   | 'personal-rehearsals'
   | 'personal-songs'
@@ -64,8 +65,19 @@ export function buildAppPath(
   options: NavigationOptions | undefined,
   context: { route: AppRoute; workspaceId: string; entityId?: string },
 ) {
-  if (next === 'personal-practice' && !options?.id) return '/me/practice';
-  if (next === 'track-editor' && !options?.id) return '/tools/tracks';
+  if (next === 'personal-practice') {
+    const params = options?.id
+      ? new URLSearchParams({
+          workspaceId: options.workspaceId ?? context.workspaceId,
+          songId: options.id,
+        })
+      : undefined;
+    return `/me/practice${params ? `?${params}` : ''}`;
+  }
+  if (next === 'track-editor' && !options?.id)
+    return `/tools/tracks${options?.projectId ? `?project=${encodeURIComponent(options.projectId)}` : ''}`;
+  if (next === 'score-editor')
+    return `/tools/scores/personal${options?.projectId ? `?project=${encodeURIComponent(options.projectId)}` : ''}`;
   const bandId = options?.workspaceId ?? context.workspaceId;
   const base = `/workspaces/${encodeURIComponent(bandId)}`;
   const id =
@@ -93,6 +105,7 @@ export function buildAppPath(
     'personal-rehearsals': '/me/rehearsals',
     'personal-songs': '/me/songs',
     tools: '/tools',
+    'work-management': '/tools/projects',
     'track-editor': `/tools/tracks${query}`,
     instrument: '/tools/instrument-extractor',
     'score-editor': `/tools/scores/personal${query}`,
@@ -100,7 +113,7 @@ export function buildAppPath(
     help: '/help',
   };
   if (personalPaths[next]) return personalPaths[next]!;
-  if (next === 'practice' || next === 'personal-practice')
+  if (next === 'practice')
     return id
       ? `${base}/songs/${encodeURIComponent(id)}?tab=tracks${options?.feedback ? '&feedback=true' : ''}`
       : '/tools';

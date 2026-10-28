@@ -184,13 +184,14 @@ const personalItems: typeof bandItems = [
   { icon: 'users', label: '팀 관리', route: 'personal-songs' },
 ];
 const toolItems: typeof bandItems = [
-  { icon: 'songs', label: '악보 편집', route: 'tools' },
+  { icon: 'rehearsal', label: '악보 편집', route: 'score-editor' },
   { icon: 'microphone', label: '녹음실', route: 'track-editor' },
   { icon: 'headphones', label: '연습하기', route: 'personal-practice' },
 ];
 const pageTitles: Record<AppRoute, string> = {
   tools: '악보 편집',
   'track-editor': '녹음실',
+  'work-management': '작업실',
   'personal-home': '홈',
   'personal-rehearsals': '합주 일정',
   'personal-songs': '팀 관리',
@@ -211,7 +212,8 @@ const pageTitles: Record<AppRoute, string> = {
 };
 
 const activeGroup = (current: AppRoute, target: AppRoute) => {
-  if (target === 'tools') return ['tools', 'score-editor'].includes(current);
+  if (target === 'tools' || target === 'score-editor')
+    return ['tools', 'score-editor'].includes(current);
   if (target === 'track-editor') return ['track-editor', 'instrument'].includes(current);
   if (target === 'recommendations') return current === target || current === 'recommendation';
   if (target === 'songs')
@@ -262,6 +264,7 @@ export function AppShell({
     [
       'tools',
       'track-editor',
+      'work-management',
       'personal-practice',
       'instrument',
       'score-editor',
@@ -309,6 +312,7 @@ export function AppShell({
   const toolsPage = [
     'tools',
     'track-editor',
+    'work-management',
     'instrument',
     'score-editor',
     'personal-practice',
@@ -327,7 +331,7 @@ export function AppShell({
   const crumbs: Array<{ label: string; onPress?: () => void }> = [];
   if (toolsPage) {
     crumbs.push({ label: '개인 공간', onPress: () => onNavigate('personal-home') });
-    crumbs.push({ label: '작업실', onPress: () => onNavigate('tools') });
+    crumbs.push({ label: '작업실', onPress: () => onNavigate('work-management') });
   } else {
     crumbs.push({
       label: spaceLabel,
@@ -643,7 +647,10 @@ export function AppShell({
                   accessibilityLabel="작업실 메뉴"
                   accessibilityState={{ expanded: toolsOpen }}
                   aria-expanded={toolsOpen}
-                  onPress={() => setToolsOpen((open) => !open)}
+                  onPress={() => {
+                    setToolsOpen(true);
+                    onNavigate('work-management');
+                  }}
                   style={{ gap: 12, width: '100%' }}
                 >
                   <NavIcon>
@@ -656,13 +663,21 @@ export function AppShell({
                   <NavLabel active={toolsPage} style={{ flex: 1 }}>
                     작업실
                   </NavLabel>
-                  <View style={{ transform: [{ rotate: toolsOpen ? '180deg' : '0deg' }] }}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="작업실 하위 메뉴 펼치기 또는 접기"
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      setToolsOpen((open) => !open);
+                    }}
+                    style={{ transform: [{ rotate: toolsOpen ? '180deg' : '0deg' }] }}
+                  >
                     <AppIcon
                       name="chevron-down"
                       size={16}
                       color={toolsPage ? theme.colors.primary : '#7b879f'}
                     />
-                  </View>
+                  </Pressable>
                 </NavItem>
                 <SpaceMenuReveal id="sidebar-workshop-list" visible={toolsOpen}>
                   <Stack gap={2} style={{ paddingLeft: 18, paddingBottom: 6 }}>
@@ -903,13 +918,24 @@ export function AppShell({
                         label: '개인 홈',
                         route: 'personal-home' as const,
                       },
+                      {
+                        icon: 'studio' as const,
+                        label: '작업실',
+                        route: 'work-management' as const,
+                      },
                       ...toolItems,
                     ]
                   : personal
                     ? personalItems
                     : bandItems),
                 ...(!toolsPage && !bandSpace
-                  ? [{ icon: 'studio' as const, label: '작업실', route: 'tools' as const }]
+                  ? [
+                      {
+                        icon: 'studio' as const,
+                        label: '작업실',
+                        route: 'work-management' as const,
+                      },
+                    ]
                   : []),
               ].map((item) => {
                 const active = activeGroup(activeRoute, item.route);

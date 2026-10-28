@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from 'react';
 import { ScoreEditorScreen } from './ScoreEditorScreen.web';
 import type { ScoreViewActions } from '../components/ScoreEditorViewport.web';
 import type { ScreenProps } from '../navigation';
+import { useIdentity } from '../state/Identity';
 import { useMockAppState } from '../state/MockAppState';
 import { AppShell } from '../components/AppShell';
 import { ActionButton, Meta, Surface } from '../components/ProductUI';
@@ -14,6 +15,7 @@ import {
   type ScoreProjectEditorHandle,
 } from '../lib/scoreProjects.web';
 import '../components/ScoreProjectWorkspace.web.css';
+import { ProjectPencilIcon } from '../components/DawProjectControls.web';
 
 export function BandScoreEditorScreen(props: ScreenProps) {
   const { adoptedSongs, workspaceId } = useMockAppState();
@@ -38,11 +40,25 @@ export function BandScoreEditorScreen(props: ScreenProps) {
     />
   );
 }
-function BandScoreProjects(props: ScreenProps & { songId: string; title: string }) {
-  const { workspaceId, workspace } = useMockAppState();
+export function BandScoreProjects(
+  props: ScreenProps & { songId: string; title: string; personal?: boolean; embedded?: boolean },
+) {
+  const state = useMockAppState();
+  const user = useIdentity();
+  const workspaceId = props.personal ? `local-recording/score/${user}` : state.workspaceId;
+  const workspace = state.workspace;
   const [projects, setProjects] = useState<ScoreProject[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [name, setName] = useState('');
+  const [editingName, setEditingName] = useState(false);
+  const nameInput = useRef<HTMLInputElement>(null);
+  const nameBeforeEdit = useRef('');
+  useEffect(() => {
+    if (editingName) {
+      nameInput.current?.focus();
+      nameInput.current?.select();
+    }
+  }, [editingName]);
   const [savedName, setSavedName] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -188,7 +204,7 @@ function BandScoreProjects(props: ScreenProps & { songId: string; title: string 
       <div className="score-project-identity">
         <div className="score-project-meta">
           <small>
-            {workspace?.name} · {props.title}
+            {props.personal ? '개인 악보 · 이 기기에 저장' : `${workspace?.name} · ${props.title}`}
           </small>
           {status && !status.includes('불러왔어요') && (
             <span className="score-project-status" role="status">
@@ -199,6 +215,8 @@ function BandScoreProjects(props: ScreenProps & { songId: string; title: string 
         {active ? (
           <label>
             <input
+              ref={nameInput}
+              readOnly={!editingName}
               aria-label="악보 프로젝트 이름"
               value={name}
               style={{
@@ -214,35 +232,65 @@ function BandScoreProjects(props: ScreenProps & { songId: string; title: string 
               maxLength={160}
               disabled={locked}
               onChange={(e) => setName(e.target.value)}
+              onBlur={() => setEditingName(false)}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return;
+                if (e.key === 'Enter') e.currentTarget.blur();
+                if (e.key === 'Escape') {
+                  setName(nameBeforeEdit.current);
+                  setEditingName(false);
+                }
+              }}
             />
             <span aria-label={dirty ? '저장하지 않은 변경사항' : ''}>{dirty ? '*' : ''}</span>
+            {!editingName && (
+              <button
+                type="button"
+                className="project-name-pencil"
+                aria-label="악보 프로젝트 이름 수정"
+                title="이름 수정"
+                disabled={locked}
+                onClick={(e) => {
+                  e.preventDefault();
+                  nameBeforeEdit.current = name;
+                  setEditingName(true);
+                }}
+              >
+                <ProjectPencilIcon />
+              </button>
+            )}
           </label>
         ) : (
           <strong>악보 프로젝트</strong>
         )}
       </div>
-      <button
-        className="score-project-actions-toggle"
-        aria-label="프로젝트 작업 메뉴"
-        aria-expanded={actions?.menuOpen ?? actionsOpen}
-        onClick={() => {
-          setActionsOpen(!actionsOpen);
-          actions?.toggleMenu?.();
-        }}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          width="18"
-          height="18"
-          aria-hidden="true"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
+      {active && (
+        <button
+          className="score-project-actions-toggle"
+          aria-label="프로젝트 작업 메뉴"
+          aria-expanded={actions?.menuOpen ?? actionsOpen}
+          onClick={() => {
+            setActionsOpen(!actionsOpen);
+            actions?.toggleMenu?.();
+          }}
         >
-          <path d={(actions?.menuOpen ?? actionsOpen) ? 'm5 15 7-7 7 7' : 'm5 9 7 7 7-7'} />
-        </svg>
-      </button>
-      <div className="score-project-actions" hidden={!(actions?.menuOpen ?? actionsOpen)}>
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          >
+            <path d={(actions?.menuOpen ?? actionsOpen) ? 'm5 15 7-7 7 7' : 'm5 9 7 7 7-7'} />
+          </svg>
+        </button>
+      )}
+      <div
+        className="score-project-actions"
+        hidden={!!active && !(actions?.menuOpen ?? actionsOpen)}
+      >
         {actions?.file}
         {actions?.shortcuts}
         <button disabled={locked} onClick={() => open('new')}>
@@ -263,7 +311,7 @@ function BandScoreProjects(props: ScreenProps & { songId: string; title: string 
             })
           }
         >
-          서버에 저장
+          {props.personal ? '이 기기에 저장' : '서버에 저장'}
         </button>
         <button
           aria-label="악보 프로젝트 새로고침"
@@ -281,19 +329,22 @@ function BandScoreProjects(props: ScreenProps & { songId: string; title: string 
     </div>
   );
   return (
-    <AppShell
-      activeRoute="band-score-editor"
+    <ScoreProjectShell
+      embedded={props.embedded}
+      activeRoute={props.personal ? 'score-editor' : 'band-score-editor'}
       entityId={props.songId}
       onNavigate={props.navigate}
       hideSyncControls
     >
-      <ActionButton
-        secondary
-        compact
-        onPress={() => props.navigate('song', { id: props.songId, workspaceId })}
-      >
-        곡으로 돌아가기
-      </ActionButton>
+      {!props.personal && !props.embedded && (
+        <ActionButton
+          secondary
+          compact
+          onPress={() => props.navigate('song', { id: props.songId, workspaceId })}
+        >
+          곡으로 돌아가기
+        </ActionButton>
+      )}
       {error && (
         <p role="alert" className="score-project-error">
           {error}
@@ -303,8 +354,10 @@ function BandScoreProjects(props: ScreenProps & { songId: string; title: string 
         <ScoreEditorScreen
           key={`${active}/${reload}`}
           {...props}
+          entityId={props.personal ? undefined : props.songId}
           scoreView={entryView === 'expanded' ? 'expanded' : undefined}
-          bandScore
+          bandScore={!props.personal}
+          projectWorkspaceId={workspaceId}
           embedded
           scoreProjectId={active}
           scoreProjectName={name.trim()}
@@ -324,7 +377,13 @@ function BandScoreProjects(props: ScreenProps & { songId: string; title: string 
       ) : (
         <section className="score-project-empty">
           {toolbar()}
-          <div>{loading ? '악보 프로젝트를 불러오는 중…' : '새 악보 프로젝트를 생성해주세요.'}</div>
+          <div>
+            {loading
+              ? '악보 프로젝트를 불러오는 중…'
+              : props.personal
+                ? '새 악보를 생성해주세요.'
+                : '새 악보를 생성해주세요'}
+          </div>
         </section>
       )}
       <dialog
@@ -516,6 +575,14 @@ function BandScoreProjects(props: ScreenProps & { songId: string; title: string 
           </footer>
         </section>
       </dialog>
-    </AppShell>
+    </ScoreProjectShell>
   );
+}
+
+function ScoreProjectShell({
+  embedded,
+  children,
+  ...props
+}: PropsWithChildren<React.ComponentProps<typeof AppShell> & { embedded?: boolean }>) {
+  return embedded ? <>{children}</> : <AppShell {...props}>{children}</AppShell>;
 }

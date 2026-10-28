@@ -1077,6 +1077,22 @@ export function scoreMeasureCount(score: Score, part: string): number {
     ...Object.keys(score.repeats ?? {}).map((bar) => Number(bar) + 1),
   );
 }
+
+// New entries in an existing measure use only its remaining rhythmic space.
+export function scoreEntryDuration(
+  score: Score,
+  part: string,
+  beat: number,
+  requested: number,
+  bar?: number,
+): number {
+  const location = bar ?? scoreMeasureAtBeat(score, part, beat).bar;
+  const end = scoreBeat(
+    scoreMeasureStart(score, part, location) +
+      Math.max(scoreMeasureDuration(score, part, location), scoreBarBeats(score)),
+  );
+  return scoreBeat(Math.min(requested, Math.max(MIN_SCORE_BEATS, end - beat)));
+}
 export function scoreChordPositions(score: Score, part: string): Record<number, string> {
   const chords: Record<number, string> = {};
   let beat = 0;
@@ -1992,17 +2008,51 @@ export function setScoreTriplet(score: Score, ids: string[], enabled: boolean): 
   if (![4, 2, 1, 0.5, 0.25, 0.125, 0.0625].includes(written))
     throw new Error('점이 없는 온음표부터 64분음표까지 셋잇단음표로 묶을 수 있어요.');
   const beats = scoreBeat(written * (enabled ? 2 / 3 : 1));
-  let result = score;
-  for (const note of [...selected].reverse()) {
-    result = setScoreDuration(result, note.id, beats, () => clientId());
-    result = {
-      ...result,
-      notes: result.notes.map((item) =>
-        item.id === note.id ? { ...item, tuplet: enabled ? 3 : undefined } : item,
-      ),
-    };
+  if (!!first.tuplet === enabled) return score;
+  const from = rows.slice(0, start).reduce((sum, note) => scoreBeat(sum + note.beats), 0);
+  const groupEnd = scoreBeat(from + selected.reduce((sum, note) => sum + note.beats, 0));
+  const location = scoreMeasureAtBeat(score, first.part, from);
+  const barEnd = scoreBeat(location.start + location.beats);
+  if (groupEnd > barEnd || scoreBeat(from + beats * 3) > barEnd)
+    throw new Error('?????? ? ?? ??? ??? ? ?? ? ??? ??????.');
+  const delta = scoreBeat(beats * 3 - selected.reduce((sum, note) => sum + note.beats, 0));
+  const chosen = new Set(selected.map((note) => note.id));
+  const last = selected.at(-1)!;
+  let notes = score.notes;
+  const replacements = new Map<string, ScoreNote | null>();
+  if (delta > 0) {
+    const used = rows.reduce((sum, note) => scoreBeat(sum + note.beats), 0);
+    const padding =
+      used < barEnd ? blankScoreTime(first.part, scoreBeat(barEnd - used), () => clientId()) : [];
+    notes = [...notes, ...padding];
+    const following = [...rows.slice(start + 3), ...padding];
+    let remaining = delta;
+    for (const note of following) {
+      if (remaining <= 0 || !note.blank) break;
+      const consumed = Math.min(remaining, note.beats);
+      replacements.set(
+        note.id,
+        consumed === note.beats ? null : { ...note, beats: scoreBeat(note.beats - consumed) },
+      );
+      remaining = scoreBeat(remaining - consumed);
+    }
+    if (remaining > 0) throw new Error('?????? ????? ?? ?? ??? ? ?? ??? ??.');
   }
-  return result;
+  notes = notes.flatMap((note) => {
+    if (chosen.has(note.id)) {
+      const next: ScoreNote = { ...note, beats };
+      if (enabled) next.tuplet = 3;
+      else delete next.tuplet;
+      return note.id === last.id && delta < 0
+        ? [next, ...blankScoreTime(first.part, -delta, () => clientId())]
+        : [next];
+    }
+    if (!replacements.has(note.id)) return [note];
+    const replacement = replacements.get(note.id);
+    return replacement ? [replacement] : [];
+  });
+  if (notes.length > 2000) throw new Error('??? ?? 2,000??? ??? ? ???.');
+  return retimeScore(score, notes, [first.part]);
 }
 
 function renamePartMap<T>(
@@ -2097,6 +2147,22 @@ export function renameScorePart(score: Score, previous: string | null, input: st
         : {}),
     },
   };
+}
+
+// Ordinary range deletion clears notation without closing time or shrinking bars.
+export function clearScoreNotes(score: Score, ids: string[]): Score {
+  const cleared = new Set(ids);
+  return cleanScoreConnections({
+    ...score,
+    notes: score.notes.flatMap((note) =>
+      !cleared.has(note.id)
+        ? [note]
+        : note.graceBeats !== undefined
+          ? []
+          : [blankScoreNote(note.part, note.beats, () => note.id)],
+    ),
+    sync: Object.fromEntries(Object.entries(score.sync).filter(([id]) => !cleared.has(id))),
+  });
 }
 
 export function removeScoreNotes(score: Score, ids: string[]): Score {

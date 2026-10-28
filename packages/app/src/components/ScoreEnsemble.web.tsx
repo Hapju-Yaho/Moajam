@@ -12,7 +12,11 @@ export function ScoreEnsemble({
 }: ComponentProps<typeof GuitarStaff> & {
   parts: string[];
   showPartLabels?: boolean;
-  onPartSelect?: (part: string, note?: string, position?: { beat: number; bar?: number }) => void;
+  onPartSelect?: (
+    part: string,
+    note?: string,
+    position?: { beat: number; bar?: number; pitch?: number },
+  ) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
@@ -87,9 +91,13 @@ export function ScoreEnsemble({
                     onSelect={
                       active
                         ? props.onSelect
-                        : (id, _string, beat) => {
+                        : (id, _string, beat, pitch) => {
                             if (props.editable)
-                              onPartSelect?.(part, id, beat === undefined ? undefined : { beat });
+                              onPartSelect?.(
+                                part,
+                                id,
+                                beat === undefined ? undefined : { beat, pitch },
+                              );
                           }
                     }
                     onChordSelect={
@@ -102,8 +110,9 @@ export function ScoreEnsemble({
                     onAppend={
                       active
                         ? props.onAppend
-                        : (_string, beat, bar) => {
-                            if (props.editable) onPartSelect?.(part, undefined, { beat, bar });
+                        : (_string, beat, bar, pitch) => {
+                            if (props.editable)
+                              onPartSelect?.(part, undefined, { beat, bar, pitch });
                           }
                     }
                     onDeselect={active ? props.onDeselect : () => {}}

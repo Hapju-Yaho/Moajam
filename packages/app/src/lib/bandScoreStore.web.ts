@@ -2,7 +2,7 @@ import { api, serverConfigured } from './remote';
 import { encode, decode } from './remote-media.web';
 import { readMedia, writeMedia } from './mediaStore.web';
 import { readScoreVersionLibrary, type StoredScore } from './scoreVersions';
-import { readScoreProject, writeScoreProject } from './scoreProjects.web';
+import { readScoreProject, writeScoreProject, isPersonalScoreWorkspace } from './scoreProjects.web';
 export type { StoredScore } from './scoreVersions';
 type RevisionDocument = { revision: number; value: { data: StoredScore }; name?: string };
 export const scoreConflictMessage =
@@ -15,6 +15,7 @@ export function createBandScoreStore(
   user: string,
   project?: { id: string; name: () => string; onSaved: (name: string) => void },
 ) {
+  const remote = serverConfigured && !isPersonalScoreWorkspace(workspaceId);
   const key = project
     ? `score-project/${workspaceId}/${project.id}`
     : `band-score/${workspaceId}/${songId}`;
@@ -28,10 +29,10 @@ export function createBandScoreStore(
       const request = ++loadRequest;
       const document = project
         ? await readScoreProject(workspaceId, songId, project.id)
-        : serverConfigured
+        : remote
           ? await api<RevisionDocument | null>(path, 'GET', undefined, user)
           : await readMedia<RevisionDocument>(key, 'band-shared');
-      const value = serverConfigured
+      const value = remote
         ? ((await decode(document?.value.data, user, key)) as StoredScore | undefined)
         : document?.value.data;
       // Refuse corrupt documents instead of opening and overwriting them with an empty score.
@@ -48,9 +49,7 @@ export function createBandScoreStore(
       saving = true;
       try {
         if (project) {
-          const encoded = serverConfigured
-            ? ((await encode(value, key, user)) as StoredScore)
-            : value;
+          const encoded = remote ? ((await encode(value, key, user)) as StoredScore) : value;
           const name = project.name();
           const result = await writeScoreProject(
             workspaceId,
@@ -62,7 +61,7 @@ export function createBandScoreStore(
           );
           revision = result.revision;
           project.onSaved(name);
-        } else if (serverConfigured) {
+        } else if (remote) {
           const encoded = await encode(value, key, user);
           if (JSON.stringify(encoded).length > 950000)
             throw new Error(

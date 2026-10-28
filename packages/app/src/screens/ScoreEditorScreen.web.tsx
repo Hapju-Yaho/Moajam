@@ -138,8 +138,10 @@ export function ScoreEditorScreen({
   onProjectSaved,
   projectNameDirty = false,
   onRequestEditClose,
+  projectWorkspaceId,
 }: ScreenProps & {
   bandScore?: boolean;
+  projectWorkspaceId?: string;
   embedded?: boolean;
   scoreProjectId?: string;
   scoreProjectName?: string;
@@ -160,16 +162,18 @@ export function ScoreEditorScreen({
     bpm: '',
     structure: '',
   });
-  const key = bandScore
-    ? `band-score/${workspaceId}/${entityId}/${scoreProjectId ?? 'legacy'}`
-    : `score/${entityId ? workspaceId + '/' + entityId : 'personal'}`;
+  const key = scoreProjectId
+    ? `score-project/${projectWorkspaceId ?? workspaceId}/${scoreProjectId}`
+    : bandScore
+      ? `band-score/${workspaceId}/${entityId}/${scoreProjectId ?? 'legacy'}`
+      : `score/${entityId ? workspaceId + '/' + entityId : 'personal'}`;
   const projectMetadata = useRef({ name: scoreProjectName, onSaved: onProjectSaved });
   projectMetadata.current = { name: scoreProjectName, onSaved: onProjectSaved };
   const bandStore = useMemo(
     () =>
-      bandScore
+      bandScore || scoreProjectId
         ? createBandScoreStore(
-            workspaceId,
+            projectWorkspaceId ?? workspaceId,
             entityId ?? '',
             userId,
             scoreProjectId
@@ -181,7 +185,7 @@ export function ScoreEditorScreen({
               : undefined,
           )
         : null,
-    [bandScore, workspaceId, entityId, userId, scoreProjectId],
+    [bandScore, workspaceId, entityId, userId, scoreProjectId, projectWorkspaceId],
   );
   const [reload, setReload] = useState(0);
   const [bandSaving, setBandSaving] = useState(false);
@@ -496,7 +500,15 @@ export function ScoreEditorScreen({
     };
   }, [key, userId]);
   useEffect(() => {
-    if (bandScore || previewApplied || !loaded || loadedKey.current !== key || !bandDirty) return;
+    if (
+      bandStore ||
+      bandScore ||
+      previewApplied ||
+      !loaded ||
+      loadedKey.current !== key ||
+      !bandDirty
+    )
+      return;
     let active = true;
     let started = false;
     const document = { score, referenceAudio, instrumentSample };
@@ -1109,7 +1121,11 @@ export function ScoreEditorScreen({
         onRequestClose={onRequestEditClose}
         initiallyExpanded={scoreView === 'expanded'}
         title={
-          scoreProjectId ? `${workspace?.name} · ${song?.title} · ${scoreProjectName}` : score.title
+          scoreProjectId
+            ? bandScore
+              ? `${workspace?.name} · ${song?.title} · ${scoreProjectName}`
+              : scoreProjectName
+            : score.title
         }
         shared={bandScore}
         status={bandDirty ? '저장하지 않은 변경사항' : status}

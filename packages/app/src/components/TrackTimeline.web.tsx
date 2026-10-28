@@ -1,5 +1,5 @@
 import './StudioConfirm.web.css';
-import { DawProjectToolbar, DawProjectPanel } from './DawProjectControls.web';
+import { DawProjectToolbar, DawProjectPanel, ProjectPencilIcon } from './DawProjectControls.web';
 import { useDawProject } from '../lib/dawProjectContext';
 import { DawHelp } from './DawHelp.web';
 import { AppIcon } from './icons';
@@ -413,6 +413,47 @@ export function TrackTimeline({
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | undefined>(undefined);
   const viewport = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY))
+        return;
+      if (event.target instanceof Element && event.target.closest('input, select, textarea'))
+        return;
+      let remaining =
+        event.deltaY *
+        (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1);
+      if (!remaining) return;
+      const consume = (target: HTMLElement) => {
+        const before = target.scrollTop;
+        target.scrollTop = Math.max(
+          0,
+          Math.min(target.scrollHeight - target.clientHeight, before + remaining),
+        );
+        remaining -= target.scrollTop - before;
+      };
+      consume(element);
+      let parent = element.parentElement;
+      while (parent && Math.abs(remaining) > 0.5) {
+        if (
+          /(auto|scroll)/.test(getComputedStyle(parent).overflowY) &&
+          parent.scrollHeight > parent.clientHeight
+        )
+          consume(parent);
+        parent = parent.parentElement;
+      }
+      if (
+        Math.abs(remaining) > 0.5 &&
+        !expanded &&
+        document.scrollingElement instanceof HTMLElement
+      )
+        consume(document.scrollingElement);
+      event.preventDefault();
+    };
+    element.addEventListener('wheel', wheel, { passive: false });
+    return () => element.removeEventListener('wheel', wheel);
+  }, [expanded]);
   const marquee = useMarquee(
     viewport,
     '[data-selection-id]',
@@ -631,11 +672,17 @@ export function TrackTimeline({
     return () => cancelAnimationFrame(frame);
   }, [revealPosition, zoom]);
   useEffect(() => {
-    if (selectedClips.length < 2) return;
+    if (!selectedClips.length) return;
     const clear = (event: PointerEvent) => {
       if (event.ctrlKey || event.metaKey) return;
       const target = event.target;
-      if (target instanceof Element && target.closest('.studio-clip, .studio-clip-tools')) return;
+      if (
+        target instanceof Element &&
+        target.closest(
+          '.studio-clip, .studio-clip-tools, dialog, [role="dialog"], .studio-confirm-card',
+        )
+      )
+        return;
       setSelectedIds([]);
     };
     document.addEventListener('pointerdown', clear, true);
@@ -656,7 +703,7 @@ export function TrackTimeline({
       <header className="studio-heading">
         <div className="studio-heading-info">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h2>{personalRecording ? '녹음실' : '작업실'}</h2>
+            <h2>녹음 프로젝트</h2>
             {!readOnly && (
               <button
                 type="button"
@@ -771,41 +818,41 @@ export function TrackTimeline({
               {String(place.bar).padStart(3, '0')} : {place.beat} 마디 · 박
             </span>
           </div>
-          <span className={`studio-status ${t.recording ? 'recording' : ''}`}>
-            ●{' '}
-            {t.countdown
-              ? `녹음까지 ${t.countdown}박`
-              : t.preparing
-                ? '음원 준비 중'
-                : t.requesting
-                  ? '마이크 연결 중'
-                  : t.recording
-                    ? '녹음 중'
-                    : t.playing
-                      ? '재생 중'
-                      : '정지'}
-          </span>
           <div className="studio-length">
-            <span>전체 길이</span>
-            <strong>
-              {clock(t.duration)}.{String(Math.floor((t.duration % 1) * 100)).padStart(2, '0')}
-            </strong>
-            <button
-              type="button"
-              className="studio-collapse"
-              title={collapsed ? 'DAW 펼치기' : 'DAW 접기'}
-              aria-label={collapsed ? 'DAW 펼치기' : 'DAW 접기'}
-              aria-expanded={!collapsed}
-              onClick={() => setCollapsed((value) => !value)}
-            >
-              {collapsed ? '자세히 보기' : '간략히'}
-              <span
-                style={{ display: 'flex', transform: collapsed ? undefined : 'rotate(180deg)' }}
-              >
-                <AppIcon name="chevron-down" size={18} />
-              </span>
-            </button>
+            <div className="studio-length-value">
+              <span>전체 길이</span>
+              <strong>
+                {clock(t.duration)}.{String(Math.floor((t.duration % 1) * 100)).padStart(2, '0')}
+              </strong>
+            </div>
+            <span className={`studio-status ${t.recording ? 'recording' : ''}`}>
+              ●{' '}
+              {t.countdown
+                ? `녹음까지 ${t.countdown}박`
+                : t.preparing
+                  ? '음원 준비 중'
+                  : t.requesting
+                    ? '마이크 연결 중'
+                    : t.recording
+                      ? '녹음 중'
+                      : t.playing
+                        ? '재생 중'
+                        : '정지'}
+            </span>
           </div>
+          <button
+            type="button"
+            className="studio-collapse"
+            title={collapsed ? 'DAW 펼치기' : 'DAW 접기'}
+            aria-label={collapsed ? 'DAW 펼치기' : 'DAW 접기'}
+            aria-expanded={!collapsed}
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            {collapsed ? '자세히 보기' : '간략히'}
+            <span style={{ display: 'flex', transform: collapsed ? undefined : 'rotate(180deg)' }}>
+              <AppIcon name="chevron-down" size={18} />
+            </span>
+          </button>
         </div>
         <div className="studio-clickbar">
           <button
@@ -997,6 +1044,7 @@ export function TrackTimeline({
         </div>
         {!readOnly && (
           <div className="studio-clip-tools">
+            <strong className="studio-clip-tools-label">클립 정보</strong>
             {selectedClips.length > 1 ? (
               <button disabled>{selectedClips.length}개 클립 선택</button>
             ) : selected ? (
@@ -1021,6 +1069,7 @@ export function TrackTimeline({
                 <button
                   disabled={locked}
                   title="클립 이름 수정"
+                  className="studio-clip-name-button"
                   onClick={(event) => {
                     const { width, height } = event.currentTarget.getBoundingClientRect();
                     setNameSize({ width, height });
@@ -1029,6 +1078,7 @@ export function TrackTimeline({
                   }}
                 >
                   {selected.name}
+                  <ProjectPencilIcon />
                 </button>
               )
             ) : (
@@ -1200,7 +1250,38 @@ export function TrackTimeline({
             }
           >
             <div className="studio-ruler-row">
-              <div className="studio-track-head">세션 / 트랙</div>
+              <div className="studio-track-head">
+                <span>세션 / 트랙</span>
+                <button
+                  type="button"
+                  className="studio-tracks-collapse-all"
+                  disabled={!tracks.length}
+                  onClick={() =>
+                    setCollapsedTracks(
+                      tracks.every((track) => collapsedTracks.includes(track.id))
+                        ? []
+                        : tracks.map((track) => track.id),
+                    )
+                  }
+                >
+                  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                    <path
+                      d={
+                        tracks.length > 0 &&
+                        tracks.every((track) => collapsedTracks.includes(track.id))
+                          ? 'M4 6 L8 10 L12 6'
+                          : 'M4 10 L8 6 L12 10'
+                      }
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                    />
+                  </svg>
+                  {tracks.length > 0 && tracks.every((track) => collapsedTracks.includes(track.id))
+                    ? '전체 펼치기'
+                    : '전체 접기'}
+                </button>
+              </div>
               <div
                 className="studio-ruler"
                 onPointerDown={(event) => {

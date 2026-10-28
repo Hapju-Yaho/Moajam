@@ -1,0 +1,31 @@
+.band-song-practice {
+  min-width: 0;
+}
+.band-song-practice-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 0;
+}
+.band-song-practice-tabs button {
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 14px;
+  border: 1px solid #dce4ef;
+  border-radius: 8px;
+  background: #fff;
+  color: #3b5671;
+  cursor: pointer;
+}
+.band-song-practice-tabs button[aria-pressed='true'] {
+  background: #3478ef;
+  border-color: #3478ef;
+  color: #fff;
+}
+.band-song-practice-tabs button:focus-visible {
+  outline: 2px solid #3478ef;
+  outline-offset: 2px;
+}
+.band-song-practice-content {
+  min-width: 0;
+}

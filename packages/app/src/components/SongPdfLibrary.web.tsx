@@ -2,7 +2,8 @@ import { ScheduleDialog } from './ScheduleDialog';
 import { PdfScoreReader } from './PdfScoreReader.web';
 import './StudioConfirm.web.css';
 import './SongPdfLibrary.web.css';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { clientId } from '../lib/clientId';
 import { createPortal } from 'react-dom';
 import { ActionButton } from './ProductUI';
 import { api, serverConfigured, uploadRemoteFile } from '../lib/remote';
@@ -23,12 +24,14 @@ export function SongPdfLibrary({
   assetId,
   buttonLabel = 'PDF 추가·보기',
   initialOpen = false,
+  embedded = false,
 }: {
   songId: string;
   title: string;
   assetId?: string;
   buttonLabel?: string;
   initialOpen?: boolean;
+  embedded?: boolean;
 }) {
   const { workspaceId, currentUserId } = useMockAppState();
   const [parts, setParts] = useWorkspaceValue<Record<string, string>>(
@@ -36,7 +39,9 @@ export function SongPdfLibrary({
     {},
   );
   const scope = 'song/' + workspaceId + '/' + songId;
-  const [open, setOpen] = useState(!!assetId || initialOpen);
+  const [open, setOpen] = useState(embedded || !!assetId || initialOpen);
+  const render = (node: ReactNode, container: HTMLElement) =>
+    embedded ? node : createPortal(node, container);
   useEffect(() => {
     if (initialOpen || assetId) setOpen(true);
   }, [initialOpen, assetId]);
@@ -58,7 +63,7 @@ export function SongPdfLibrary({
   }, []);
   useEffect(() => {
     if (!open) return;
-    dialog.current?.showModal();
+    if (!embedded) dialog.current?.showModal();
     const request = ++generation.current;
     setBusy(true);
     setError('');
@@ -100,7 +105,7 @@ export function SongPdfLibrary({
     return () => {
       requests.current++;
     };
-  }, [open, scope, workspaceId, assetId]);
+  }, [open, scope, workspaceId, assetId, embedded]);
   const pdfs = files.filter(
     (file) =>
       file.mime === 'application/pdf' ||
@@ -121,7 +126,7 @@ export function SongPdfLibrary({
         id = await uploadRemoteFile(file, file.name, scope, workspaceId, currentUserId);
         await api('/assets/' + id + '/visibility', 'PATCH', { visibility: 'WORKSPACE' });
       } else {
-        id = crypto.randomUUID();
+        id = clientId();
         await writeMedia('library/' + scope, [
           ...files,
           { id, name: file.name, type: 'application/pdf', blob: file },
@@ -197,33 +202,41 @@ export function SongPdfLibrary({
   };
   return (
     <>
-      <ActionButton nativeID="practice-pdf-open" secondary compact onPress={() => setOpen(true)}>
-        {buttonLabel}
-      </ActionButton>
+      {!embedded && (
+        <ActionButton nativeID="practice-pdf-open" secondary compact onPress={() => setOpen(true)}>
+          {buttonLabel}
+        </ActionButton>
+      )}
       {open &&
-        createPortal(
+        (!embedded || !preview) &&
+        render(
           <dialog
             ref={dialog}
+            open={embedded || undefined}
             aria-label={title + ' PDF 악보'}
             onCancel={(event) => {
               if (event.target !== event.currentTarget) return;
               event.preventDefault();
               if (!busy) setOpen(false);
             }}
-            className="song-pdf-dialog"
+            className={'song-pdf-dialog' + (embedded ? ' song-pdf-embedded' : '')}
           >
-            <div
-              className="song-pdf-backdrop"
-              onClick={() => {
-                if (!busy) setOpen(false);
-              }}
-            />
+            {!embedded && (
+              <div
+                className="song-pdf-backdrop"
+                onClick={() => {
+                  if (!busy) setOpen(false);
+                }}
+              />
+            )}
             <div className="song-pdf-card">
               <header className="song-pdf-header">
                 <h2>{title} · PDF 악보</h2>
-                <ActionButton secondary compact disabled={busy} onPress={() => setOpen(false)}>
-                  닫기
-                </ActionButton>
+                {!embedded && (
+                  <ActionButton secondary compact disabled={busy} onPress={() => setOpen(false)}>
+                    닫기
+                  </ActionButton>
+                )}
               </header>
               <div className="song-pdf-body">
                 <p className="song-pdf-description">
@@ -444,8 +457,9 @@ export function SongPdfLibrary({
         )}
       </ScheduleDialog>
       {preview &&
-        createPortal(
+        render(
           <PdfScoreReader
+            embedded={embedded}
             key={preview.url}
             name={preview.name}
             url={preview.url}

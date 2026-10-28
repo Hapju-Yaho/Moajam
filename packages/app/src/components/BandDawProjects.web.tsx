@@ -3,7 +3,14 @@ import type { BandDawProjects as NativeProjects } from './BandDawProjects';
 import { useIdentity } from '../state/Identity';
 import { serverConfigured } from '../lib/remote';
 import { listBandProjects, manageBandProject, type BandDawProject } from '../lib/bandDawProjects';
-import { DawProjectToolbar, DawProjectPanel, ProjectRefreshIcon } from './DawProjectControls.web';
+import {
+  DawProjectToolbar,
+  DawProjectPanel,
+  ProjectRefreshIcon,
+  ProjectPencilIcon,
+} from './DawProjectControls.web';
+import { useMockAppState } from '../state/MockAppState';
+import { PracticeSectionTitle } from './PracticeSectionHeading.web';
 import { DawProjectContext, type ProjectBridge } from '../lib/dawProjectContext';
 import { ClipLibrary } from './ClipLibrary.web';
 import { ScheduleDialog } from './ScheduleDialog';
@@ -18,6 +25,7 @@ export function BandDawProjects({
   localOnly = false,
 }: ComponentProps<typeof NativeProjects> & { localOnly?: boolean }) {
   const user = useIdentity();
+  const { workspace } = useMockAppState();
   const fetchProjects = useCallback(
     () =>
       localOnly
@@ -219,43 +227,54 @@ export function BandDawProjects({
   };
   const toolbar = (
     <div className="daw-project-toolbar">
-      <div className="daw-project-title">
-        {selected ? (
-          editing ? (
-            <input
-              autoFocus
-              aria-label="현재 프로젝트 이름"
-              value={draft}
-              maxLength={160}
-              disabled={working}
-              onChange={(event) => setDraft(event.target.value)}
-              onBlur={() => {
-                if (!draft.trim()) setDraft(selected.name);
-                setEditing(false);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') event.currentTarget.blur();
-                if (event.key === 'Escape') {
-                  setDraft(selected.name);
+      <div className="daw-project-identity">
+        <small className="daw-project-meta">
+          {localOnly ? '개인 녹음 · 이 기기에 저장' : `${workspace?.name ?? ''} · ${title}`}
+        </small>
+        <div className="daw-project-title">
+          {selected ? (
+            editing ? (
+              <input
+                autoFocus
+                aria-label="현재 프로젝트 이름"
+                value={draft}
+                maxLength={160}
+                disabled={working}
+                onChange={(event) => setDraft(event.target.value)}
+                onBlur={() => {
+                  if (!draft.trim()) setDraft(selected.name);
                   setEditing(false);
-                }
-              }}
-            />
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') event.currentTarget.blur();
+                  if (event.key === 'Escape') {
+                    setDraft(selected.name);
+                    setEditing(false);
+                  }
+                }}
+              />
+            ) : (
+              <span className="daw-project-name">
+                {draft || selected.name}
+                {dirty ? ' *' : ''}
+              </span>
+            )
           ) : (
+            <span className="daw-project-name">녹음 프로젝트</span>
+          )}
+          {editing && dirty && <span aria-label="저장하지 않은 변경사항">*</span>}
+          {selected && !editing && (
             <button
-              className="daw-project-name"
+              className="project-name-pencil"
+              aria-label="녹음 프로젝트 이름 수정"
               title="이름 수정"
               disabled={working}
               onClick={() => setEditing(true)}
             >
-              {draft || selected.name}
-              {dirty ? ' *' : ''}
+              <ProjectPencilIcon />
             </button>
-          )
-        ) : (
-          <span />
-        )}
-        {editing && dirty && <span aria-label="저장하지 않은 변경사항">*</span>}
+          )}
+        </div>
       </div>
       <div className="daw-project-actions">
         <button disabled={!loaded || working} onClick={() => open('create')}>
@@ -554,7 +573,7 @@ export function BandDawProjects({
         <section className="track-studio">
           <header className="studio-heading">
             <div className="studio-heading-info">
-              <h2>{localOnly ? '녹음실' : '작업실'}</h2>
+              <PracticeSectionTitle title="녹음 프로젝트" />
             </div>
             <div className="studio-heading-actions">
               <button onClick={() => setLibraryOpen(true)}>클립 보관함</button>

@@ -925,9 +925,11 @@ test('triplets change three note durations, preserve subsequent bars, and toggle
     triplets.notes.slice(0, 3).map((note) => note.beats),
     [2 / 3, 2 / 3, 2 / 3],
   );
-  assert.equal(scoreMeasureDuration(triplets, 'Guitar', 0), 3);
+  assert.equal(scoreMeasureDuration(triplets, 'Guitar', 0), 4);
   assert.deepEqual(
-    scoreMeasures(triplets, 'Guitar').map((bar) => [...new Set(bar.map((f) => f.note.id))]),
+    scoreMeasures(triplets, 'Guitar').map((bar) => [
+      ...new Set(bar.filter((f) => !f.note.blank).map((f) => f.note.id)),
+    ]),
     [
       ['0', '1', '2', '3'],
       ['4', '5', '6', '7'],

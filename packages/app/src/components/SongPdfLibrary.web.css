@@ -16,6 +16,26 @@
   align-items: center;
   justify-content: center;
 }
+.song-pdf-dialog.song-pdf-embedded {
+  position: relative;
+  inset: auto;
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0;
+}
+.song-pdf-embedded .song-pdf-card {
+  box-sizing: border-box;
+  max-width: none;
+  max-height: none;
+  height: auto;
+  box-shadow: none;
+}
+.song-pdf-embedded .song-pdf-body {
+  overflow: visible;
+}
 .song-pdf-backdrop {
   position: absolute;
   inset: 0;
