@@ -1761,15 +1761,6 @@
   border-color: #c9d9cf;
   font-weight: 600;
 }
-.guitar-editor:not([data-tool-tab='settings']) .score-instrument-settings,
-.guitar-editor:not([data-tool-tab='settings']) .score-layout-settings,
-.guitar-editor:not([data-tool-tab='measures']) .score-document-settings,
-.guitar-editor:not([data-tool-tab='notes']) .score-connections,
-.guitar-editor:not([data-tool-tab='measures']) .score-measure-tools,
-.guitar-editor:not([data-tool-tab='notes']) .score-note-tools,
-.guitar-editor:not([data-tool-tab='notes']) .score-pitch-tools {
-  display: none;
-}
 .guitar-editor:not([data-tool-tab='measures'])
   .guitar-location
   > :not(.score-location-readout):not(.score-selection-info) {
@@ -2165,6 +2156,260 @@
 }
 .score-location-readout:empty {
   display: none;
+}
+/* Each palette owns its visibility; shared display rules must not reveal hidden tools. */
+.guitar-editor .score-detail-inspector [hidden] {
+  display: none !important;
+}
+.guitar-editor .score-palette-common .score-expanded-history {
+  display: flex !important;
+  position: static;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  margin-bottom: 6px;
+}
+.score-palette-common .score-expanded-history button {
+  width: 30px;
+  min-height: 28px;
+  padding: 0;
+}
+.score-palette-location {
+  display: block;
+  font-size: 11px;
+  color: #617483;
+}
+.score-technique-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.score-technique-instructions :is(.score-tone-field, .score-instruction-field) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.score-technique-instructions .score-tone-controls {
+  flex-wrap: wrap;
+}
+.score-chord-tools .score-document-chord {
+  width: 100%;
+  border: 0;
+  padding: 0;
+}
+.score-detail-inspector .score-tool-group-label {
+  display: block !important;
+  flex-basis: 100%;
+  grid-column: 1 / -1;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.score-palette-common .score-expanded-history span {
+  display: inline !important;
+  padding: 0;
+  background: transparent;
+  color: #526784;
+  font-size: 11px;
+}
+.score-detail-inspector .score-pitch-tools label {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+.score-detail-inspector .score-pitch-tools :is(select, input) {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.score-editor-viewport
+  .score-detail-inspector
+  :is(
+    .score-note-tools,
+    .score-expression-tools,
+    .score-expression-tools fieldset,
+    .score-expression-tools .guitar-inputbar
+  ) {
+  background: transparent !important;
+}
+.score-editor-viewport .score-detail-inspector .score-pitch-tools[data-fretted='true'] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 6px;
+}
+.score-pitch-tools[data-fretted='true'] > .score-tool-wrap {
+  min-width: 0;
+  width: auto;
+}
+.score-editor-viewport .score-pitch-tools[data-fretted='true'] > .score-tool-wrap > button {
+  padding: 5px;
+  white-space: nowrap;
+  justify-content: center;
+}
+.score-chord-tools .score-measure-chord-input {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  width: 100%;
+}
+.score-chord-tools .score-measure-chord-input input {
+  text-align: left;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.score-current-tone-host:empty {
+  display: none;
+}
+.score-tone-settings .score-tone-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.score-guitar-technique-tools > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.score-guitar-technique-tools .score-tool-icon {
+  font-size: 12px;
+}
+.score-guitar-technique-tools .score-guitar-technique-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+.score-guitar-technique-grid .score-tool-wrap,
+.score-guitar-technique-grid .score-tool-button {
+  width: 100%;
+}
+.score-guitar-technique-grid .score-tool-text {
+  display: inline;
+  font-size: 11px;
+}
+.score-guitar-technique-tools .score-bend-selectors {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+}
+.score-bend-selectors label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.score-bend-selectors select {
+  min-width: 0;
+  max-width: 130px;
+}
+.score-guitar-technique-tools .score-bend-graph {
+  width: 100%;
+  min-width: 0;
+}
+.score-bend-graph svg {
+  display: block;
+  user-select: none;
+}
+.score-bend-graph circle:focus-visible {
+  stroke: #dc8b2e;
+  stroke-width: 3px;
+  outline: none;
+}
+.score-tone-settings .score-tone-controls {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+.score-tone-settings .score-tone-controls select {
+  min-width: 0;
+  flex: 1;
+}
+.score-tone-settings .score-tone-clear {
+  flex: 0 0 28px;
+  width: 28px;
+  padding: 0;
+  font-size: 20px;
+}
+.score-editor-viewport .score-detail-inspector .score-beat-insert-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+.score-beat-insert-tools > .score-tool-wrap {
+  min-width: 0;
+  width: 100%;
+}
+.score-editor-viewport .score-beat-insert-tools .score-tool-button {
+  justify-content: center;
+  padding: 5px 2px;
+}
+.score-editor-viewport .score-beat-insert-tools .score-tool-text {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+.score-editor-viewport .score-detail-inspector .score-beat-insert-tools .score-tool-text {
+  display: block;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: normal;
+  flex-shrink: 0;
+  min-width: 0;
+}
+.score-editor-viewport .score-detail-inspector .score-beat-insert-tools .score-tool-button {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  padding: 5px 2px;
+  gap: 4px;
+}
+.score-editor-viewport[data-expanded='true'] .score-detail-inspector {
+  scrollbar-gutter: stable;
+}
+@media (max-width: 900px) {
+  .score-editor-viewport .score-detail-inspector .score-beat-insert-tools {
+    width: calc(100% + 20px);
+    margin-left: -10px;
+    margin-right: -10px;
+    box-sizing: border-box;
+  }
+  .score-editor-viewport .score-beat-insert-tools .score-tool-button {
+    flex-direction: column;
+  }
+  .score-editor-viewport .score-detail-inspector .score-beat-insert-tools .score-tool-button {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .score-editor-viewport .score-detail-inspector .score-beat-insert-tools .score-tool-text {
+    font-size: 10px;
+  }
+}
+.score-editor-viewport .score-tuning-control[data-fretted='true'] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(60px, 0.6fr);
+  align-items: end;
+}
+.score-editor-viewport .score-tuning-control[data-fretted='true'] > label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.score-tuning-control[data-fretted='true'] > [role='alert'] {
+  grid-column: 1 / -1;
 }
 .score-toolbar-help {
   position: relative;

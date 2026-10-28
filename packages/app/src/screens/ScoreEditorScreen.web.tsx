@@ -224,6 +224,7 @@ export function ScoreEditorScreen({
   const [playing, setPlaying] = useState(false);
   const [metronome, setMetronome] = useState(false);
   const [showBeatMarkers, setShowBeatMarkers] = useState(false);
+  const [instrumentControlsHost, setInstrumentControlsHost] = useState<HTMLDivElement | null>(null);
   const [transportHost, setTransportHost] = useState<HTMLDivElement | null>(null);
   const [playbackBeat, setPlaybackBeat] = useState<number | null>(null);
   const playbackPosition = useRef<ScorePlaybackPosition['current']>(null);
@@ -1616,6 +1617,7 @@ export function ScoreEditorScreen({
               />
             }
             onEnsembleChange={setEnsemble}
+            instrumentControlsHost={instrumentControlsHost}
             settings={
               <>
                 <div className="score-sound-settings" aria-label="음색과 내 악기 소리 설정">
@@ -1650,6 +1652,7 @@ export function ScoreEditorScreen({
                     }}
                   />
 
+                  <div ref={setInstrumentControlsHost} className="score-current-tone-host" />
                   <ScoreTuningControl
                     score={score}
                     part={part}

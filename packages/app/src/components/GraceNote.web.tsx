@@ -24,6 +24,7 @@ export function GraceNote({
   fifths,
   percussion = false,
   connectionHandled = false,
+  tabOnly = false,
 }: {
   note: ScoreNote;
   x: number;
@@ -38,13 +39,14 @@ export function GraceNote({
   fifths?: number;
   percussion?: boolean;
   connectionHandled?: boolean;
+  tabOnly?: boolean;
 }) {
   const tones = tabTones(note, tuning),
-    y = staffY(note.pitch, noteTones(note)[0]?.naturalPitch);
+    y = tabOnly ? 0 : staffY(note.pitch, noteTones(note)[0]?.naturalPitch);
   const selectedRow = percussion
     ? Math.max(1, scoreDrums.findIndex((drum) => drum.pitch === note.pitch) + 1)
     : (tones[0]?.string ?? 1);
-  const drumYs = percussion ? noteTones(note).map((tone) => staffY(tone.pitch)) : [y];
+  const drumYs = !tabOnly && percussion ? noteTones(note).map((tone) => staffY(tone.pitch)) : [y];
   const stemBottom = Math.max(...drumYs),
     stemTop = Math.min(...drumYs) - 21;
   const flags = [1, 0.5, 0.25, 0.125].filter((n) => writtenScoreBeats(note, 0) < n).length;
@@ -96,106 +98,111 @@ export function GraceNote({
       fill="currentColor"
       stroke="currentColor"
     >
-      <g
-        role="button"
-        tabIndex={0}
-        aria-label={`꾸밈음 ${note.id} 오선 음표`}
-        onClick={() => onSelect(selectedRow)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            onSelect(selectedRow);
-          }
-        }}
-      >
-        <rect
-          x={x - 14}
-          y={stemTop - 14}
-          width="22"
-          height={stemBottom - stemTop + 27}
-          fill="transparent"
-          stroke="none"
-        />
-        {noteTones(note).map((tone, i) => {
-          const at = staffY(tone.pitch, tone.naturalPitch),
-            alter = spellScoreTone(tone, fifths).alter;
-          const ledgers = [];
-          for (let line = 72; line >= at; line -= 10) ledgers.push(line);
-          if (!percussion) for (let line = 132; line <= at; line += 10) ledgers.push(line);
-          return (
-            <g
-              key={i}
-              style={percussion ? { pointerEvents: 'auto' } : undefined}
-              onClick={
-                percussion
-                  ? (event) => {
-                      event.stopPropagation();
-                      onSelect(
-                        Math.max(1, scoreDrums.findIndex((drum) => drum.pitch === tone.pitch) + 1),
-                      );
-                    }
-                  : undefined
-              }
-            >
-              {percussion && (
-                <rect
-                  x={x - 6}
-                  y={at - 5}
-                  width="12"
-                  height="10"
-                  fill="transparent"
-                  stroke="none"
-                />
-              )}
-              {ledgers.map((line) => (
-                <path key={line} d={`M${x - 6} ${line}h12`} strokeWidth="0.8" />
-              ))}
-              {!percussion && (
-                <text x={x - 7} y={at + 3} fontSize="9" textAnchor="end" stroke="none">
-                  {alter > 0 ? '♯' : alter < 0 ? '♭' : '♮'}
-                </text>
-              )}
-              {percussion ? (
-                <g transform={`translate(${x} ${at}) scale(0.65)`}>
-                  <DrumNotehead
-                    tone={tone}
-                    x={0}
-                    y={0}
-                    beats={0.5}
-                    stemEnd={(stemTop - at) / 0.65}
-                    color="currentColor"
+      {!tabOnly && (
+        <g
+          role="button"
+          tabIndex={0}
+          aria-label={`꾸밈음 ${note.id} 오선 음표`}
+          onClick={() => onSelect(selectedRow)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onSelect(selectedRow);
+            }
+          }}
+        >
+          <rect
+            x={x - 14}
+            y={stemTop - 14}
+            width="22"
+            height={stemBottom - stemTop + 27}
+            fill="transparent"
+            stroke="none"
+          />
+          {noteTones(note).map((tone, i) => {
+            const at = staffY(tone.pitch, tone.naturalPitch),
+              alter = spellScoreTone(tone, fifths).alter;
+            const ledgers = [];
+            for (let line = 72; line >= at; line -= 10) ledgers.push(line);
+            if (!percussion) for (let line = 132; line <= at; line += 10) ledgers.push(line);
+            return (
+              <g
+                key={i}
+                style={percussion ? { pointerEvents: 'auto' } : undefined}
+                onClick={
+                  percussion
+                    ? (event) => {
+                        event.stopPropagation();
+                        onSelect(
+                          Math.max(
+                            1,
+                            scoreDrums.findIndex((drum) => drum.pitch === tone.pitch) + 1,
+                          ),
+                        );
+                      }
+                    : undefined
+                }
+              >
+                {percussion && (
+                  <rect
+                    x={x - 6}
+                    y={at - 5}
+                    width="12"
+                    height="10"
+                    fill="transparent"
+                    stroke="none"
                   />
-                </g>
-              ) : tone.dead ? (
-                <path d={`M${x - 3} ${at - 3}l6 6m0 -6l-6 6`} strokeWidth="1.2" />
-              ) : (
-                <ellipse cx={x} cy={at} rx="3.2" ry="2.3" transform={`rotate(-18 ${x} ${at})`} />
-              )}
-              {tone.ghost && (
-                <text x={x} y={at + 3} fontSize="10" textAnchor="middle" stroke="none">
-                  {'(\u2002)'}
-                </text>
-              )}
-            </g>
-          );
-        })}
-        <path d={`M${x + 3} ${stemBottom}V${stemTop}m-7 14l10 -7`} fill="none" strokeWidth="1" />
-        <NoteFlags
-          x={x + 3}
-          y={stemTop}
-          count={flags}
-          direction={-1}
-          scale={0.65}
-          color="currentColor"
-        />
-        {note.staccato && <circle cx={x} cy={y + 8} r="1.2" />}
-        {note.accent && (
-          <text x={x} y={y - 27} fontSize="10" textAnchor="middle" stroke="none">
-            &gt;
-          </text>
-        )}
-        {connection(y, nextY)}
-      </g>
+                )}
+                {ledgers.map((line) => (
+                  <path key={line} d={`M${x - 6} ${line}h12`} strokeWidth="0.8" />
+                ))}
+                {!percussion && (
+                  <text x={x - 7} y={at + 3} fontSize="9" textAnchor="end" stroke="none">
+                    {alter > 0 ? '♯' : alter < 0 ? '♭' : '♮'}
+                  </text>
+                )}
+                {percussion ? (
+                  <g transform={`translate(${x} ${at}) scale(0.65)`}>
+                    <DrumNotehead
+                      tone={tone}
+                      x={0}
+                      y={0}
+                      beats={0.5}
+                      stemEnd={(stemTop - at) / 0.65}
+                      color="currentColor"
+                    />
+                  </g>
+                ) : tone.dead ? (
+                  <path d={`M${x - 3} ${at - 3}l6 6m0 -6l-6 6`} strokeWidth="1.2" />
+                ) : (
+                  <ellipse cx={x} cy={at} rx="3.2" ry="2.3" transform={`rotate(-18 ${x} ${at})`} />
+                )}
+                {tone.ghost && (
+                  <text x={x} y={at + 3} fontSize="10" textAnchor="middle" stroke="none">
+                    {'(\u2002)'}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+          <path d={`M${x + 3} ${stemBottom}V${stemTop}m-7 14l10 -7`} fill="none" strokeWidth="1" />
+          <NoteFlags
+            x={x + 3}
+            y={stemTop}
+            count={flags}
+            direction={-1}
+            scale={0.65}
+            color="currentColor"
+          />
+          {note.staccato && <circle cx={x} cy={y + 8} r="1.2" />}
+          {note.accent && (
+            <text x={x} y={y - 27} fontSize="10" textAnchor="middle" stroke="none">
+              &gt;
+            </text>
+          )}
+          {connection(y, nextY)}
+        </g>
+      )}
       {tabTop !== undefined &&
         tones
           .filter((t) => t.string)

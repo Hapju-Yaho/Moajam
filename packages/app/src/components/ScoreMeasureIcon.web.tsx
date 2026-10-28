@@ -2,7 +2,18 @@ export function ScoreMeasureIcon({
   name,
 }: {
   name:
-    'beat' | 'fill' | 'append' | 'insert' | 'delete' | 'end' | 'up' | 'down' | 'reset' | 'settings';
+    | 'beat'
+    | 'beat-before'
+    | 'beat-after'
+    | 'fill'
+    | 'append'
+    | 'insert'
+    | 'delete'
+    | 'end'
+    | 'up'
+    | 'down'
+    | 'reset'
+    | 'settings';
 }) {
   return (
     <svg
@@ -18,6 +29,13 @@ export function ScoreMeasureIcon({
         <>
           <path d="M9 17V4M15 9h7M18.5 5.5v7" />
           <ellipse cx="6" cy="17" rx="3" ry="2" fill="currentColor" />
+        </>
+      )}
+      {(name === 'beat-before' || name === 'beat-after') && (
+        <>
+          <path d="M14 17V4" />
+          <ellipse cx="11" cy="17" rx="3" ry="2" fill="currentColor" />
+          <path d={name === 'beat-before' ? 'M1 8h6M4 5v6' : 'M17 8h6M20 5v6'} />
         </>
       )}
       {name === 'fill' && (

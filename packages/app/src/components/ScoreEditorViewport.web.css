@@ -582,11 +582,6 @@
   border-left: 1px solid #e1e7f0;
   z-index: 10;
 }
-.score-editor-viewport[data-expanded='true']:not([data-inspector='settings'])
-  .score-editor-backing-settings,
-.score-editor-viewport[data-expanded='true'][data-inspector='settings'] .score-detail-inspector {
-  display: none;
-}
 .score-editor-viewport[data-expanded='true'] .score-detail-inspector > div {
   background: white;
   padding: 14px 0;

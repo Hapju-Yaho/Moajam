@@ -1,4 +1,5 @@
 import { validNaturalPitch } from './score';
+import { validGuitarTechniques } from './scoreGuitarTechniques';
 import { readGuitarToneChanges } from './scoreGuitar';
 import {
   isScoreBeat,
@@ -51,6 +52,7 @@ function boolean(value: unknown): boolean {
 }
 function tone(value: unknown): ScoreTone {
   const row = record(value);
+  if (!validGuitarTechniques(row)) throw invalid();
   if (row.naturalPitch !== undefined && !validNaturalPitch(Number(row.pitch), row.naturalPitch))
     throw invalid();
   if (row.drumTechnique !== undefined && !validDrumTechnique(Number(row.pitch), row.drumTechnique))
@@ -65,6 +67,11 @@ function tone(value: unknown): ScoreTone {
     ...(row.fret === undefined ? {} : { fret: integer(row.fret, 0, 36) }),
     ...(row.ghost === undefined ? {} : { ghost: boolean(row.ghost) }),
     ...(row.dead === undefined ? {} : { dead: boolean(row.dead) }),
+    ...(row.bend === undefined
+      ? {}
+      : { bend: { ...(row.bend as NonNullable<ScoreTone['bend']>) } }),
+    ...(row.harmonic === undefined ? {} : { harmonic: row.harmonic as ScoreTone['harmonic'] }),
+    ...(row.palmMute === undefined ? {} : { palmMute: boolean(row.palmMute) }),
   };
 }
 function map<T>(

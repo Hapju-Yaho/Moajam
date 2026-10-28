@@ -1,7 +1,7 @@
 import './ScoreEditorViewport.web.css';
 import { createContext, useContext } from 'react';
 
-export type ScoreInspectorTab = 'notes' | 'measures' | 'settings';
+export type ScoreInspectorTab = 'notes' | 'measures' | 'score' | 'settings';
 export const ScoreEditorLayoutContext = createContext({
   mixerHost: null as HTMLDivElement | null,
   projectActionsOpen: false,

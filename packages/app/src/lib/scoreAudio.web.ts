@@ -1,4 +1,42 @@
 import { keyboardPlaybackScore } from './scoreTuning';
+import {
+  guitarBendOffset,
+  guitarHarmonicShift,
+  type GuitarTechniqueFields,
+} from './scoreGuitarTechniques';
+
+function guitarPitchCurve(
+  param: AudioParam,
+  base: number,
+  tone: GuitarTechniqueFields,
+  start: number,
+  duration: number,
+  elapsed: number,
+  beats: number,
+) {
+  const total = Math.max(0.001, duration + elapsed);
+  const value = (progress: number) =>
+    base * Math.pow(2, guitarBendOffset(tone, progress, beats) / 12);
+  param.setValueAtTime(value(elapsed / total), start);
+  if (tone.bend)
+    for (const progress of [
+      ...new Set([
+        0.45,
+        0.6,
+        0.8,
+        1,
+        ...[tone.bend.bendStart, tone.bend.bendEnd, tone.bend.releaseStart, tone.bend.releaseEnd]
+          .filter((v): v is number => v !== undefined)
+          .map((v) => v / beats),
+      ]),
+    ]
+      .filter((v) => v >= 0 && v <= 1)
+      .sort((a, b) => a - b)) {
+      const offset = progress * total - elapsed;
+      if (offset > 0)
+        param.linearRampToValueAtTime(value(progress), start + Math.min(duration, offset));
+    }
+}
 import { drumStrikes } from './scoreExpression';
 import { createGuitarToneRoute } from './guitarTone.web';
 import {
@@ -103,9 +141,15 @@ export function scheduleScoreNote(
     note.beats * (note.staccato ? 0.45 : 1) - (note.beats - remainingBeats),
   );
   if (!tones.length || !soundBeats) return;
-  const duration = (soundBeats * 60) / bpm;
+  const fullDuration = (soundBeats * 60) / bpm;
   for (const tone of tones) {
-    const sample = instrument ? playbackSample(instrument, tone.pitch) : undefined;
+    const elapsedSeconds = ((note.beats - remainingBeats) * 60) / bpm;
+    const duration = tone.palmMute
+      ? Math.min(fullDuration, Math.max(0, 0.16 - elapsedSeconds))
+      : fullDuration;
+    if (!duration) continue;
+    const soundingPitch = tone.pitch + guitarHarmonicShift(tone);
+    const sample = instrument ? playbackSample(instrument, soundingPitch) : undefined;
     if (
       sample?.percussion &&
       ['double', 'buzz', 'flam', 'drag', 'roll2', 'roll3'].includes(tone.drumTechnique ?? '')
@@ -150,7 +194,7 @@ export function scheduleScoreNote(
         tailLimitSeconds,
       );
     const expressionGain = (note.playbackGain ?? 1) * (note.marcato ? 1.4 : 1);
-    const short = note.staccato || tone.drumTechnique === 'choke';
+    const short = note.staccato || tone.palmMute || tone.drumTechnique === 'choke';
     const toneDuration =
       tone.drumTechnique === 'choke'
         ? (Math.max(0, note.beats * 0.45 - (note.beats - remainingBeats)) * 60) / bpm
@@ -201,12 +245,20 @@ export function scheduleScoreNote(
       Math.sqrt(voiceCount);
 
     if (sample) {
-      const rate = samplePlaybackRate(tone.pitch, sample.rootMidi);
+      const rate = samplePlaybackRate(soundingPitch, sample.rootMidi);
       const offset = sampleOffset(sample, ((note.beats - remainingBeats) * 60 * rate) / bpm);
       if (offset === null) continue;
       const source = createSampleVoice(context, sample);
       const gain = context.createGain();
-      source.playbackRate.value = rate;
+      guitarPitchCurve(
+        source.playbackRate,
+        rate,
+        tone,
+        start,
+        duration,
+        elapsedSeconds,
+        note.beats,
+      );
       let audible = sample.sustain
         ? duration
         : Math.min(
@@ -240,10 +292,22 @@ export function scheduleScoreNote(
       gain.gain.setValueAtTime(amplitude, start + audible - Math.min(0.025, audible / 4));
       gain.gain.linearRampToValueAtTime(0, start + audible);
       let filter: BiquadFilterNode | undefined;
-      if (implement === 'brushes' || implement === 'mallets') {
+      if (tone.palmMute || tone.harmonic || implement === 'brushes' || implement === 'mallets') {
         filter = context.createBiquadFilter();
-        filter.type = implement === 'brushes' ? 'highpass' : 'lowpass';
-        filter.frequency.value = implement === 'brushes' ? 700 : 1100;
+        filter.type =
+          tone.harmonic === 'pinch' && !tone.palmMute
+            ? 'highshelf'
+            : implement === 'brushes'
+              ? 'highpass'
+              : 'lowpass';
+        filter.frequency.value = tone.palmMute
+          ? 900
+          : tone.harmonic
+            ? 440 * Math.pow(2, (soundingPitch - 69) / 12) * 2.5
+            : implement === 'brushes'
+              ? 700
+              : 1100;
+        if (tone.harmonic === 'pinch') filter.gain.value = 4;
         source.connect(filter).connect(gain).connect(destination);
       } else source.connect(gain).connect(destination);
       source.start(start, offset);
@@ -257,8 +321,17 @@ export function scheduleScoreNote(
     }
     const oscillator = context.createOscillator();
     const gain = context.createGain();
-    oscillator.type = 'triangle';
-    oscillator.frequency.value = 440 * Math.pow(2, (tone.pitch - 69) / 12);
+    oscillator.type =
+      tone.harmonic === 'natural' ? 'sine' : tone.harmonic === 'pinch' ? 'sawtooth' : 'triangle';
+    guitarPitchCurve(
+      oscillator.frequency,
+      440 * Math.pow(2, (soundingPitch - 69) / 12),
+      tone,
+      start,
+      duration,
+      elapsedSeconds,
+      note.beats,
+    );
     // Keep a clear body through the note instead of fading almost to silence
     // immediately. The old envelope made bass notes especially hard to hear.
     gain.gain.setValueAtTime(0, start);

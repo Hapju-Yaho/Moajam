@@ -264,6 +264,34 @@ export function BandScoreProjects(
           <strong>악보 프로젝트</strong>
         )}
       </div>
+      {active && actions?.expanded && (
+        <button
+          type="button"
+          className="score-project-quick-save"
+          aria-label={props.personal ? '이 기기에 저장' : '서버에 저장'}
+          title={props.personal ? '이 기기에 저장' : '서버에 저장'}
+          disabled={locked || !dirty || !name.trim()}
+          onClick={() =>
+            void run(async () => {
+              await editor.current?.save();
+            })
+          }
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 3h13l4 4v14H3V3h1Z" />
+            <path d="M7 3v6h9V3M7 21v-8h10v8M13 4v3" />
+          </svg>
+        </button>
+      )}
       {active && (
         <button
           className="score-project-actions-toggle"

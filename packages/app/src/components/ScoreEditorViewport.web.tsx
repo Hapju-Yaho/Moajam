@@ -59,6 +59,7 @@ const shortcuts = [
   ],
 ] as const;
 export type ScoreViewActions = {
+  expanded?: boolean;
   shortcuts: ReactNode;
   edit: ReactNode;
   file: ReactNode;
@@ -246,6 +247,7 @@ export function ScoreEditorViewport({
                   file: fileButton,
                   toggleMenu: () => setProjectActionsOpen((value) => !value),
                   menuOpen: projectActionsOpen,
+                  expanded,
                 })
               : projectBar}
             <div className="score-project-mixer-area">

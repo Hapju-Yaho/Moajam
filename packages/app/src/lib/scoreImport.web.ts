@@ -1,4 +1,5 @@
 import { clientId } from './clientId';
+import { validGuitarTechniques, type GuitarTechniqueFields } from './scoreGuitarTechniques';
 import { readNoteExpression, readScoreDirections, readScoreNavigation } from './scoreExpression';
 import { readGuitarToneChanges } from './scoreGuitar';
 import {
@@ -424,6 +425,20 @@ export function scoreFromMusicXml(text: string, makeId = () => clientId()): Scor
           ghost: !rest && node.querySelector('notehead')?.getAttribute('parentheses') === 'yes',
           dead: !rest && !unpitched && node.querySelector('notehead')?.textContent?.trim() === 'x',
         };
+        const guitarData = [...node.querySelectorAll('technical other-technical')].find((n) =>
+          n.textContent?.startsWith('moajam-guitar:'),
+        )?.textContent;
+        if (guitarData) {
+          const guitar: GuitarTechniqueFields = JSON.parse(
+            guitarData.slice('moajam-guitar:'.length),
+          );
+          if (!validGuitarTechniques(guitar)) throw invalid();
+          Object.assign(tone, {
+            bend: guitar.bend,
+            harmonic: guitar.harmonic,
+            palmMute: guitar.palmMute,
+          });
+        }
         if (unpitched) {
           const technique = node.querySelector('technical half-muted')
             ? 'half-open'
