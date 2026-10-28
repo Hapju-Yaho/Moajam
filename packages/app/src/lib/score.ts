@@ -2310,7 +2310,9 @@ export function setScoreArticulation(
   const chosen = new Set(ids);
   const targets = score.notes.filter((note) => chosen.has(note.id) && !note.rest && !note.blank);
   if (!targets.length) return score;
-  const enabled = !targets.every((note) => note[key]);
+  const enabled = !targets.every((note) =>
+    key === 'dead' || key === 'ghost' ? noteTones(note).every((tone) => tone[key]) : note[key],
+  );
   return {
     ...score,
     notes: score.notes.map((note) =>
@@ -2324,6 +2326,7 @@ export function setScoreArticulation(
                   tones: noteTones(note).map((tone) => ({
                     ...tone,
                     [key]: enabled,
+                    ...(key === 'dead' && enabled ? { harmonic: undefined, bend: undefined } : {}),
                     [key === 'dead' ? 'ghost' : 'dead']: false,
                   })),
                 }
@@ -2383,6 +2386,63 @@ export function setScoreToneArticulation(
       };
     }),
   });
+}
+
+export function canSetScoreNaturalHarmonics(score: Score, ids: string[]): boolean {
+  const notes = score.notes.filter((n) => ids.includes(n.id) && !n.rest && !n.blank);
+  if (!notes.length) return false;
+  const tones = notes.flatMap((n) => tabTones(n, scoreInstrument(score, n.part).tuning));
+  if (
+    !tones.length ||
+    tones.some(
+      (t) => !t.string || !supportsNaturalHarmonic(t.fret) || t.fret !== tones[0].fret || t.bend,
+    )
+  )
+    return false;
+  if (
+    notes.some(
+      (n) =>
+        !scoreInstrument(score, n.part).tuning.length ||
+        scoreInstrument(score, n.part).id.startsWith('bass'),
+    )
+  )
+    return false;
+  if (notes.length === 1) return true;
+  const unit = 4 / scoreTimeSignature(score).beatType;
+  const positions = notes.map((n) => {
+    const rows = score.notes.filter((r) => r.part === n.part);
+    const start = rows.slice(0, rows.indexOf(n)).reduce((sum, r) => sum + r.beats, 0);
+    return { start, end: start + (n.graceBeats === undefined ? n.beats : 0) };
+  });
+  const beat = Math.floor((positions[0].start + 1e-7) / unit);
+  return positions.every((p) => p.start >= beat * unit - 1e-7 && p.end <= (beat + 1) * unit + 1e-7);
+}
+export function setScoreNaturalHarmonics(score: Score, ids: string[], enabled: boolean): Score {
+  if (enabled && !canSetScoreNaturalHarmonics(score, ids))
+    throw new Error('같은 박 안의 같은 프렛을 선택해주세요.');
+  let result = {
+    ...score,
+    notes: score.notes.map((n) =>
+      ids.includes(n.id)
+        ? {
+            ...n,
+            dead: false,
+            ghost: false,
+            tones: tabTones(n, scoreInstrument(score, n.part).tuning).map((t) => ({
+              ...t,
+              dead: false,
+              ghost: false,
+            })),
+          }
+        : n,
+    ),
+  };
+  for (const n of result.notes.filter((n) => ids.includes(n.id) && !n.rest && !n.blank))
+    for (const t of tabTones(n, scoreInstrument(result, n.part).tuning))
+      result = setScoreGuitarTechnique(result, [n.id], t.string!, {
+        harmonic: enabled ? 'natural' : undefined,
+      });
+  return result;
 }
 
 export function setScoreGuitarTechnique(

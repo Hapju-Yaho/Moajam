@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { GuitarTechniqueFields } from '../lib/scoreGuitarTechniques';
 
 type Bend = NonNullable<GuitarTechniqueFields['bend']>;
@@ -16,6 +16,7 @@ export function ScoreBendGraph({
   onChange: (bend: Bend) => void;
 }) {
   const [draft, setDraft] = useState<Bend | null>(null);
+  const dragOffset = useRef(0);
   const current = draft ?? bend;
   const pre = current.kind.startsWith('prebend');
   const release = current.kind.includes('release');
@@ -44,6 +45,25 @@ export function ScoreBendGraph({
         ]
       : []),
   ];
+  // Separate overlapping handles visually without changing the stored beat positions.
+  const handleX = new Map<Handle, number>();
+  for (const height of [...new Set(points.map((point) => point.height))]) {
+    const sorted = points
+      .filter((point) => point.height === height)
+      .sort((a, b) => a.beat - b.beat);
+    for (let i = 0; i < sorted.length;) {
+      let end = i + 1;
+      while (end < sorted.length && x(sorted[end].beat) - x(sorted[end - 1].beat) < 14) end++;
+      const group = sorted.slice(i, end),
+        span = (group.length - 1) * 14;
+      const left = Math.max(
+        34,
+        Math.min(260 - span, (x(group[0].beat) + x(group[group.length - 1].beat) - span) / 2),
+      );
+      group.forEach((point, index) => handleX.set(point.key, left + index * 14));
+      i = end;
+    }
+  }
   // Display-only curves: the stored timing and audio interpolation stay unchanged.
   const curve = (from: number, to: number, fromHeight: number, toHeight: number) => {
     const right = x(to);
@@ -65,9 +85,10 @@ export function ScoreBendGraph({
     if (key !== 'height') {
       let at = Math.max(0, Math.min(beats, Math.round(beat / gap) * gap));
       if (key === 'bendStart') at = Math.min(at, end - gap);
-      if (key === 'bendEnd') at = Math.max(start + gap, Math.min(at, release ? fall : beats));
+      if (key === 'bendEnd')
+        at = Math.min(beats, Math.max(start + gap, Math.min(at, release ? fall : beats)));
       if (key === 'releaseStart') at = Math.max(pre ? 0 : end, Math.min(at, finish - gap));
-      if (key === 'releaseEnd') at = Math.max(fall + gap, at);
+      if (key === 'releaseEnd') at = Math.min(beats, Math.max(fall + gap, at));
       next[key] = Number(at.toFixed(6));
       if (!pre) {
         next.bendStart ??= start;
@@ -117,7 +138,7 @@ export function ScoreBendGraph({
         {points.map((point) => (
           <circle
             key={point.key}
-            cx={x(point.beat)}
+            cx={handleX.get(point.key)}
             cy={y(point.height)}
             r={6}
             fill="#426b53"
@@ -130,6 +151,7 @@ export function ScoreBendGraph({
             onPointerDown={(event) => {
               if (disabled) return;
               event.preventDefault();
+              dragOffset.current = (handleX.get(point.key) ?? x(point.beat)) - x(point.beat);
               event.currentTarget.setPointerCapture(event.pointerId);
               setDraft({ ...bend });
             }}
@@ -141,7 +163,13 @@ export function ScoreBendGraph({
               const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(
                 matrix.inverse(),
               );
-              setDraft(update(point.key, ((p.x - 34) / 226) * beats, (130 - p.y) / 25));
+              setDraft(
+                update(
+                  point.key,
+                  ((p.x - dragOffset.current - 34) / 226) * beats,
+                  (130 - p.y) / 25,
+                ),
+              );
             }}
             onPointerUp={(event) => {
               if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;

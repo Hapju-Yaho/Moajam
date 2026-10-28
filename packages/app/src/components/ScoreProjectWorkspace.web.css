@@ -220,7 +220,8 @@
   border-radius: 8px;
 }
 .score-editor-viewport .score-page {
-  background: #fffcf4;
+  --score-paper-color: #fffcf4;
+  background: var(--score-paper-color);
   color: #263c33;
 }
 .score-editor-viewport:not([data-expanded='true']) .score-file-actions,

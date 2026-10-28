@@ -806,7 +806,8 @@
   min-height: 420px;
 }
 .score-page {
-  background: #fffefb;
+  --score-paper-color: #fffefb;
+  background: var(--score-paper-color);
   box-shadow: 0 2px 9px #263c3410;
   border: 1px solid #e1e5df;
   padding: 25px 20px;

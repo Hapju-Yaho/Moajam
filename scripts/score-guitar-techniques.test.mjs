@@ -250,3 +250,29 @@ test('shortening a note clamps clipped bend and release points to its new end', 
     bend,
   );
 });
+
+test('region ghost toggles every string and same-beat same-fret selection converts to natural harmonics', () => {
+  const score = base();
+  score.notes[0].beats = 0.5;
+  score.notes.push({ ...score.notes[0], id: 'b', tones: [{ pitch: 60, string: 3, fret: 5 }] });
+  const ids = ['a', 'b'];
+  const dead = model.setScoreArticulation(score, ids, 'dead');
+  assert.ok(dead.notes.every((n) => n.tones.every((t) => t.dead)));
+  assert.ok(
+    model.setScoreArticulation(dead, ids, 'dead').notes.every((n) => n.tones.every((t) => !t.dead)),
+  );
+  assert.equal(model.canSetScoreNaturalHarmonics(dead, ids), true);
+  const natural = model.setScoreNaturalHarmonics(dead, ids, true);
+  assert.ok(natural.notes.every((n) => n.tones.every((t) => t.harmonic === 'natural' && !t.dead)));
+  const different = base();
+  different.notes[0].beats = 0.5;
+  different.notes.push({
+    ...different.notes[0],
+    id: 'b',
+    tones: [{ pitch: 61, string: 3, fret: 6 }],
+  });
+  assert.equal(model.canSetScoreNaturalHarmonics(different, ids), false);
+  assert.throws(() => model.setScoreNaturalHarmonics(different, ids, true));
+  score.notes[0].beats = 1;
+  assert.equal(model.canSetScoreNaturalHarmonics(score, ids), false);
+});

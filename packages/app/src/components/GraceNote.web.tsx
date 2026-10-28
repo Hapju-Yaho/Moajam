@@ -8,7 +8,7 @@ import {
 } from '../lib/score';
 import { NoteFlags } from './NoteFlags.web';
 import { DrumNotehead } from './DrumNotehead.web';
-import { scoreConnectionArc } from '../lib/scoreLayout';
+import { scoreConnectionArc, scoreTabLabel } from '../lib/scoreLayout';
 
 export function GraceNote({
   note,
@@ -25,6 +25,7 @@ export function GraceNote({
   percussion = false,
   connectionHandled = false,
   tabOnly = false,
+  tabSpacing = 20,
 }: {
   note: ScoreNote;
   x: number;
@@ -40,6 +41,7 @@ export function GraceNote({
   percussion?: boolean;
   connectionHandled?: boolean;
   tabOnly?: boolean;
+  tabSpacing?: number;
 }) {
   const tones = tabTones(note, tuning),
     y = tabOnly ? 0 : staffY(note.pitch, noteTones(note)[0]?.naturalPitch);
@@ -207,7 +209,7 @@ export function GraceNote({
         tones
           .filter((t) => t.string)
           .map((tone) => {
-            const at = tabTop + (tone.string! - 1) * 20;
+            const at = tabTop + (tone.string! - 1) * tabSpacing;
             return (
               <g
                 key={tone.string}
@@ -244,17 +246,21 @@ export function GraceNote({
                   y={at + 3}
                   fontSize="9"
                   textAnchor="middle"
-                  stroke="#fffefb"
+                  stroke="var(--score-paper-color, #fffefb)"
                   strokeWidth="3"
                   paintOrder="stroke"
                 >
-                  {tone.dead ? 'X' : tone.ghost ? `(${tone.fret})` : tone.fret}
+                  {
+                    scoreTabLabel(tone.fret, tone.dead, tone.ghost, tone.harmonic === 'natural')
+                      .label
+                  }
                 </text>
                 {note.staccato && <circle cx={x} cy={at + 31} r="1.2" />}
                 {connection(
                   at,
                   tabTop +
-                    ((tabTones(nextNote ?? note, tuning)[0]?.string ?? tone.string!) - 1) * 20,
+                    ((tabTones(nextNote ?? note, tuning)[0]?.string ?? tone.string!) - 1) *
+                      tabSpacing,
                   true,
                 )}
               </g>

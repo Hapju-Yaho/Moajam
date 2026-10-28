@@ -1,8 +1,14 @@
 export const scoreBeatX = (offset: number, width: number) => 24 + (offset / 4) * (width - 40);
 
 // Match the 12px semibold TAB label, including its small staff-line knockout.
-export function scoreTabLabel(fret: number | undefined, dead = false, parenthesized = false) {
-  const label = dead ? 'X' : parenthesized ? `(${fret})` : String(fret ?? '');
+export function scoreTabLabel(
+  fret: number | undefined,
+  dead = false,
+  parenthesized = false,
+  naturalHarmonic = false,
+) {
+  const base = naturalHarmonic ? `<${fret ?? ''}>` : String(fret ?? '');
+  const label = dead ? 'X' : parenthesized ? `(${base})` : base;
   const width = [...label].reduce((sum, char) => sum + (char === '(' || char === ')' ? 4 : 7), 0);
   return { label, halfWidth: width / 2 + 1.5 };
 }

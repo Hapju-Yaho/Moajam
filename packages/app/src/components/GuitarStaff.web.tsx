@@ -1,3 +1,4 @@
+import { scoreBeatSelectionGroups } from '../lib/scoreSelection';
 import { drumStemLength } from '../lib/drumStroke';
 import { GuitarTechniqueMarks } from './GuitarTechniqueMarks.web';
 import { drumMeasureComplete } from '../lib/scoreDrumEntry';
@@ -114,7 +115,7 @@ function graceOffset(
     0,
     ...(hasTab && destination
       ? tabTones(destination, tuning).map(
-          (t) => scoreTabLabel(t.fret, t.dead, t.ghost).halfWidth - 8.5,
+          (t) => scoreTabLabel(t.fret, t.dead, t.ghost, t.harmonic === 'natural').halfWidth - 8.5,
         )
       : []),
     ...(destination
@@ -311,6 +312,7 @@ export function GuitarStaff({
   const tuning = instrument.tuning;
   const hasTab = showTab && tuning.length > 0;
   const renderStaff = !(tabOnly && hasTab);
+  const tabSpacing = renderStaff ? 20 : 16;
   const chordPositions = indexed.chords.get(part) ?? {};
   const connectedNotes = score.notes.filter(
     (n) =>
@@ -420,6 +422,7 @@ export function GuitarStaff({
       ref={systems}
       className="score-systems"
       style={{
+        userSelect: editable ? 'none' : undefined,
         gap: ((score.systemGap ?? 14) * zoom) / 100,
         opacity:
           score.keyboardStaves?.[scorePartOwner(score, part)] &&
@@ -431,13 +434,15 @@ export function GuitarStaff({
       }}
       data-layout-width={systemWidth / (zoom / 100)}
       aria-label={`${part} ${renderStaff ? `오선보${hasTab ? '와 TAB' : ''}` : 'TAB'}`}
-      onPointerDown={(event) => {
+      onDragStart={(event) => event.preventDefault()}
+      onPointerDownCapture={(event) => {
         suppressClick.current = false;
         if (!editable || event.button !== 0 || event.pointerType === 'touch') return;
+        event.preventDefault();
         const id = (event.target as Element)
           .closest('[data-score-note]')
           ?.getAttribute('data-score-note');
-        if (id && indexed.notes.get(id)?.part !== part) return;
+        if (id && ![...(drumPair ?? [part])].includes(indexed.notes.get(id)?.part ?? '')) return;
         drag.current = {
           anchor: id ?? '',
           end: id ?? '',
@@ -446,7 +451,7 @@ export function GuitarStaff({
           moved: false,
         };
       }}
-      onPointerMove={(event) => {
+      onPointerMoveCapture={(event) => {
         const current = drag.current;
         if (event.buttons !== 1) {
           setSelectionBox(null);
@@ -466,17 +471,19 @@ export function GuitarStaff({
         setSelectionBox(rect);
         const ids = new Set<string>();
         systems.current
-          ?.querySelectorAll<SVGGraphicsElement>('[data-selection-note]')
+          ?.querySelectorAll<SVGGraphicsElement>('[data-selection-beat]')
           .forEach((element) => {
             const bounds = element.getBoundingClientRect();
             if (
-              bounds.left >= rect.left &&
-              bounds.right <= rect.left + rect.width &&
-              bounds.top >= rect.top &&
-              bounds.bottom <= rect.top + rect.height
+              (bounds.left + bounds.right) / 2 >= rect.left &&
+              (bounds.left + bounds.right) / 2 <= rect.left + rect.width &&
+              bounds.top < rect.top + rect.height &&
+              bounds.bottom > rect.top
             ) {
-              const id = element.getAttribute('data-selection-note');
-              if (id) ids.add(id);
+              for (const id of JSON.parse(
+                element.getAttribute('data-selection-beat') ?? '[]',
+              ) as string[])
+                ids.add(id);
             }
           });
         onBoxSelect?.([...ids]);
@@ -532,13 +539,14 @@ export function GuitarStaff({
         createPortal(
           <div
             aria-hidden="true"
+            data-score-selection-box="true"
             style={{
               position: 'fixed',
               ...selectionBox,
-              border: '1px solid #397dd9',
+              border: '2px solid #397dd9',
               background: '#397dd926',
               pointerEvents: 'none',
-              zIndex: 10000,
+              zIndex: 2147483000,
               boxSizing: 'border-box',
             }}
           />,
@@ -639,6 +647,7 @@ export function GuitarStaff({
                               tone.fret,
                               tone.dead,
                               !!tone.ghost || continued || tieTargets.has(note.id),
+                              tone.harmonic === 'natural',
                             ).halfWidth,
                         ),
                       )
@@ -851,7 +860,7 @@ export function GuitarStaff({
         // the room actually needed below the last TAB line (stems, grace links,
         // tuplets and lyrics), then add the user's gap outside the SVG.
         const hasLyrics = bars.some(({ fragments }) => fragments.some(({ note }) => !!note.lyric));
-        const tabBottom = tabTop + (tuning.length - 1) * 20;
+        const tabBottom = tabTop + (tuning.length - 1) * tabSpacing;
         const tabInkBottom = hasTab
           ? Math.max(
               tabBottom + 4,
@@ -863,7 +872,7 @@ export function GuitarStaff({
                   return [
                     ...(note.tuplet ? [tabBottom + 30] : []),
                     ...tabTones(note, tuning).map((tone) => {
-                      const y = tabTop + ((tone.string ?? 1) - 1) * 20;
+                      const y = tabTop + ((tone.string ?? 1) - 1) * tabSpacing;
                       return (
                         y +
                         (note.graceBeats !== undefined
@@ -1014,12 +1023,12 @@ export function GuitarStaff({
                       <line
                         x1="45"
                         x2={drawingWidth - 1}
-                        y1={tabTop + i * 20}
-                        y2={tabTop + i * 20}
+                        y1={tabTop + i * tabSpacing}
+                        y2={tabTop + i * tabSpacing}
                         stroke="#9aa49f"
                         strokeWidth=".8"
                       />
-                      <text x="31" y={tabTop + i * 20 + 4} fontSize="10" fill="#82908c">
+                      <text x="31" y={tabTop + i * tabSpacing + 4} fontSize="10" fill="#82908c">
                         {pitchName(open).replace(/\d/g, '')}
                       </text>
                     </g>
@@ -1149,7 +1158,10 @@ export function GuitarStaff({
                       hasTab && point.y >= tabTop - 12
                         ? Math.max(
                             1,
-                            Math.min(tuning.length, Math.round((point.y - tabTop) / 20) + 1),
+                            Math.min(
+                              tuning.length,
+                              Math.round((point.y - tabTop) / tabSpacing) + 1,
+                            ),
                           )
                         : isDrums
                           ? scoreDrums.findIndex((drum) => drum.pitch === pitch) + 1
@@ -1190,6 +1202,28 @@ export function GuitarStaff({
                       data-playback-end={endBeat}
                       data-playback-measure="true"
                     >
+                      {editable &&
+                        scoreBeatSelectionGroups(fragments, barBeats, 4 / meter.beatType).flatMap(
+                          (group) => {
+                            if (!group.ids.length) return [];
+                            const surfaces = [
+                              ...(renderStaff ? [{ top: 82, bottom: 122 }] : []),
+                              ...(hasTab ? [{ top: tabTop - 8, bottom: tabBottom + 8 }] : []),
+                            ];
+                            return surfaces.map((surface, index) => (
+                              <rect
+                                key={`beat-select/${group.offset}/${index}`}
+                                data-selection-beat={JSON.stringify(group.ids)}
+                                x={xAt(group.offset) - 0.5}
+                                y={surface.top}
+                                width={1}
+                                height={surface.bottom - surface.top}
+                                fill="none"
+                                pointerEvents="none"
+                              />
+                            ));
+                          },
+                        )}
                       {showBeatMarkers && (
                         <g
                           aria-label="마디 박자 표시"
@@ -1330,7 +1364,7 @@ export function GuitarStaff({
                                     {
                                       id: 'tab',
                                       top: tabTop,
-                                      bottom: tabTop + (tuning.length - 1) * 20,
+                                      bottom: tabTop + (tuning.length - 1) * tabSpacing,
                                     },
                                   ]
                                 : []),
@@ -1372,7 +1406,7 @@ export function GuitarStaff({
                           {[
                             ...(renderStaff ? [{ top: 82, bottom: 122 }] : []),
                             ...(hasTab
-                              ? [{ top: tabTop, bottom: tabTop + (tuning.length - 1) * 20 }]
+                              ? [{ top: tabTop, bottom: tabTop + (tuning.length - 1) * tabSpacing }]
                               : []),
                           ].map((surface, i) => (
                             <g
@@ -1493,7 +1527,7 @@ export function GuitarStaff({
                           x1={width}
                           x2={width}
                           y1={tabTop}
-                          y2={tabTop + (tuning.length - 1) * 20}
+                          y2={tabTop + (tuning.length - 1) * tabSpacing}
                           stroke="#5f6c65"
                         />
                       )}
@@ -1815,7 +1849,7 @@ export function GuitarStaff({
                                           ) : tone.harmonic === 'natural' ? (
                                             <path
                                               d={`M${headX} ${y - 5}l6 5 -6 5 -6 -5Z`}
-                                              fill="#fffefb"
+                                              fill="var(--score-paper-color, #fffefb)"
                                               stroke="#293e34"
                                             />
                                           ) : (
@@ -1825,7 +1859,7 @@ export function GuitarStaff({
                                               rx="5"
                                               ry="3.3"
                                               transform={`rotate(-18 ${headX} ${y})`}
-                                              fill={beats >= 2 ? '#fffefb' : '#293e34'}
+                                              fill={beats >= 2 ? 'var(--score-paper-color, #fffefb)' : '#293e34'}
                                               stroke="#293e34"
                                               strokeWidth="1.1"
                                             />
@@ -1837,10 +1871,10 @@ export function GuitarStaff({
                                             y={y}
                                             tabY={
                                               hasTab && tone.string
-                                                ? tabTop + (tone.string - 1) * 20
+                                                ? tabTop + (tone.string - 1) * tabSpacing
                                                 : undefined
                                             }
-                                            footerY={hasTab ? tabBottom + 55 : undefined}
+                                            footerY={hasTab ? tabBottom + 40 : undefined}
                                             width={Math.max(14, xAt(offset + actualBeats) - x - 6)}
                                           />
                                           {beats < 4 && Math.abs(headOffsets[toneIndex]) > 9 && (
@@ -1950,6 +1984,7 @@ export function GuitarStaff({
                                         tone.fret,
                                         tone.dead,
                                         !!tone.ghost || continued || tieTargets.has(note.id),
+                                        tone.harmonic === 'natural',
                                       )
                                     : undefined;
                                   return (
@@ -1990,17 +2025,21 @@ export function GuitarStaff({
                                     >
                                       <rect
                                         x={hit.left}
-                                        y={tabTop + row * 20 - 10}
+                                        y={tabTop + row * tabSpacing - tabSpacing / 2}
                                         width={hit.right - hit.left}
-                                        height="20"
+                                        height={tabSpacing}
                                         fill="transparent"
                                       />
                                       <rect
                                         className="score-cell-cursor"
                                         x={x - cursorWidth / 2}
-                                        y={tabTop + row * 20 - 9}
+                                        y={
+                                          tabTop +
+                                          row * tabSpacing -
+                                          Math.min(18, tabSpacing - 2) / 2
+                                        }
                                         width={cursorWidth}
-                                        height="18"
+                                        height={Math.min(18, tabSpacing - 2)}
                                         rx="1"
                                         fill={
                                           chosen && selectedString === row + 1
@@ -2015,7 +2054,7 @@ export function GuitarStaff({
                                         <rect
                                           data-selection-note={note.id}
                                           x={x - 7}
-                                          y={tabTop + row * 20 - 7}
+                                          y={tabTop + row * tabSpacing - 7}
                                           width={14}
                                           height={14}
                                           fill="transparent"
@@ -2026,10 +2065,10 @@ export function GuitarStaff({
                                         <GuitarTechniqueMarks
                                           tone={tone}
                                           showStaff={false}
-                                          tabY={tabTop + row * 20}
+                                          tabY={tabTop + row * tabSpacing}
                                           x={x}
-                                          y={tabTop + row * 20}
-                                          footerY={tabBottom + 55}
+                                          y={tabTop + row * tabSpacing}
+                                          footerY={tabBottom + 40}
                                           beats={note.beats}
                                           width={Math.max(14, xAt(offset + actualBeats) - x - 6)}
                                         />
@@ -2041,14 +2080,14 @@ export function GuitarStaff({
                                             tone.string === note.graceSlide.string && (
                                               <GraceSlide
                                                 x={x}
-                                                y={tabTop + row * 20}
-                                                targetY={tabTop + row * 20}
+                                                y={tabTop + row * tabSpacing}
+                                                targetY={tabTop + row * tabSpacing}
                                                 fret={note.graceSlide.fret}
                                               />
                                             )}
                                           <text
                                             x={x}
-                                            y={tabTop + row * 20 + 4}
+                                            y={tabTop + row * tabSpacing + 4}
                                             textAnchor="middle"
                                             fontSize="12"
                                             fontWeight="600"
@@ -2056,7 +2095,7 @@ export function GuitarStaff({
                                             stroke={
                                               chosen && selectedString === row + 1
                                                 ? '#fff2df'
-                                                : '#fffefb'
+                                                : 'var(--score-paper-color, #fffefb)'
                                             }
                                             strokeWidth="3"
                                             strokeLinejoin="round"
@@ -2068,7 +2107,7 @@ export function GuitarStaff({
                                       {tone && !note.slash && note.staccato && !continued && (
                                         <circle
                                           cx={x}
-                                          cy={tabTop + row * 20 + 10}
+                                          cy={tabTop + row * tabSpacing + 10}
                                           r="1.3"
                                           fill="#293e34"
                                         />
@@ -2242,10 +2281,23 @@ export function GuitarStaff({
                           if (last && start <= last.end + 1e-7) last.end = Math.max(last.end, end);
                           else ranges.push({ start, end });
                         }
+                        const palmEdge = (index: number, end: boolean) => {
+                          if (index < 0) return false;
+                          const duration = scoreMeasureDuration(score, part, index);
+                          return (measures[index] ?? []).some(
+                            (f) =>
+                              !f.note.rest &&
+                              !f.note.blank &&
+                              noteTones(f.note).some((t) => t.palmMute) &&
+                              (end ? f.offset + f.beats >= duration - 1e-7 : f.offset <= 1e-7),
+                          );
+                        };
                         return ranges.map((r) => {
-                          const left = xAt(r.start),
-                            right = xAt(r.end);
-                          const y = hasTab ? tabBottom + 55 : top + 18;
+                          const fromPrevious = r.start === 0 && palmEdge(bar - 1, true);
+                          const intoNext = r.end >= barBeats - 1e-7 && palmEdge(bar + 1, false);
+                          const left = fromPrevious ? 0 : xAt(r.start),
+                            right = intoNext ? width : xAt(r.end);
+                          const y = hasTab ? tabBottom + 40 : top + 18;
                           return (
                             <g
                               key={`pm/${r.start}`}
@@ -2254,11 +2306,13 @@ export function GuitarStaff({
                               fill="#344b3e"
                               stroke="#344b3e"
                             >
-                              <text x={left} y={y} fontSize="10" stroke="none">
-                                P.M.
-                              </text>
+                              {(!fromPrevious || column === 0) && (
+                                <text x={left} y={y} fontSize="10" stroke="none">
+                                  P.M.
+                                </text>
+                              )}
                               <path
-                                d={`M${left} ${y + 5}H${right}v-5`}
+                                d={`M${left} ${y + 5}H${right}${intoNext ? '' : 'v-5'}`}
                                 fill="none"
                                 strokeDasharray="3 3"
                               />
@@ -2267,7 +2321,13 @@ export function GuitarStaff({
                         });
                       })()}
                       {hasTab && (
-                        <TabRhythm fragments={fragments} tuning={tuning} y={tabTop} xAt={xAt} />
+                        <TabRhythm
+                          fragments={fragments}
+                          tuning={tuning}
+                          y={tabTop}
+                          xAt={xAt}
+                          stringSpacing={tabSpacing}
+                        />
                       )}
                       {renderStaff &&
                         beams.map(({ indices, top, direction }, groupIndex) => (
@@ -2364,7 +2424,7 @@ export function GuitarStaff({
                             )}
                             {(hasTab ? tuning : [0]).map((_, row) => {
                               const y = hasTab
-                                ? tabTop + row * 20
+                                ? tabTop + row * tabSpacing
                                 : isDrums
                                   ? drumAtRow(selectedString).y
                                   : inputPitch === undefined
@@ -2409,18 +2469,18 @@ export function GuitarStaff({
                                 >
                                   <rect
                                     x={hit.left}
-                                    y={hasTab ? y - 10 : staffHitTop}
+                                    y={hasTab ? y - tabSpacing / 2 : staffHitTop}
                                     width={hit.right - hit.left}
-                                    height={hasTab ? 20 : staffHitBottom - staffHitTop}
+                                    height={hasTab ? tabSpacing : staffHitBottom - staffHitTop}
                                     fill="transparent"
                                   />
                                   {hasTab && (
                                     <rect
                                       className="score-cell-cursor"
                                       x={x - cursorWidth / 2}
-                                      y={y - 9}
+                                      y={y - Math.min(18, tabSpacing - 2) / 2}
                                       width={cursorWidth}
-                                      height="18"
+                                      height={Math.min(18, tabSpacing - 2)}
                                       rx="1"
                                       fill={focused ? '#fff2df' : 'transparent'}
                                       stroke={focused ? '#c77830' : 'none'}
@@ -2472,9 +2532,9 @@ export function GuitarStaff({
                           <rect
                             data-tab-input-preview="true"
                             x={previewX - 12}
-                            y={tabTop + (selectedString - 1) * 20 - 10}
+                            y={tabTop + (selectedString - 1) * tabSpacing - tabSpacing / 2}
                             width={24}
-                            height={20}
+                            height={tabSpacing}
                             rx={2}
                             fill="#cbd5e1"
                             fillOpacity=".65"
@@ -2522,6 +2582,7 @@ export function GuitarStaff({
                             x={graceX}
                             nextX={remaining === 1 ? xAt(offset) : graceX + GRACE_SPACING}
                             tabOnly={!renderStaff}
+                            tabSpacing={tabSpacing}
                             nextY={
                               renderStaff
                                 ? toneY(
@@ -2611,7 +2672,9 @@ export function GuitarStaff({
                   const tabPoints = located.map(({ x, note }) => ({
                     x,
                     y: edge(
-                      tabTones(note, tuning).map((tone) => tabTop + ((tone.string ?? 1) - 1) * 20),
+                      tabTones(note, tuning).map(
+                        (tone) => tabTop + ((tone.string ?? 1) - 1) * tabSpacing,
+                      ),
                       tabSide,
                     ),
                   }));
@@ -2658,7 +2721,7 @@ export function GuitarStaff({
                               dominantBaseline="central"
                               fontSize="10"
                               paintOrder="stroke"
-                              stroke="#fffefb"
+                              stroke="var(--score-paper-color, #fffefb)"
                               strokeWidth="3"
                             >
                               {label}
@@ -2705,7 +2768,7 @@ export function GuitarStaff({
                       >
                         {[
                           ...(renderStaff ? [y] : []),
-                          ...(hasTab ? [tabTop + (tuning.length - 1) * 20 + 23] : []),
+                          ...(hasTab ? [tabTop + (tuning.length - 1) * tabSpacing + 23] : []),
                         ].map((top, i) => (
                           <g
                             key={i}
@@ -2789,22 +2852,24 @@ export function GuitarStaff({
                               tone.fret,
                               tone.dead,
                               !!tone.ghost || !!a?.continued || tieTargets.has(from.id),
+                              tone.harmonic === 'natural',
                             ).halfWidth + 2,
                           inset2:
                             scoreTabLabel(
                               toTones[0]?.fret,
                               toTones[0]?.dead,
                               !!toTones[0]?.ghost || tieTargets.has(to.id),
+                              toTones[0]?.harmonic === 'natural',
                             ).halfWidth + 2,
                           side: scoreConnectionSide([1, 1]),
-                          y1: tabTop + ((tone.string ?? 1) - 1) * 20,
+                          y1: tabTop + ((tone.string ?? 1) - 1) * tabSpacing,
                           y2:
                             tabTop +
                             ((toTones.find((t) => t.pitch === tone.pitch)?.string ??
                               toTones[0]?.string ??
                               1) -
                               1) *
-                              20,
+                              tabSpacing,
                         }))
                       : []),
                   ];
@@ -2866,7 +2931,7 @@ export function GuitarStaff({
                                 textAnchor="middle"
                                 dominantBaseline="central"
                                 paintOrder="stroke"
-                                stroke="#fffefb"
+                                stroke="var(--score-paper-color, #fffefb)"
                                 strokeWidth="3"
                               >
                                 {connection.type === 'hammer'
@@ -2917,12 +2982,13 @@ export function GuitarStaff({
                           : []),
                         ...(hasTab
                           ? tabTones(note, tuning).map((tone) => ({
-                              y: tabTop + ((tone.string ?? 1) - 1) * 20,
+                              y: tabTop + ((tone.string ?? 1) - 1) * tabSpacing,
                               inset:
                                 scoreTabLabel(
                                   tone.fret,
                                   tone.dead,
                                   !!tone.ghost || continued || tieTargets.has(note.id),
+                                  tone.harmonic === 'natural',
                                 ).halfWidth + 2,
                             }))
                           : []),

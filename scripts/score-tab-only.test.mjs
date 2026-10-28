@@ -64,6 +64,11 @@ test('TAB only omits staff SVG, uses its own coordinates and retains editing/pla
   assert.match(tab, /viewBox="0 0 /);
   assert.match(combined, /data-staff-tone/);
   assert.ok(tab.length < combined.length);
+  const stringYs = (html) =>
+    [...html.matchAll(/<line x1="45"[^>]*y1="([^"]+)"/g)].map((m) => Number(m[1]));
+  assert.equal(stringYs(tab)[1] - stringYs(tab)[0], 16);
+  assert.equal(stringYs(combined)[1] - stringYs(combined)[0], 20);
+
   const high = JSON.parse(JSON.stringify(score));
   high.notes[0].tones[0].pitch = 110;
   const svgSize = (html) => html.match(/<svg[^>]*viewBox="([^"]+)"/)[1];
@@ -75,9 +80,11 @@ test('TAB only retains bends, harmonics, tuplets and grace notes without staff c
   data.notes[0].tones[0].bend = { kind: 'release', amount: 2 };
   let html = render(data);
   assert.equal((html.match(/data-guitar-bend="release"/g) || []).length, 1);
-  data.notes[0].tones[0] = { pitch: 64, string: 1, fret: 12, harmonic: 'natural' };
+  data.notes[0].pitch = 76;
+  data.notes[0].tones[0] = { pitch: 76, string: 1, fret: 12, harmonic: 'natural' };
   html = render(data);
-  assert.equal((html.match(/N\.H\./g) || []).length, 1);
+  assert.doesNotMatch(html, /N\.H\./);
+  assert.match(html, /&lt;12&gt;/);
   data.notes.unshift({ ...data.notes[0], id: 'grace', beats: 0, graceBeats: 0.25 });
   html = render(data);
   assert.match(html, /data-grace-note="grace"/);
@@ -96,4 +103,23 @@ test('TAB-only triplets, repeat bars and slides keep only their TAB notation', (
   html = render(data);
   assert.match(html, /data-slide-edge="slideIn"/);
   assert.doesNotMatch(html, /data-staff-tone|data-barline="staff"/);
+});
+
+test('palm mute crosses adjacent bar boundaries without an end cap or repeated label', () => {
+  const data = JSON.parse(JSON.stringify(score));
+  data.notes = Array.from({ length: 8 }, (_, i) => ({
+    ...data.notes[0],
+    id: `p${i}`,
+    beats: 1,
+    tones: [{ pitch: 64, string: 1, fret: 0, palmMute: true }],
+  }));
+  const html = render(data);
+  const lines = [...html.matchAll(/data-palm-mute-range="true"[\s\S]*?<path d="([^"]+)"/g)].map(
+    (m) => m[1],
+  );
+  assert.equal(lines.length, 2);
+  assert.doesNotMatch(lines[0], /v-5/);
+  assert.match(lines[1], /^M0 /);
+  assert.match(lines[1], /v-5$/);
+  assert.equal((html.match(/P\.M\./g) || []).length, 1);
 });

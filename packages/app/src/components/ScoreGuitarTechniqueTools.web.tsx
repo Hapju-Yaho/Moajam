@@ -1,5 +1,7 @@
 import {
   noteTones,
+  canSetScoreNaturalHarmonics,
+  setScoreNaturalHarmonics,
   scoreInstrument,
   selectedScoreTone,
   setScoreGuitarTechnique,
@@ -20,6 +22,7 @@ export function ScoreGuitarTechniqueTools({
   onGhost,
   ghostPressed,
   ghostDisabled,
+  allTones,
 }: {
   score: Score;
   part: string;
@@ -31,6 +34,7 @@ export function ScoreGuitarTechniqueTools({
   onGhost: () => void;
   ghostPressed: boolean;
   ghostDisabled: boolean;
+  allTones: boolean;
 }) {
   const instrument = scoreInstrument(score, part);
   if (!instrument.tuning.length || instrument.id.startsWith('bass')) return null;
@@ -82,24 +86,53 @@ export function ScoreGuitarTechniqueTools({
             key={harmonic}
             icon={icon}
             disabled={
-              locked ||
-              !!tone?.bend ||
-              (harmonic === 'natural' &&
-                ids.some((id) => {
-                  const selected = score.notes.find((n) => n.id === id);
-                  return (
-                    !selected ||
-                    !supportsNaturalHarmonic(selectedScoreTone(score, selected, string)?.fret)
-                  );
-                }))
+              harmonic === 'natural' && allTones
+                ? disabled || !canSetScoreNaturalHarmonics(score, ids)
+                : locked ||
+                  !!tone?.bend ||
+                  (harmonic === 'natural' &&
+                    ids.some((id) => {
+                      const selected = score.notes.find((n) => n.id === id);
+                      return (
+                        !selected ||
+                        !supportsNaturalHarmonic(selectedScoreTone(score, selected, string)?.fret)
+                      );
+                    }))
             }
-            aria-pressed={tone?.harmonic === harmonic}
+            aria-pressed={
+              harmonic === 'natural' && allTones
+                ? ids.length > 0 &&
+                  ids.every((id) => {
+                    const n = score.notes.find((n) => n.id === id);
+                    return !!n && noteTones(n).every((t) => t.harmonic === 'natural');
+                  })
+                : tone?.harmonic === harmonic
+            }
             title={
               harmonic === 'natural'
                 ? '3·4·5·7·9·12·16·19·24프렛의 배음'
                 : '높은 배음을 강조한 근사 재생'
             }
-            onClick={() => apply({ harmonic: tone?.harmonic === harmonic ? undefined : harmonic })}
+            onClick={() => {
+              if (harmonic === 'natural' && allTones) {
+                try {
+                  onEdit(
+                    setScoreNaturalHarmonics(
+                      score,
+                      ids,
+                      !ids.every((id) =>
+                        noteTones(score.notes.find((n) => n.id === id)!).every(
+                          (t) => t.harmonic === 'natural',
+                        ),
+                      ),
+                    ),
+                  );
+                  onError('');
+                } catch (error) {
+                  onError((error as Error).message);
+                }
+              } else apply({ harmonic: tone?.harmonic === harmonic ? undefined : harmonic });
+            }}
           >
             {label}
           </ScoreToolButton>

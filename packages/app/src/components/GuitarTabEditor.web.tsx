@@ -481,12 +481,18 @@ function GuitarTabEditorContent({
   const multiDrums = isDrums && voiceMultiMode;
   const multiKeyboard = isKeyboard;
   const rows = score.notes.filter((note) => note.part === part);
+  const boxParts = isDrums
+    ? (Object.entries(score.drumVoices ?? {}).find(
+        ([upper, lower]) => upper === part || lower === part,
+      ) ?? [part])
+    : [part];
+  const boxNotes = score.notes.filter((n) => boxParts.includes(n.part));
   const chordPositions = scoreChordPositions(score, part);
   const note = rows.find((item) => item.id === selected);
   const rangeStart = range ? rows.findIndex((item) => item.id === range.anchor) : -1;
   const rangeEnd = range ? rows.findIndex((item) => item.id === range.end) : -1;
   const rangeNotes = range?.ids
-    ? rows.filter((n) => range.ids!.includes(n.id))
+    ? boxNotes.filter((n) => range.ids!.includes(n.id))
     : rangeStart >= 0 && rangeEnd >= 0
       ? rows.slice(Math.min(rangeStart, rangeEnd), Math.max(rangeStart, rangeEnd) + 1)
       : [];
@@ -553,13 +559,20 @@ function GuitarTabEditorContent({
   const noteStart = note
     ? rows.slice(0, rows.indexOf(note)).reduce((sum, item) => scoreBeat(sum + item.beats), 0)
     : endBeat;
+  const boxAnchor = range?.ids?.length ? rangeNotes[0] : undefined;
+  const boxBefore = boxAnchor
+    ? score.notes
+        .filter((n) => n.part === boxAnchor.part)
+        .slice(0, score.notes.filter((n) => n.part === boxAnchor.part).indexOf(boxAnchor))
+        .reduce((sum, n) => scoreBeat(sum + n.beats), 0)
+    : undefined;
   const before = note
     ? selectedAt?.id === note.id &&
       selectedAt.beat >= noteStart &&
       selectedAt.beat < noteStart + note.beats
       ? selectedAt.beat
       : noteStart
-    : (emptyBeat ?? endBeat);
+    : (emptyBeat ?? boxBefore ?? endBeat);
   const entryBeats =
     !note || note.blank ? scoreEntryDuration(score, part, before, beats, emptyMeasure) : beats;
   const selectedBeat = note && !note.blank ? (note.graceBeats ?? note.beats) : entryBeats;
@@ -568,7 +581,7 @@ function GuitarTabEditorContent({
   const dotted = DOTTED_SCORE_BEATS.includes(writtenBeat);
   const base = dotted ? writtenBeat / 1.5 : writtenBeat;
   const disabled = !loaded || playing || readOnly || (editInExpandedOnly && !layout.expanded);
-  const hasSelection = !!note || emptyBeat !== null;
+  const hasSelection = !!note || rangeNotes.length > 0 || emptyBeat !== null;
   const loopStart = repeatBars
     ? scoreMeasureStart(score, part, repeatBars.start - 1)
     : rangeNotes.length
@@ -922,7 +935,16 @@ function GuitarTabEditorContent({
   };
   const toggleDeadNote = () => {
     if (disabled || isDrums || !hasSelection) return;
-    if (multiple || selectedTone) {
+    if (range && instrument.tuning.length) {
+      commit(
+        setScoreArticulation(
+          score,
+          copiedSelection.map((n) => n.id),
+          'dead',
+        ),
+        true,
+      );
+    } else if (multiple || selectedTone) {
       commit(
         setScoreToneArticulation(
           score,
@@ -2108,9 +2130,9 @@ function GuitarTabEditorContent({
                     select(selected, Number(event.target.value), before, location.bar);
                   }}
                 >
-                  {instrument.tuning.map((open, index) => (
+                  {instrument.tuning.map((_, index) => (
                     <option key={index} value={index + 1}>
-                      {index + 1}번 · {pitchName(open)}
+                      {index + 1}번 줄
                     </option>
                   ))}
                 </select>
@@ -2444,8 +2466,18 @@ function GuitarTabEditorContent({
             onEdit={(next) => commit(next, true)}
             onError={setMessage}
             onGhost={toggleDeadNote}
-            ghostPressed={articulationPressed('dead')}
-            ghostDisabled={disabled || !hasSelection || (multiple && !toneSelection.length)}
+            allTones={!!range}
+            ghostPressed={
+              range
+                ? soundingSelection.length > 0 &&
+                  soundingSelection.every((n) => noteTones(n).every((t) => t.dead))
+                : articulationPressed('dead')
+            }
+            ghostDisabled={
+              disabled ||
+              !hasSelection ||
+              (range ? !soundingSelection.length : multiple && !toneSelection.length)
+            }
           />
         </div>
         {(!instrument.tuning.length || instrument.id.startsWith('bass')) && (
@@ -3224,8 +3256,12 @@ function GuitarTabEditorContent({
             rangeIds={rangeNotes.map((item) => item.id)}
             onBoxSelect={(ids) => {
               if (disabled) return;
-              const chosen = rows.filter((n) => ids.includes(n.id));
-              select(chosen[0]?.id ?? null);
+              const chosen = boxNotes.filter((n) => ids.includes(n.id));
+              if (!chosen.length) {
+                deselect();
+                return;
+              }
+              select(chosen.find((n) => n.part === part)?.id ?? chosen[0]?.id ?? null);
               if (chosen.length)
                 setRange({
                   anchor: chosen[0].id,
