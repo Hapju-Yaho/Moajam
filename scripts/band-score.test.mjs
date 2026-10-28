@@ -50,7 +50,7 @@ const { createBandScoreStore } = await import(
     './mediaStore.web': mediaUrl,
     './remote-media.web': codecUrl,
     './scoreProjects.web': url(
-      'export async function readScoreProject() { throw new Error("Unexpected project read"); } export async function writeScoreProject() { throw new Error("Unexpected project write"); }',
+      'export const isPersonalScoreWorkspace = workspace => workspace.startsWith("local-recording/score/"); export async function readScoreProject() { throw new Error("Unexpected project read"); } export async function writeScoreProject() { throw new Error("Unexpected project write"); }',
     ),
   })
 );
@@ -115,18 +115,20 @@ for (const mode of [false, true]) {
 const { buildAppPath } = await import(
   moduleUrl(new URL('../packages/app/src/navigation.ts', import.meta.url))
 );
-test('band and personal editor links remain separate and preserve song context', () => {
+test('band song links retain context while personal projects and practice use personal routes', () => {
   const context = { route: 'practice', workspaceId: 'band', entityId: 'song' };
   assert.equal(
     buildAppPath('band-score-editor', undefined, context),
     '/workspaces/band/songs/song/score',
   );
-  assert.equal(
-    buildAppPath('score-editor', undefined, context),
-    '/tools/scores/personal?workspaceId=band&songId=song',
-  );
+  assert.equal(buildAppPath('score-editor', undefined, context), '/tools/scores/personal');
   assert.equal(
     buildAppPath('practice', { workspaceId: 'band', id: 'song' }, context),
     '/workspaces/band/songs/song?tab=tracks',
+  );
+  assert.equal(buildAppPath('personal-practice', undefined, context), '/me/practice');
+  assert.equal(
+    buildAppPath('personal-practice', { workspaceId: 'band', id: 'song' }, context),
+    '/me/practice?workspaceId=band&songId=song',
   );
 });

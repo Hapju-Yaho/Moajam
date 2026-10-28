@@ -15,6 +15,35 @@
 .performance-reader::backdrop {
   background: #0009;
 }
+.performance-reader.performance-reader-embedded {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 620px;
+  height: clamp(420px, 70dvh, 760px);
+  max-width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.performance-reader-embedded .lyrics-paper {
+  padding: 80px 12px 320px;
+}
+.performance-reader.performance-pdf-embedded {
+  height: auto;
+}
+.performance-pdf-embedded .performance-reader-content {
+  height: auto;
+}
+.performance-pdf-embedded .performance-reader-stage {
+  flex: none;
+  overflow: visible;
+}
+.lyrics-reader-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .performance-reader header,
 .performance-reader footer {
   display: flex;
@@ -90,7 +119,8 @@
   resize: none;
 }
 .lyrics-paper {
-  max-width: 1000px;
+  width: 100%;
+  box-sizing: border-box;
   margin: auto;
   padding: 20vh 12px 65vh;
   white-space: pre-wrap;

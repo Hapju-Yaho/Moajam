@@ -1,3 +1,5 @@
+import { PersonalPracticeScreen } from './screens/PersonalPracticeScreen';
+import { WorkManagementScreen } from './screens/WorkManagementScreen';
 import { useEffect, useState } from 'react';
 import type { AppRoute, NavigationOptions, SongTab } from './navigation';
 import { PersonalScreen } from './screens/PersonalScreen';
@@ -13,7 +15,7 @@ import { RecordingScreen } from './screens/RecordingScreen';
 import { TeamManagementScreen } from './screens/TeamManagementScreen';
 import { RecommendationDetailScreen } from './screens/RecommendationDetailScreen';
 import { RehearsalsScreen } from './screens/RehearsalsScreen';
-import { ScoreEditorScreen } from './screens/ScoreEditorScreen';
+import { PersonalScoreEditorScreen } from './screens/PersonalScoreEditorScreen';
 import { BandScoreEditorScreen } from './screens/BandScoreEditorScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SongsScreen } from './screens/SongsScreen';
@@ -95,15 +97,18 @@ function ScopedScreen({
       return <PersonalScreen route={route} navigate={navigate} />;
     case 'personal-songs':
       return <TeamManagementScreen navigate={navigate} />;
+    case 'work-management':
+      return <WorkManagementScreen navigate={navigate} />;
     case 'tools':
-      return <MusicToolsScreen navigate={navigate} />;
+      return <PersonalScoreEditorScreen navigate={navigate} />;
     case 'track-editor':
       return entityId ? (
         <SongWorkspaceScreen navigate={navigate} entityId={entityId} songTab="tracks" />
       ) : (
-        <RecordingScreen navigate={navigate} />
+        <RecordingScreen navigate={navigate} projectId={projectId} />
       );
     case 'personal-practice':
+      return <PersonalPracticeScreen navigate={navigate} entityId={entityId} />;
     case 'practice':
       return entityId ? (
         <SongWorkspaceScreen
@@ -116,8 +121,6 @@ function ScopedScreen({
           projectId={projectId}
           assetId={assetId}
         />
-      ) : route === 'personal-practice' ? (
-        <PersonalScreen route="personal-practice" navigate={navigate} />
       ) : (
         <MusicToolsScreen navigate={navigate} mode="tracks" />
       );
@@ -147,7 +150,14 @@ function ScopedScreen({
     case 'instrument':
       return <InstrumentExtractorScreen navigate={navigate} />;
     case 'score-editor':
-      return <ScoreEditorScreen navigate={navigate} entityId={entityId} scorePart={scorePart} />;
+      return (
+        <PersonalScoreEditorScreen
+          navigate={navigate}
+          entityId={entityId}
+          scorePart={scorePart}
+          projectId={projectId}
+        />
+      );
     case 'band-score-editor':
       if (!entityId) return <MusicToolsScreen navigate={navigate} />;
       return (
@@ -212,7 +222,9 @@ export function MoajamApp() {
           workspaceId:
             options?.workspaceId ??
             (route.startsWith('personal-') ||
-            ['tools', 'track-editor', 'score-editor', 'instrument'].includes(route)
+            ['tools', 'track-editor', 'score-editor', 'instrument', 'work-management'].includes(
+              route,
+            )
               ? undefined
               : selectedWorkspaceId),
         })

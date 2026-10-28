@@ -15,9 +15,7 @@ import {
 } from '../components/ProductUI';
 import { SongActions } from '../components/SongActions';
 import { ReferenceVideo } from '../components/ReferenceVideo';
-import { SongPdfLibrary } from '../components/SongPdfLibrary';
-import { SongLyrics } from '../components/SongLyrics';
-import { PracticeStudio } from '../components/PracticeStudio';
+import { BandSongPractice } from '../components/BandSongPractice';
 import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
 import { buildAppPath, type ScreenProps, type SongTab } from '../navigation';
 import { shareLink } from '../lib/platformActions';
@@ -140,43 +138,36 @@ export function SongWorkspaceScreen({
               {song.artist} · 내 파트 {song.participants?.[currentUserId]?.part || '미배정'} · Key{' '}
               {arrangement.key || '미정'} · BPM {arrangement.bpm || '미정'}
             </Copy>
-            <FlexRow wrap>
-              <SongPdfLibrary
-                key={`${song.id}/${assetId ?? ''}`}
-                songId={song.id}
-                title={song.title}
-                assetId={assetId}
-                buttonLabel="PDF 악보 보기"
-                initialOpen={tab === 'scores'}
-              />
-              <ActionButton
-                secondary
-                compact
-                onPress={() => navigate('band-score-editor', { id: song.id, workspaceId })}
-              >
-                악보 프로젝트 열기
-              </ActionButton>
-              <SongLyrics key={song.id} songId={song.id} title={song.title} />
-            </FlexRow>
             {!!message && <Meta accessibilityLiveRegion="polite">{message}</Meta>}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ expanded: overviewOpen }}
-              onPress={() => setOverviewOpen((open) => !open)}
+            <View
               style={{
-                alignSelf: 'flex-end',
                 marginTop: 'auto',
                 flexDirection: 'row',
-                alignItems: 'center',
-                gap: 7,
-                paddingTop: 10,
+                flexWrap: 'wrap',
+                alignItems: 'flex-end',
+                gap: 12,
               }}
             >
-              <View style={{ transform: [{ rotate: overviewOpen ? '180deg' : '0deg' }] }}>
-                <AppIcon name="chevron-down" size={18} color="#566b8c" />
-              </View>
-              <Meta>{overviewOpen ? '곡 정보·합주 기록 닫기' : '곡 정보·합주 기록 보기'}</Meta>
-            </Pressable>
+              <View nativeID="band-song-practice-toolbar" style={{ flex: 1, minWidth: 260 }} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: overviewOpen }}
+                onPress={() => setOverviewOpen((open) => !open)}
+                style={{
+                  alignSelf: 'flex-end',
+                  marginTop: 'auto',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 7,
+                  paddingTop: 10,
+                }}
+              >
+                <View style={{ transform: [{ rotate: overviewOpen ? '180deg' : '0deg' }] }}>
+                  <AppIcon name="chevron-down" size={18} color="#566b8c" />
+                </View>
+                <Meta>{overviewOpen ? '곡 정보·합주 기록 닫기' : '곡 정보·합주 기록 보기'}</Meta>
+              </Pressable>
+            </View>
           </View>
         </View>
 
@@ -203,37 +194,45 @@ export function SongWorkspaceScreen({
           </>
         )}
       </Surface>
-      <PracticeStudio
-        requestedProjectId={projectId}
-        discussionInitiallyOpen={tab === 'discussion'}
-        discussionOptions={{
-          linkedOpinionIds: checks
-            .map((item) => item.sourceOpinionId)
-            .filter((id): id is string => !!id),
-          onCreateTask: (item) => {
-            setChecks((all) =>
-              all.some((check) => check.sourceOpinionId === item.id)
-                ? all
-                : [
-                    ...all,
-                    {
-                      id: `check-${Date.now()}`,
-                      label: (item.text || '의견에 첨부된 자료 확인').slice(0, 2000),
-                      done: false,
-                      assigneeId: currentUserId,
-                      sourceOpinionId: item.id,
-                    },
-                  ],
-            );
-            setMessage('준비할 일에 추가했어요. 곡 정보에서 확인할 수 있어요.');
+      <BandSongPractice
+        songId={song.id}
+        title={song.title}
+        workspaceId={workspaceId}
+        navigate={navigate}
+        assetId={assetId}
+        initialView={tab === 'scores' || assetId ? 'pdf' : 'recording'}
+        studioProps={{
+          requestedProjectId: projectId,
+          discussionInitiallyOpen: tab === 'discussion',
+          discussionOptions: {
+            linkedOpinionIds: checks
+              .map((item) => item.sourceOpinionId)
+              .filter((id): id is string => !!id),
+            onCreateTask: (item) => {
+              setChecks((all) =>
+                all.some((check) => check.sourceOpinionId === item.id)
+                  ? all
+                  : [
+                      ...all,
+                      {
+                        id: `check-${Date.now()}`,
+                        label: (item.text || '의견에 첨부된 자료 확인').slice(0, 2000),
+                        done: false,
+                        assigneeId: currentUserId,
+                        sourceOpinionId: item.id,
+                      },
+                    ],
+              );
+              setMessage('준비할 일에 추가했어요. 곡 정보에서 확인할 수 있어요.');
+            },
           },
+
+          scopeKey: `${workspaceId}/${song.id}`,
+          bpm: Number(arrangement.bpm) || 120,
+          feedback,
+          focusId,
+          focusTime,
         }}
-        key={`${workspaceId}/${song.id}`}
-        scopeKey={`${workspaceId}/${song.id}`}
-        bpm={Number(arrangement.bpm) || 120}
-        feedback={feedback}
-        focusId={focusId}
-        focusTime={focusTime}
       />
     </AppShell>
   );

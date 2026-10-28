@@ -81,6 +81,7 @@ import {
   noteTones,
   pitchName,
   removeScoreNotes,
+  clearScoreNotes,
   removeScoreString,
   deleteScorePosition,
   scoreInstrument,
@@ -98,6 +99,7 @@ import {
   scorePlaybackBeats,
   DOTTED_SCORE_BEATS,
   scoreMeasureCount,
+  scoreEntryDuration,
   setScoreBeatChord,
   scoreChordPositions,
   copyScoreNotes,
@@ -369,6 +371,7 @@ function GuitarTabEditorContent({
   const [voiceMultiMode, setVoiceMultiMode] = useState(false);
   const [fret, setFret] = useState('0'),
     [pitch, setPitch] = useState(60);
+  const [keyboardPreview, setKeyboardPreview] = useState(false);
   const [keyboardInput, setKeyboardInput] = useState<'default' | 'alternate' | number>('default');
   const voicePitches = useRef(new Map<string, number>());
   const [transportIdentityHost, setTransportIdentityHost] = useState<HTMLDivElement | null>(null);
@@ -528,11 +531,6 @@ function GuitarTabEditorContent({
       ? toneSelection.length > 0 &&
         toneSelection.every((item) => selectedScoreTone(score, item, activeString)?.[key])
       : soundingSelection.length > 0 && soundingSelection.every((item) => item[key]);
-  const selectedBeat = note && !note.blank ? (note.graceBeats ?? note.beats) : beats;
-  const triplet = note && !note.blank ? note.tuplet === 3 : inputTriplet;
-  const writtenBeat = writtenScoreBeats({ tuplet: triplet ? 3 : undefined }, selectedBeat);
-  const dotted = DOTTED_SCORE_BEATS.includes(writtenBeat);
-  const base = dotted ? writtenBeat / 1.5 : writtenBeat;
   const noteStart = note
     ? rows.slice(0, rows.indexOf(note)).reduce((sum, item) => scoreBeat(sum + item.beats), 0)
     : endBeat;
@@ -543,6 +541,13 @@ function GuitarTabEditorContent({
       ? selectedAt.beat
       : noteStart
     : (emptyBeat ?? endBeat);
+  const entryBeats =
+    !note || note.blank ? scoreEntryDuration(score, part, before, beats, emptyMeasure) : beats;
+  const selectedBeat = note && !note.blank ? (note.graceBeats ?? note.beats) : entryBeats;
+  const triplet = note && !note.blank ? note.tuplet === 3 : inputTriplet;
+  const writtenBeat = writtenScoreBeats({ tuplet: triplet ? 3 : undefined }, selectedBeat);
+  const dotted = DOTTED_SCORE_BEATS.includes(writtenBeat);
+  const base = dotted ? writtenBeat / 1.5 : writtenBeat;
   const disabled = !loaded || playing || readOnly || (editInExpandedOnly && !layout.expanded);
   const hasSelection = !!note || emptyBeat !== null;
   const loopStart = repeatBars
@@ -587,6 +592,7 @@ function GuitarTabEditorContent({
       );
   };
   const select = (id: string | null, row = activeString, at?: number, bar?: number) => {
+    setKeyboardPreview(false);
     setEmptyMeasure(id ? undefined : bar);
     setRange(null);
     setEmptyBeat(id ? null : (at ?? endBeat));
@@ -778,7 +784,7 @@ function GuitarTabEditorContent({
     id: clientId(),
     part,
     pitch,
-    beats,
+    beats: entryBeats,
     tuplet: inputTriplet ? 3 : undefined,
     rest,
     blank: rest,
@@ -839,7 +845,7 @@ function GuitarTabEditorContent({
   };
   const prepareInput = (item: ScoreNote) => {
     const prepared = note?.blank
-      ? setScoreDuration(score, note.id, beats, () => clientId(), before - noteStart)
+      ? setScoreDuration(score, note.id, entryBeats, () => clientId(), before - noteStart)
       : note
         ? score
         : emptyMeasure !== undefined
@@ -955,6 +961,7 @@ function GuitarTabEditorContent({
       };
       if (isKeyboard && !asRest) selectKeyboardAlter(alter);
       commit(result);
+      setKeyboardPreview(false);
       if (!asRest) onAudition(result.notes.find((entry) => entry.id === item.id)!);
       onSelect(item.id);
       if (!asRest) {
@@ -1392,7 +1399,7 @@ function GuitarTabEditorContent({
   const selectStaffPart = (
     voice: string,
     id?: string,
-    position?: { beat: number; bar?: number },
+    position?: { beat: number; bar?: number; pitch?: number },
   ) => {
     if ((isDrums || isKeyboard) && scorePartOwner(score, voice) === voiceOwner) {
       const bars = scoreMeasures(score, voice);
@@ -1409,6 +1416,11 @@ function GuitarTabEditorContent({
         bar: Math.max(0, bar),
         offset,
       });
+      setKeyboardPreview(position?.pitch !== undefined);
+      if (position?.pitch !== undefined) {
+        setPitch(position.pitch);
+        setKeyboardInput('default');
+      }
     } else onPartSelect?.(voice, id);
   };
   const keys = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -1609,7 +1621,7 @@ function GuitarTabEditorContent({
       if (note) {
         if (multiple) {
           commit(
-            removeScoreNotes(
+            (event.shiftKey ? removeScoreNotes : clearScoreNotes)(
               score,
               rangeNotes.map((item) => item.id),
             ),
@@ -2934,7 +2946,7 @@ function GuitarTabEditorContent({
               if (deleteSelectedMeasureRests()) return;
               if (note)
                 commit(
-                  removeScoreNotes(
+                  (copiedSelection.length > 1 ? clearScoreNotes : removeScoreNotes)(
                     score,
                     copiedSelection.map((item) => item.id),
                   ),
@@ -3080,14 +3092,39 @@ function GuitarTabEditorContent({
             playbackBeat={playbackBeat}
             playbackPosition={playbackPosition}
             zoom={zoom * 0.8}
-            onSelect={select}
+            onSelect={(id, row, at, inputPitch) => {
+              select(id, row, at);
+              if (inputPitch !== undefined) {
+                setPitch(inputPitch);
+                setKeyboardPreview(true);
+                setKeyboardInput('default');
+              }
+            }}
             onDeleteMeasureRest={deleteMeasureRest}
-            onAppend={(row, at, bar) => select(null, row, at, bar)}
+            onAppend={(row, at, bar, inputPitch) => {
+              if (!isKeyboard) {
+                select(null, row, at, bar);
+                return;
+              }
+              const target = scoreVoiceCursor(
+                score,
+                part,
+                bar ?? scoreMeasureAtBeat(score, part, at).bar,
+                at - scoreMeasureStart(score, part, bar ?? scoreMeasureAtBeat(score, part, at).bar),
+              );
+              select(target.id ?? null, row, at, bar);
+              if (inputPitch !== undefined) {
+                setPitch(inputPitch);
+                setKeyboardPreview(true);
+                setKeyboardInput('default');
+              }
+            }}
             onChordSelect={selectChordPosition}
             emptyBeat={before}
             emptyMeasure={note ? undefined : emptyMeasure}
             inputBeats={selectedBeat}
             inputPitch={isPitchedStaff ? pitch : undefined}
+            inputPreview={isKeyboard && keyboardPreview}
             inputDrumNote={
               isDrums
                 ? {

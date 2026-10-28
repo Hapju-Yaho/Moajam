@@ -2157,3 +2157,12 @@
   font-weight: 600;
   margin-top: 8px;
 }
+
+.score-editor-viewport [data-keyboard-selected='true'] ellipse,
+.score-editor-viewport [data-keyboard-selected='true'] path {
+  fill: #df812c;
+  stroke: #c56d20;
+}
+.score-editor-viewport [data-keyboard-selected='true'] line {
+  stroke: #df812c;
+}

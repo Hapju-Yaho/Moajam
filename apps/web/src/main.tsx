@@ -120,6 +120,7 @@ function HistoryNavigationGuard() {
 const routes: Array<[string, AppRoute]> = [
   ['/tools', 'tools'],
   ['/tools/tracks', 'track-editor'],
+  ['/tools/projects', 'work-management'],
   ['/tools/scores', 'band-score-editor'],
   ['/tools/scores/personal', 'score-editor'],
   ['/tools/instrument-extractor', 'instrument'],

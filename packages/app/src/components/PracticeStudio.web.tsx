@@ -71,6 +71,7 @@ export function PracticeStudio(props: ComponentProps<typeof PracticeStudioSessio
       <BandDawProjects
         key="personal-recording-projects"
         localOnly
+        requestedId={props.requestedProjectId}
         workspaceId="personal"
         songId="recording"
         title="새 프로젝트"
@@ -1471,7 +1472,13 @@ export function PracticeStudioSession({
           )}
         </ScheduleDialog>
         {!personalRecording && (
-          <div id="practice-feedback" ref={feedbackRef} tabIndex={-1} aria-label="곡 의견">
+          <div
+            id="practice-feedback"
+            ref={feedbackRef}
+            tabIndex={-1}
+            aria-label="곡 의견"
+            style={{ marginTop: 18 }}
+          >
             <Surface>
               <button
                 type="button"

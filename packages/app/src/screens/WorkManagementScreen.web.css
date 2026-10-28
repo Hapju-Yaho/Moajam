@@ -1,0 +1,58 @@
+.work-project-section-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  line-height: 1.5;
+}
+.work-project-list {
+  display: grid;
+  gap: 10px;
+}
+.work-project-card {
+  padding: 14px 16px;
+  border: 1px solid #dde6ef;
+  border-radius: 12px;
+  background: #f7f9fc;
+}
+.work-project-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+.work-project-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  color: #3470c5;
+  background: #e7effc;
+}
+.work-project-icon[data-kind='track-editor'] {
+  color: #33816c;
+  background: #e4f2ec;
+}
+.work-project-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.work-project-name {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #193348;
+  overflow-wrap: anywhere;
+}
+.work-project-kind {
+  font-size: 12px;
+  font-weight: 400;
+  color: #718096;
+  line-height: 1.4;
+}
