@@ -54,6 +54,29 @@ const render = (data = score, tabOnly = true, rangeIds = []) =>
     }),
   );
 
+test('vibrato sits close above TAB and stretches with the note duration', () => {
+  const span = (beats) => {
+    const data = {
+      ...score,
+      notes: [
+        { ...score.notes[0], beats, tones: [{ ...score.notes[0].tones[0], vibrato: true }] },
+        ...(beats < 4
+          ? [{ ...score.notes[0], id: 'rest', beats: 4 - beats, rest: true, tones: [] }]
+          : []),
+      ],
+    };
+    const html = render(data);
+    const path = html.match(/data-vibrato="true" d="([^"]+)"/)[1];
+    const coords = [...path.matchAll(/[ML] ([\d.-]+) ([\d.-]+)/g)].map((m) => [
+      Number(m[1]),
+      Number(m[2]),
+    ]);
+    assert.equal(coords[0][1], 96);
+    return coords.at(-1)[0] - coords[0][0];
+  };
+  assert.ok(span(4) > span(1) * 3.5);
+});
+
 test('TAB only omits staff SVG, uses its own coordinates and retains editing/playback targets', () => {
   const tab = render(),
     combined = render(score, false);
@@ -135,8 +158,11 @@ test('palm mute on a sustained note ends near its fret rather than at the end of
   data.notes[0].tones[0].palmMute = true;
   const html = render(data);
   const fret = Number(html.match(/data-selection-note="a" x="([^"]+)"/)[1]) + 7;
-  const line = html.match(/data-palm-mute-range="true"[\s\S]*?<path d="M([\d.]+) [\d.]+H([\d.]+)v-5/);
-  const left = Number(line[1]), right = Number(line[2]);
+  const line = html.match(
+    /data-palm-mute-range="true"[\s\S]*?<path d="M([\d.]+) [\d.]+H([\d.]+)v-5/,
+  );
+  const left = Number(line[1]),
+    right = Number(line[2]);
   assert.ok(left < fret && right > fret);
   assert.ok(right - left < 30);
 });

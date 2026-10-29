@@ -33,6 +33,107 @@ const base = () => ({
 });
 const apply = (score, patch) => model.setScoreGuitarTechnique(score, ['a'], 1, patch);
 
+test('vibrato toggles chosen strings, survives project/clipboard and validates server data', async () => {
+  for (const instrument of ['guitar', 'bass']) {
+    const input = base();
+    input.instruments.Guitar = instrument;
+    if (instrument === 'bass')
+      input.notes[0] = {
+        ...input.notes[0],
+        pitch: 48,
+        tones: [
+          { pitch: 48, string: 1, fret: 5 },
+          { pitch: 43, string: 2, fret: 5 },
+        ],
+      };
+    const score = model.setScoreVibrato(input, ['a'], 1, true);
+    assert.equal(score.notes[0].tones[0].vibrato, true);
+    assert.equal(score.notes[0].tones[1].vibrato, undefined);
+    const restored = files.parseScoreFile(
+      await files.serializeScoreFile({ score, referenceAudio: null, instrumentSample: null }),
+    );
+    assert.equal(restored.score.notes[0].tones[0].vibrato, true);
+    const copied = model.readScoreClipboard(
+      JSON.stringify({
+        type: 'moajam-score',
+        version: 1,
+        notes: model.copyScoreNotes(score, 'Guitar', ['a']),
+      }),
+    );
+    assert.equal(copied[0].tones[0].vibrato, true);
+    assert.equal(policy.isBandScore(score), true);
+    assert.equal(
+      policy.isBandScore({
+        ...score,
+        notes: [{ ...score.notes[0], tones: [{ pitch: 48, vibrato: 'yes' }] }],
+      }),
+      false,
+    );
+    assert.equal(model.setScoreVibrato(score, ['a'], 1, false).notes[0].tones[0].vibrato, false);
+    assert.ok(
+      model.setScoreVibrato(input, ['a'], 1, true, true).notes[0].tones.every((t) => t.vibrato),
+    );
+  }
+});
+
+test('bass techniques support harmonic/mute and T/P, including ghost notes and file persistence', async () => {
+  const original = base();
+  original.parts = ['Bass'];
+  original.instruments = { Bass: 'bass' };
+  original.notes[0] = {
+    ...original.notes[0],
+    part: 'Bass',
+    pitch: 48,
+    tones: [
+      { pitch: 48, string: 1, fret: 5 },
+      { pitch: 43, string: 2, fret: 5 },
+    ],
+  };
+  let score = model.setScoreGuitarTechnique(original, ['a'], 1, { harmonic: 'natural' });
+  assert.equal(score.notes[0].tones[0].harmonic, 'natural');
+  score = model.setScoreGuitarTechnique(score, ['a'], 1, { palmMute: true });
+  assert.ok(score.notes[0].tones.every((t) => t.palmMute && !t.harmonic));
+  assert.equal(model.canSetScoreNaturalHarmonics(original, ['a']), true);
+  score = model.setScoreBassTechnique(score, ['a'], 1, 'thumb', true);
+  assert.ok(score.notes[0].tones.every((t) => t.bassTechnique === 'thumb'));
+  score = model.setScoreBassTechnique(score, ['a'], 1, 'pluck');
+  assert.equal(score.notes[0].tones[0].bassTechnique, 'pluck');
+  assert.equal(score.notes[0].tones[1].bassTechnique, 'thumb');
+  const content = await files.serializeScoreFile({
+    score,
+    referenceAudio: null,
+    instrumentSample: null,
+  });
+  assert.deepEqual(
+    files.parseScoreFile(content).score.notes[0].tones,
+    JSON.parse(JSON.stringify(score.notes[0].tones)),
+  );
+  assert.equal(policy.isBandScore(score), true);
+  assert.equal(
+    policy.isBandScore({
+      ...score,
+      notes: [{ ...score.notes[0], tones: [{ pitch: 48, bassTechnique: 'bad' }] }],
+    }),
+    false,
+  );
+  assert.ok(model.scoreToMusicXml(score).includes('bassTechnique'));
+  const copied = model.copyScoreNotes(score, 'Bass', ['a']);
+  const pasted = model.readScoreClipboard(
+    JSON.stringify({ type: 'moajam-score', version: 1, notes: copied }),
+  );
+  assert.equal(pasted[0].tones[0].bassTechnique, 'pluck');
+  assert.equal(pasted[0].tones[1].bassTechnique, 'thumb');
+  const ghost = {
+    ...score,
+    notes: score.notes.map((n) => ({ ...n, tones: n.tones.map((t) => ({ ...t, dead: true })) })),
+  };
+  assert.ok(
+    model
+      .setScoreBassTechnique(ghost, ['a'], 1, 'thumb', true)
+      .notes[0].tones.every((t) => t.dead && t.bassTechnique === 'thumb'),
+  );
+});
+
 test('guitar techniques change only the chosen string and preserve written pitch and rhythm', () => {
   const score = base();
   const result = apply(score, { bend: { kind: 'release', amount: 2 } });

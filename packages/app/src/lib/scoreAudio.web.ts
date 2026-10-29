@@ -1,4 +1,16 @@
 import { keyboardPlaybackScore } from './scoreTuning';
+function scheduleVibrato(
+  param: AudioParam | undefined,
+  start: number,
+  duration: number,
+  active: (seconds: number) => boolean,
+) {
+  if (!param) return;
+  for (let time = 0; time <= duration + 1 / 60; time += 1 / 60) {
+    const at = Math.min(time, duration);
+    param.setValueAtTime(active(at) ? 22 * Math.sin(2 * Math.PI * 5.5 * at) : 0, start + at);
+  }
+}
 import {
   guitarBendOffset,
   guitarHarmonicShift,
@@ -311,6 +323,7 @@ export function scheduleScoreNote(
         source.connect(filter).connect(gain).connect(destination);
       } else source.connect(gain).connect(destination);
       source.start(start, offset);
+      if (tone.vibrato) scheduleVibrato(source.detune, start, audible, () => true);
       source.stop(start + audible);
       source.onended = () => {
         source.disconnect();
@@ -340,6 +353,7 @@ export function scheduleScoreNote(
     gain.gain.linearRampToValueAtTime(0, start + duration);
     oscillator.connect(gain).connect(destination);
     oscillator.start(start);
+    if (tone.vibrato) scheduleVibrato(oscillator.detune, start, duration, () => true);
     oscillator.stop(start + duration);
     oscillator.onended = () => {
       oscillator.disconnect();
@@ -632,6 +646,18 @@ export function scheduleScorePassage(
         voice.start(when, offset);
       } else voice.start(when);
       voice.stop(when + duration);
+      if (chain.some((n) => noteTones(n).some((t) => t.vibrato)))
+        scheduleVibrato(voice.detune, when, duration, (time) => {
+          let beat = elapsed + time / seconds;
+          for (const note of chain) {
+            if (beat < note.beats)
+              return !!noteTones(note)
+                .slice()
+                .sort((a, b) => a.pitch - b.pitch)[toneIndex]?.vibrato;
+            beat -= note.beats;
+          }
+          return false;
+        });
       voice.onended = () => {
         voice.disconnect();
         gain.disconnect();

@@ -864,7 +864,10 @@ export function GuitarStaff({
         );
         const hasGuitarTechniques = bars.some(({ fragments }) =>
           fragments.some(({ note }) =>
-            noteTones(note).some((tone) => tone.bend || tone.harmonic || tone.palmMute),
+            noteTones(note).some(
+              (tone) =>
+                tone.bend || tone.harmonic || tone.palmMute || tone.bassTechnique || tone.vibrato,
+            ),
           ),
         );
         const top = !renderStaff
@@ -892,7 +895,7 @@ export function GuitarStaff({
           ? Math.max(210, ...positions.map((y) => y + 80))
           : 110 + Math.max(0, ...directionCounts) * 16;
         const chordY = hasTab ? tabTop - 12 : hasChords ? top + 36 : Math.min(top + 36, 62);
-        const metronomeY = hasTab ? tabTop - (hasGuitarTechniques ? 62 : 44) : 52;
+        const metronomeY = hasTab ? tabTop - (hasChords ? 44 : 30) : 52;
         // A zero system gap should not retain a fixed empty footer. Reserve only
         // the room actually needed below the last TAB line (stems, grace links,
         // tuplets and lyrics), then add the user's gap outside the SVG.
@@ -2315,6 +2318,60 @@ export function GuitarStaff({
                             )),
                           )
                         ))}
+                      {hasTab &&
+                        fragments
+                          .filter(
+                            (f) =>
+                              !f.note.rest &&
+                              !f.note.blank &&
+                              noteTones(f.note).some((t) => t.vibrato),
+                          )
+                          .map((f) => (
+                            <path
+                              key={`vibrato/${f.note.id}/${f.offset}`}
+                              data-vibrato="true"
+                              d={scoreSlidePath(
+                                xAt(f.offset),
+                                tabTop - (hasChords ? 26 : 14),
+                                Math.min(width - 3, xAt(Math.min(barBeats, f.offset + f.beats))),
+                                tabTop - (hasChords ? 26 : 14),
+                              )}
+                              stroke="#344b3e"
+                              fill="none"
+                              strokeWidth="1.2"
+                              pointerEvents="none"
+                            />
+                          ))}
+                      {hasTab &&
+                        fragments
+                          .filter((f) => !f.note.rest && !f.note.blank && !f.continued)
+                          .map((f) => {
+                            const techniques = [
+                              ...new Set(
+                                noteTones(f.note)
+                                  .map((t) => t.bassTechnique)
+                                  .filter(Boolean),
+                              ),
+                            ];
+                            return techniques.length ? (
+                              <text
+                                key={`bass-technique/${f.note.id}`}
+                                data-bass-technique={techniques.join(',')}
+                                x={
+                                  xAt(f.offset) -
+                                  (noteTones(f.note).some((t) => t.vibrato) ? 16 : 0)
+                                }
+                                y={tabTop - 30}
+                                textAnchor="middle"
+                                fontSize="11"
+                                fontWeight="600"
+                                fill="#344b3e"
+                                pointerEvents="none"
+                              >
+                                {techniques.map((t) => (t === 'thumb' ? 'T' : 'P')).join('/')}
+                              </text>
+                            ) : null;
+                          })}
                       {(() => {
                         const ranges: {
                           start: number;

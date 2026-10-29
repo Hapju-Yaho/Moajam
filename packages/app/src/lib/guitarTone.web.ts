@@ -21,7 +21,17 @@ export function createGuitarToneRoute(
     clean,
     overdrive: context.createGain(),
     distortion: context.createGain(),
+    finger: context.createGain(),
+    slap: context.createGain(),
   };
+  for (const tone of ['finger', 'slap'] as const) {
+    const filter = context.createBiquadFilter();
+    filter.type = tone === 'finger' ? 'lowpass' : 'highshelf';
+    filter.frequency.value = tone === 'finger' ? 2600 : 1800;
+    filter.gain.value = tone === 'slap' ? 5 : 0;
+    input.connect(filter).connect(routes[tone]).connect(destination);
+    nodes.push(filter, routes[tone]);
+  }
   for (const tone of ['overdrive', 'distortion'] as const) {
     const shaper = context.createWaveShaper(),
       filter = context.createBiquadFilter();

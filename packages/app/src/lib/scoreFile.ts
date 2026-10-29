@@ -72,6 +72,10 @@ function tone(value: unknown): ScoreTone {
       : { bend: { ...(row.bend as NonNullable<ScoreTone['bend']>) } }),
     ...(row.harmonic === undefined ? {} : { harmonic: row.harmonic as ScoreTone['harmonic'] }),
     ...(row.palmMute === undefined ? {} : { palmMute: boolean(row.palmMute) }),
+    ...(row.vibrato === undefined ? {} : { vibrato: boolean(row.vibrato) }),
+    ...(row.bassTechnique === undefined
+      ? {}
+      : { bassTechnique: row.bassTechnique as ScoreTone['bassTechnique'] }),
   };
 }
 function map<T>(

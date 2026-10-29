@@ -2399,14 +2399,7 @@ export function canSetScoreNaturalHarmonics(score: Score, ids: string[]): boolea
     )
   )
     return false;
-  if (
-    notes.some(
-      (n) =>
-        !scoreInstrument(score, n.part).tuning.length ||
-        scoreInstrument(score, n.part).id.startsWith('bass'),
-    )
-  )
-    return false;
+  if (notes.some((n) => !scoreInstrument(score, n.part).tuning.length)) return false;
   if (notes.length === 1) return true;
   const unit = 4 / scoreTimeSignature(score).beatType;
   const positions = notes.map((n) => {
@@ -2443,6 +2436,55 @@ export function setScoreNaturalHarmonics(score: Score, ids: string[], enabled: b
         harmonic: enabled ? 'natural' : undefined,
       });
   return result;
+}
+
+export function setScoreVibrato(
+  score: Score,
+  ids: string[],
+  string: number,
+  enabled: boolean,
+  allTones = false,
+): Score {
+  return {
+    ...score,
+    notes: score.notes.map((n) =>
+      ids.includes(n.id) && !n.rest && !n.blank && scoreInstrument(score, n.part).tuning.length
+        ? {
+            ...n,
+            tones: tabTones(n, scoreInstrument(score, n.part).tuning).map((t) =>
+              !t.dead && (allTones || t.string === string) ? { ...t, vibrato: enabled } : t,
+            ),
+          }
+        : n,
+    ),
+  };
+}
+
+export function setScoreBassTechnique(
+  score: Score,
+  ids: string[],
+  string: number,
+  technique: ScoreTone['bassTechnique'],
+  allTones = false,
+): Score {
+  if (technique !== undefined && technique !== 'thumb' && technique !== 'pluck')
+    throw new Error('베이스 주법을 확인해주세요.');
+  return {
+    ...score,
+    notes: score.notes.map((n) =>
+      ids.includes(n.id) &&
+      !n.rest &&
+      !n.blank &&
+      scoreInstrument(score, n.part).id.startsWith('bass')
+        ? {
+            ...n,
+            tones: tabTones(n, scoreInstrument(score, n.part).tuning).map((t) =>
+              allTones || t.string === string ? { ...t, bassTechnique: technique } : t,
+            ),
+          }
+        : n,
+    ),
+  };
 }
 
 export function setScoreGuitarTechnique(
@@ -2493,9 +2535,7 @@ export function setScoreGuitarTechnique(
     const muted = {
       ...score,
       notes: score.notes.map((n) =>
-        targets.has(n.id) &&
-        scoreInstrument(score, n.part).tuning.length &&
-        !scoreInstrument(score, n.part).id.startsWith('bass')
+        targets.has(n.id) && scoreInstrument(score, n.part).tuning.length
           ? {
               ...n,
               tones: tabTones(n, scoreInstrument(score, n.part).tuning).map((t) => ({
@@ -2515,7 +2555,7 @@ export function setScoreGuitarTechnique(
   for (const note of selected) {
     const instrument = scoreInstrument(score, note.part);
     const tone = tabTones(note, instrument.tuning).find((t) => t.string === string);
-    if (!instrument.tuning.length || instrument.id.startsWith('bass') || !tone || tone.dead)
+    if (!instrument.tuning.length || !tone || tone.dead)
       throw new Error('기타의 소리 나는 음과 줄을 선택해주세요.');
     if (!validGuitarTechniques({ ...tone, ...patch }))
       throw new Error('기타 주법 설정을 확인해주세요.');
@@ -2936,6 +2976,8 @@ export function readScoreClipboard(text: string): ScoreClipboardNote[] | null {
           bend,
           harmonic,
           palmMute,
+          bassTechnique,
+          vibrato,
         }) => ({
           pitch,
           ...(naturalPitch === undefined ? {} : { naturalPitch }),
@@ -2947,6 +2989,8 @@ export function readScoreClipboard(text: string): ScoreClipboardNote[] | null {
           ...(bend ? { bend: { ...bend } } : {}),
           ...(harmonic ? { harmonic } : {}),
           ...(palmMute === undefined ? {} : { palmMute }),
+          ...(bassTechnique === undefined ? {} : { bassTechnique }),
+          ...(vibrato === undefined ? {} : { vibrato }),
         }),
       ),
       copiedChords: note.copiedChords?.map(({ offset, chord }) => ({ offset, chord })),
@@ -3453,8 +3497,8 @@ export function scoreToMusicXml(score: Score): string {
             let linkedNotation =
                 note.graceSlide && !continued ? '<slide type="stop" number="6"/>' : '',
               linkedTechnical = '';
-            if (tone.bend || tone.harmonic || tone.palmMute) {
-              linkedTechnical += `<other-technical>moajam-guitar:${escape(JSON.stringify({ bend: tone.bend, harmonic: tone.harmonic, palmMute: tone.palmMute }))}</other-technical>`;
+            if (tone.bend || tone.harmonic || tone.palmMute || tone.bassTechnique || tone.vibrato) {
+              linkedTechnical += `<other-technical>moajam-guitar:${escape(JSON.stringify({ bend: tone.bend, harmonic: tone.harmonic, palmMute: tone.palmMute, bassTechnique: tone.bassTechnique, vibrato: tone.vibrato }))}</other-technical>`;
               if (tone.harmonic)
                 linkedTechnical += `<harmonic><${tone.harmonic === 'natural' ? 'natural' : 'artificial'}/></harmonic>`;
               if (tone.bend)

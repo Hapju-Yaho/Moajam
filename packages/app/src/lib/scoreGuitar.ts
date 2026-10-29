@@ -4,6 +4,8 @@ export const guitarToneLabels = {
   clean: 'Clean',
   overdrive: 'Over Drive',
   distortion: 'Distortion',
+  finger: 'Finger',
+  slap: 'Slap',
 } as const;
 export type GuitarTone = keyof typeof guitarToneLabels;
 export function readGuitarToneChanges(

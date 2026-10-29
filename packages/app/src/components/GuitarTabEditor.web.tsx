@@ -1,3 +1,4 @@
+import { setScoreVibrato } from '../lib/score';
 import { ScorePlaybackMeasure } from './ScorePlaybackReadout.web';
 import { ScoreGuitarTechniqueTools } from './ScoreGuitarTechniqueTools.web';
 import { keyboardKeyIsWritten } from '../lib/scoreTuning';
@@ -2570,12 +2571,17 @@ function GuitarTabEditorContent({
                       focus();
                     }}
                   >
-                    {Object.entries(guitarToneLabels).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                        {value === 'clean' ? ' · 드라이브 해제' : ''}
-                      </option>
-                    ))}
+                    {Object.entries(guitarToneLabels)
+                      .filter(
+                        ([value]) =>
+                          instrument.id.startsWith('bass') || !['finger', 'slap'].includes(value),
+                      )
+                      .map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                          {value === 'clean' ? ' · 드라이브 해제' : ''}
+                        </option>
+                      ))}
                   </select>
                   <button
                     type="button"
@@ -2599,9 +2605,7 @@ function GuitarTabEditorContent({
         )}
         <div
           className="guitar-inputbar score-guitar-technique-tools"
-          hidden={
-            toolTab !== 'measures' || !instrument.tuning.length || instrument.id.startsWith('bass')
-          }
+          hidden={toolTab !== 'measures' || !instrument.tuning.length}
         >
           <ScoreGuitarTechniqueTools
             score={score}
@@ -2626,7 +2630,7 @@ function GuitarTabEditorContent({
             }
           />
         </div>
-        {(!instrument.tuning.length || instrument.id.startsWith('bass')) && (
+        {!instrument.tuning.length && (
           <div
             className="guitar-inputbar score-connections"
             hidden={toolTab !== 'measures'}
@@ -2944,12 +2948,46 @@ function GuitarTabEditorContent({
                   </ScoreToolButton>
                 );
               })}
-            <ScoreToolButton
-              disabled={disabled || !copiedSelection.some((n) => n.connection)}
-              onClick={() => connectNotes(null)}
-            >
-              연결 해제
-            </ScoreToolButton>
+            {instrument.tuning.length > 0 && (
+              <ScoreToolButton
+                icon="∿"
+                aria-label="비브라토"
+                disabled={
+                  disabled || !soundingSelection.some((n) => noteTones(n).some((t) => !t.dead))
+                }
+                aria-pressed={
+                  (range
+                    ? soundingSelection.flatMap(noteTones)
+                    : toneSelection.flatMap(noteTones).filter((t) => t.string === activeString)
+                  ).filter((t) => !t.dead).length > 0 &&
+                  (range
+                    ? soundingSelection.flatMap(noteTones)
+                    : toneSelection.flatMap(noteTones).filter((t) => t.string === activeString)
+                  )
+                    .filter((t) => !t.dead)
+                    .every((t) => t.vibrato)
+                }
+                onClick={() => {
+                  const tones = (
+                    range
+                      ? soundingSelection.flatMap(noteTones)
+                      : toneSelection.flatMap(noteTones).filter((t) => t.string === activeString)
+                  ).filter((t) => !t.dead);
+                  commit(
+                    setScoreVibrato(
+                      score,
+                      copiedSelection.map((n) => n.id),
+                      activeString,
+                      !tones.every((t) => t.vibrato),
+                      !!range,
+                    ),
+                    true,
+                  );
+                }}
+              >
+                비브라토
+              </ScoreToolButton>
+            )}
           </div>
         )}
         {isDrums && (
