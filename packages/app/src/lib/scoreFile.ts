@@ -73,6 +73,7 @@ function tone(value: unknown): ScoreTone {
     ...(row.harmonic === undefined ? {} : { harmonic: row.harmonic as ScoreTone['harmonic'] }),
     ...(row.palmMute === undefined ? {} : { palmMute: boolean(row.palmMute) }),
     ...(row.vibrato === undefined ? {} : { vibrato: boolean(row.vibrato) }),
+    ...(row.strum === undefined ? {} : { strum: row.strum as ScoreTone['strum'] }),
     ...(row.bassTechnique === undefined
       ? {}
       : { bassTechnique: row.bassTechnique as ScoreTone['bassTechnique'] }),

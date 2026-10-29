@@ -32,6 +32,7 @@ function KeyboardInputPreview({ x, y, beats }: { x: number; y: number; beats: nu
 }
 import { scoreChordHeadOffsets, scoreAccidentalColumns } from '../lib/scoreLayout';
 import { guitarToneLabels } from '../lib/scoreGuitar';
+import { ScoreStrumMark } from './ScoreStrumMark.web';
 import { RhythmSlash } from './RhythmSlash.web';
 import { TabRhythm } from './TabRhythm.web';
 import { NoteFlags } from './NoteFlags.web';
@@ -390,13 +391,14 @@ export function GuitarStaff({
         : undefined,
     );
   const chordPadding = (note: ScoreFragment['note']) => {
-    if (!renderStaff || isDrums) return 0;
+    const strumWidth = noteTones(note).some((t) => t.strum) ? 18 : 0;
+    if (!renderStaff || isDrums) return strumWidth;
     const ys = noteTones(note).map(toneY);
     const columns = scoreAccidentalColumns(
       ys,
       ys.map(() => '♯'),
     );
-    return Math.max(0, ...columns) + Math.max(0, ...scoreChordHeadOffsets(ys, -1));
+    return strumWidth + Math.max(0, ...columns) + Math.max(0, ...scoreChordHeadOffsets(ys, -1));
   };
   const clickPitch = (element: SVGGraphicsElement, clientX: number, clientY: number) => {
     const matrix = element.getScreenCTM();
@@ -2355,6 +2357,66 @@ export function GuitarStaff({
                             )),
                           )
                         ))}
+                      {!renderStaff &&
+                        hasTab &&
+                        fragments
+                          .filter(
+                            (f) =>
+                              !f.note.rest &&
+                              !f.note.blank &&
+                              !f.continued &&
+                              f.note.accent &&
+                              tabTones(f.note, tuning).length >= 3,
+                          )
+                          .map((f) => (
+                            <text
+                              key={`strum-accent/${f.note.id}`}
+                              data-strum-accent="true"
+                              x={xAt(f.offset)}
+                              y={tabTop - (hasChords ? 30 : 20)}
+                              textAnchor="middle"
+                              fontSize="16"
+                              fill="#344b3e"
+                              pointerEvents="none"
+                            >
+                              &gt;
+                            </text>
+                          ))}
+                      {fragments.map((f) => {
+                        if (f.note.rest || f.note.blank || f.continued || !tuning.length)
+                          return null;
+                        const tones = tabTones(f.note, tuning),
+                          direction = tones.find((t) => t.strum)?.strum;
+                        if (
+                          !direction ||
+                          new Set(tones.map((t) => t.string).filter(Boolean)).size < 3
+                        )
+                          return null;
+                        const ys = renderStaff ? tones.map(toneY) : [],
+                          strings = hasTab
+                            ? tones.map((t) => tabTop + ((t.string ?? 1) - 1) * tabSpacing)
+                            : [];
+                        return (
+                          <g key={`strum/${f.note.id}/${f.offset}`} color="#344b3e">
+                            {renderStaff && (
+                              <ScoreStrumMark
+                                direction={direction}
+                                x={xAt(f.offset) - 18}
+                                top={Math.min(...ys) - 5}
+                                bottom={Math.max(...ys) + 5}
+                              />
+                            )}
+                            {hasTab && (
+                              <ScoreStrumMark
+                                direction={direction}
+                                x={xAt(f.offset) - 18}
+                                top={Math.min(...strings) - 5}
+                                bottom={Math.max(...strings) + 5}
+                              />
+                            )}
+                          </g>
+                        );
+                      })}
                       {hasTab &&
                         fragments
                           .filter(

@@ -6,11 +6,14 @@ import {
   selectedScoreTone,
   setScoreGuitarTechnique,
   setScoreBassTechnique,
+  canSetScoreStrum,
+  setScoreStrum,
   type Score,
 } from '../lib/score';
 import { supportsNaturalHarmonic, type GuitarTechniqueFields } from '../lib/scoreGuitarTechniques';
 import { ScoreToolButton } from './ScoreToolButton.web';
 import { ScoreBendGraph } from './ScoreBendGraph.web';
+import { ScoreStrumMark } from './ScoreStrumMark.web';
 
 export function ScoreGuitarTechniqueTools({
   score,
@@ -190,6 +193,55 @@ export function ScoreGuitarTechniqueTools({
       </div>
       {!isBass && (
         <>
+          <span className="score-tool-group-label">스트로크</span>
+          <div className="score-guitar-technique-grid score-strum-tools">
+            {(['up', 'down'] as const).map((direction) => {
+              const pressed =
+                ids.length > 0 &&
+                ids.every((id) => {
+                  const selected = score.notes.find((n) => n.id === id);
+                  return (
+                    !!selected &&
+                    noteTones(selected).length > 0 &&
+                    noteTones(selected).every((t) => t.strum === direction)
+                  );
+                });
+              return (
+                <ScoreToolButton
+                  key={direction}
+                  icon={
+                    <svg viewBox="0 0 24 32">
+                      <ScoreStrumMark direction={direction} x={12} top={3} bottom={29} />
+                    </svg>
+                  }
+                  disabled={disabled || !canSetScoreStrum(score, ids)}
+                  aria-pressed={pressed}
+                  title="같은 박에 3개 이상의 줄을 연주할 때 적용"
+                  onClick={() =>
+                    onEdit(setScoreStrum(score, ids, { strum: pressed ? undefined : direction }))
+                  }
+                >
+                  {direction === 'up' ? '업 스트로크' : '다운 스트로크'}
+                </ScoreToolButton>
+              );
+            })}
+            <ScoreToolButton
+              icon=">"
+              disabled={disabled || !canSetScoreStrum(score, ids)}
+              aria-pressed={
+                ids.length > 0 && ids.every((id) => score.notes.find((n) => n.id === id)?.accent)
+              }
+              onClick={() =>
+                onEdit(
+                  setScoreStrum(score, ids, {
+                    accent: !ids.every((id) => score.notes.find((n) => n.id === id)?.accent),
+                  }),
+                )
+              }
+            >
+              악센트
+            </ScoreToolButton>
+          </div>
           <span className="score-tool-group-label">벤딩</span>
           <div className="score-bend-selectors">
             <label>

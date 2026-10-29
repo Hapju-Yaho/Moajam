@@ -300,6 +300,7 @@ function isSingleBandScore(value: unknown): boolean {
             object(tone) &&
             (tone.palmMute === undefined || typeof tone.palmMute === 'boolean') &&
             (tone.vibrato === undefined || typeof tone.vibrato === 'boolean') &&
+            (tone.strum === undefined || tone.strum === 'up' || tone.strum === 'down') &&
             (tone.bassTechnique === undefined ||
               tone.bassTechnique === 'thumb' ||
               tone.bassTechnique === 'pluck') &&

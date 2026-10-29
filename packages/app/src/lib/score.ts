@@ -2488,6 +2488,48 @@ export function setScoreNaturalHarmonics(score: Score, ids: string[], enabled: b
   return result;
 }
 
+export function canSetScoreStrum(score: Score, ids: string[]): boolean {
+  return (
+    ids.length > 0 &&
+    ids.every((id) => {
+      const note = score.notes.find((n) => n.id === id);
+      if (!note || note.rest || note.blank) return false;
+      const instrument = scoreInstrument(score, note.part);
+      return (
+        !!instrument.tuning.length &&
+        !instrument.id.startsWith('bass') &&
+        new Set(
+          tabTones(note, instrument.tuning)
+            .map((t) => t.string)
+            .filter(Boolean),
+        ).size >= 3
+      );
+    })
+  );
+}
+export function setScoreStrum(
+  score: Score,
+  ids: string[],
+  patch: { strum?: 'up' | 'down'; accent?: boolean },
+): Score {
+  if (!canSetScoreStrum(score, ids))
+    throw new Error('같은 박에 3개 이상의 줄을 연주하는 음표를 선택해주세요.');
+  return {
+    ...score,
+    notes: score.notes.map((n) =>
+      ids.includes(n.id)
+        ? {
+            ...n,
+            ...(patch.accent === undefined ? {} : { accent: patch.accent }),
+            tones: tabTones(n, scoreInstrument(score, n.part).tuning).map((t) =>
+              Object.hasOwn(patch, 'strum') ? { ...t, strum: patch.strum } : t,
+            ),
+          }
+        : n,
+    ),
+  };
+}
+
 export function setScoreVibrato(
   score: Score,
   ids: string[],
@@ -3028,6 +3070,7 @@ export function readScoreClipboard(text: string): ScoreClipboardNote[] | null {
           palmMute,
           bassTechnique,
           vibrato,
+          strum,
         }) => ({
           pitch,
           ...(naturalPitch === undefined ? {} : { naturalPitch }),
@@ -3041,6 +3084,7 @@ export function readScoreClipboard(text: string): ScoreClipboardNote[] | null {
           ...(palmMute === undefined ? {} : { palmMute }),
           ...(bassTechnique === undefined ? {} : { bassTechnique }),
           ...(vibrato === undefined ? {} : { vibrato }),
+          ...(strum === undefined ? {} : { strum }),
         }),
       ),
       copiedChords: note.copiedChords?.map(({ offset, chord }) => ({ offset, chord })),
@@ -3547,8 +3591,15 @@ export function scoreToMusicXml(score: Score): string {
             let linkedNotation =
                 note.graceSlide && !continued ? '<slide type="stop" number="6"/>' : '',
               linkedTechnical = '';
-            if (tone.bend || tone.harmonic || tone.palmMute || tone.bassTechnique || tone.vibrato) {
-              linkedTechnical += `<other-technical>moajam-guitar:${escape(JSON.stringify({ bend: tone.bend, harmonic: tone.harmonic, palmMute: tone.palmMute, bassTechnique: tone.bassTechnique, vibrato: tone.vibrato }))}</other-technical>`;
+            if (
+              tone.bend ||
+              tone.harmonic ||
+              tone.palmMute ||
+              tone.bassTechnique ||
+              tone.vibrato ||
+              tone.strum
+            ) {
+              linkedTechnical += `<other-technical>moajam-guitar:${escape(JSON.stringify({ bend: tone.bend, harmonic: tone.harmonic, palmMute: tone.palmMute, bassTechnique: tone.bassTechnique, vibrato: tone.vibrato, strum: tone.strum }))}</other-technical>`;
               if (tone.harmonic)
                 linkedTechnical += `<harmonic><${tone.harmonic === 'natural' ? 'natural' : 'artificial'}/></harmonic>`;
               if (tone.bend)

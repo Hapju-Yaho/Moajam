@@ -1,4 +1,5 @@
 export type GuitarTechniqueFields = {
+  strum?: 'up' | 'down';
   vibrato?: boolean;
   bassTechnique?: 'thumb' | 'pluck';
   palmMute?: boolean;
@@ -16,6 +17,7 @@ export function validGuitarTechniques(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const t = value as GuitarTechniqueFields;
   return (
+    (t.strum === undefined || ['up', 'down'].includes(t.strum)) &&
     (t.vibrato === undefined || typeof t.vibrato === 'boolean') &&
     (t.bassTechnique === undefined || ['thumb', 'pluck'].includes(t.bassTechnique)) &&
     (t.palmMute === undefined || typeof t.palmMute === 'boolean') &&

@@ -439,6 +439,7 @@ export function scoreFromMusicXml(text: string, makeId = () => clientId()): Scor
             palmMute: guitar.palmMute,
             bassTechnique: guitar.bassTechnique,
             vibrato: guitar.vibrato,
+            strum: guitar.strum,
           });
         }
         if (unpitched) {

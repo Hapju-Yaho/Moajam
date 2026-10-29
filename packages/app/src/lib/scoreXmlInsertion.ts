@@ -77,6 +77,7 @@ export function insertScoreXml(
           delete tone.palmMute;
           delete tone.bassTechnique;
           delete tone.vibrato;
+          delete tone.strum;
           return tone;
         });
       return copy;
