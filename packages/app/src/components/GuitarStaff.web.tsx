@@ -1,4 +1,4 @@
-import { scoreBeatSelectionGroups } from '../lib/scoreSelection';
+import { scoreBeatSelectionGroups, scoreNotesInBeatRange } from '../lib/scoreSelection';
 import { drumStemLength } from '../lib/drumStroke';
 import { GuitarTechniqueMarks } from './GuitarTechniqueMarks.web';
 import { drumMeasureComplete } from '../lib/scoreDrumEntry';
@@ -205,16 +205,18 @@ export function GuitarStaff({
   otherVoiceOpacity?: number;
 }) {
   const systems = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ anchor: string; end: string; x: number; y: number; moved: boolean } | null>(
-    null,
-  );
-  const suppressClick = useRef(false);
-  const [selectionBox, setSelectionBox] = useState<{
-    left: number;
-    top: number;
-    width: number;
-    height: number;
+  const drag = useRef<{
+    anchor: string;
+    end: string;
+    x: number;
+    y: number;
+    moved: boolean;
+    beat?: number;
   } | null>(null);
+  const suppressClick = useRef(false);
+  const [selectionBox, setSelectionBox] = useState<
+    { left: number; top: number; width: number; height: number }[] | null
+  >(null);
   const [measuredWidth, setSystemWidth] = useState(800);
   const [printing, setPrinting] = useState(false);
   useEffect(() => {
@@ -417,6 +419,24 @@ export function GuitarStaff({
       naturals[0],
     );
   };
+  const dragMarkers = () => [
+    ...(systems.current?.querySelectorAll<SVGGraphicsElement>('[data-selection-position]') ?? []),
+  ];
+  const nearestDragBeat = (x: number, y: number) => {
+    let best = Infinity,
+      beat: number | undefined;
+    for (const marker of dragMarkers()) {
+      const box = marker.getBoundingClientRect(),
+        row = marker.closest('svg')!.getBoundingClientRect();
+      const dy = Math.max(row.top - y, 0, y - row.bottom),
+        distance = dy * 100000 + Math.abs((box.left + box.right) / 2 - x);
+      if (distance < best) {
+        best = distance;
+        beat = Number(marker.getAttribute('data-selection-position'));
+      }
+    }
+    return beat;
+  };
   return (
     <div
       ref={systems}
@@ -449,6 +469,7 @@ export function GuitarStaff({
           x: event.clientX,
           y: event.clientY,
           moved: false,
+          beat: nearestDragBeat(event.clientX, event.clientY),
         };
       }}
       onPointerMoveCapture={(event) => {
@@ -462,31 +483,42 @@ export function GuitarStaff({
         if (!current.moved && Math.hypot(event.clientX - current.x, event.clientY - current.y) < 5)
           return;
         if (!current.moved) event.currentTarget.setPointerCapture(event.pointerId);
-        const rect = {
-          left: Math.min(current.x, event.clientX),
-          top: Math.min(current.y, event.clientY),
-          width: Math.abs(event.clientX - current.x),
-          height: Math.abs(event.clientY - current.y),
-        };
-        setSelectionBox(rect);
-        const ids = new Set<string>();
-        systems.current
-          ?.querySelectorAll<SVGGraphicsElement>('[data-selection-beat]')
-          .forEach((element) => {
-            const bounds = element.getBoundingClientRect();
-            if (
-              (bounds.left + bounds.right) / 2 >= rect.left &&
-              (bounds.left + bounds.right) / 2 <= rect.left + rect.width &&
-              bounds.top < rect.top + rect.height &&
-              bounds.bottom > rect.top
-            ) {
-              for (const id of JSON.parse(
-                element.getAttribute('data-selection-beat') ?? '[]',
-              ) as string[])
-                ids.add(id);
-            }
-          });
-        onBoxSelect?.([...ids]);
+        const end = nearestDragBeat(event.clientX, event.clientY);
+        const start = current.beat;
+        if (start === undefined || end === undefined) return;
+        const first = Math.min(start, end),
+          last = Math.max(start, end);
+        onBoxSelect?.(scoreNotesInBeatRange(score, drumPair ?? [part], first, last));
+        const rows = new Map<SVGSVGElement, SVGGraphicsElement[]>();
+        for (const marker of dragMarkers()) {
+          const svg = marker.closest('svg')!;
+          const list = rows.get(svg) ?? [];
+          list.push(marker);
+          rows.set(svg, list);
+        }
+        const boxes: { left: number; top: number; width: number; height: number }[] = [];
+        for (const [svg, markers] of rows) {
+          const positions = markers.map((m) => ({
+            beat: Number(m.getAttribute('data-selection-position')),
+            rect: m.getBoundingClientRect(),
+          }));
+          const low = Math.min(...positions.map((p) => p.beat)),
+            high = Math.max(...positions.map((p) => p.beat));
+          if (last < low || first > high) continue;
+          const included = positions.filter((p) => p.beat >= first - 1e-7 && p.beat <= last + 1e-7);
+          if (!included.length) continue;
+          const row = svg.getBoundingClientRect();
+          const left =
+            first <= low
+              ? Math.min(...positions.map((p) => p.rect.left)) - 8
+              : Math.min(...included.map((p) => p.rect.left)) - 8;
+          const right =
+            last >= high ? row.right : Math.max(...included.map((p) => p.rect.right)) + 8;
+          const top = Math.min(...positions.map((p) => p.rect.top)),
+            bottom = Math.max(...positions.map((p) => p.rect.bottom));
+          boxes.push({ left, top, width: right - left, height: bottom - top });
+        }
+        setSelectionBox(boxes);
         current.moved = true;
         const workspace = systems.current?.closest<HTMLElement>('.score-workspace');
         if (workspace) {
@@ -537,19 +569,24 @@ export function GuitarStaff({
     >
       {selectionBox &&
         createPortal(
-          <div
-            aria-hidden="true"
-            data-score-selection-box="true"
-            style={{
-              position: 'fixed',
-              ...selectionBox,
-              border: '2px solid #397dd9',
-              background: '#397dd926',
-              pointerEvents: 'none',
-              zIndex: 2147483000,
-              boxSizing: 'border-box',
-            }}
-          />,
+          <>
+            {selectionBox.map((box, index) => (
+              <div
+                key={index}
+                aria-hidden="true"
+                data-score-selection-box="true"
+                style={{
+                  position: 'fixed',
+                  ...box,
+                  border: '1px solid #397dd9',
+                  background: '#397dd912',
+                  pointerEvents: 'none',
+                  zIndex: 2147483000,
+                  boxSizing: 'border-box',
+                }}
+              />
+            ))}
+          </>,
           document.body,
         )}
 
@@ -1205,7 +1242,6 @@ export function GuitarStaff({
                       {editable &&
                         scoreBeatSelectionGroups(fragments, barBeats, 4 / meter.beatType).flatMap(
                           (group) => {
-                            if (!group.ids.length) return [];
                             const surfaces = [
                               ...(renderStaff ? [{ top: 82, bottom: 122 }] : []),
                               ...(hasTab ? [{ top: tabTop - 8, bottom: tabBottom + 8 }] : []),
@@ -1214,6 +1250,7 @@ export function GuitarStaff({
                               <rect
                                 key={`beat-select/${group.offset}/${index}`}
                                 data-selection-beat={JSON.stringify(group.ids)}
+                                data-selection-position={barStart + group.offset}
                                 x={xAt(group.offset) - 0.5}
                                 y={surface.top}
                                 width={1}
@@ -1859,7 +1896,11 @@ export function GuitarStaff({
                                               rx="5"
                                               ry="3.3"
                                               transform={`rotate(-18 ${headX} ${y})`}
-                                              fill={beats >= 2 ? 'var(--score-paper-color, #fffefb)' : '#293e34'}
+                                              fill={
+                                                beats >= 2
+                                                  ? 'var(--score-paper-color, #fffefb)'
+                                                  : '#293e34'
+                                              }
                                               stroke="#293e34"
                                               strokeWidth="1.1"
                                             />
@@ -1995,7 +2036,9 @@ export function GuitarStaff({
                                       tabIndex={0}
                                       aria-label={`${bar + 1}마디 ${offset + 1}박 ${row + 1}번 줄 ${tone ? `${tone.dead ? 'X 데드노트' : `${tone.fret}프렛`}${tone.ghost && !tone.dead ? ' 고스트노트' : ''}${note.staccato ? ' 스타카토' : ''}` : note.blank ? '빈 박' : note.rest ? '쉼표' : '빈 줄'}`}
                                       aria-pressed={
-                                        (chosen && selectedString === row + 1) ||
+                                        (!rangeIds.length &&
+                                          chosen &&
+                                          selectedString === row + 1) ||
                                         rangeIds.includes(note.id)
                                       }
                                       onClick={(event) => {
@@ -2030,26 +2073,30 @@ export function GuitarStaff({
                                         height={tabSpacing}
                                         fill="transparent"
                                       />
-                                      <rect
-                                        className="score-cell-cursor"
-                                        x={x - cursorWidth / 2}
-                                        y={
-                                          tabTop +
-                                          row * tabSpacing -
-                                          Math.min(18, tabSpacing - 2) / 2
-                                        }
-                                        width={cursorWidth}
-                                        height={Math.min(18, tabSpacing - 2)}
-                                        rx="1"
-                                        fill={
-                                          chosen && selectedString === row + 1
-                                            ? '#fff2df'
-                                            : 'transparent'
-                                        }
-                                        stroke={
-                                          chosen && selectedString === row + 1 ? '#c77830' : 'none'
-                                        }
-                                      />
+                                      {rangeIds.length === 0 && (
+                                        <rect
+                                          className="score-cell-cursor"
+                                          x={x - cursorWidth / 2}
+                                          y={
+                                            tabTop +
+                                            row * tabSpacing -
+                                            Math.min(18, tabSpacing - 2) / 2
+                                          }
+                                          width={cursorWidth}
+                                          height={Math.min(18, tabSpacing - 2)}
+                                          rx="1"
+                                          fill={
+                                            !rangeIds.length && chosen && selectedString === row + 1
+                                              ? '#fff2df'
+                                              : 'transparent'
+                                          }
+                                          stroke={
+                                            !rangeIds.length && chosen && selectedString === row + 1
+                                              ? '#c77830'
+                                              : 'none'
+                                          }
+                                        />
+                                      )}
                                       {tone && (
                                         <rect
                                           data-selection-note={note.id}
@@ -2093,7 +2140,9 @@ export function GuitarStaff({
                                             fontWeight="600"
                                             paintOrder="stroke"
                                             stroke={
-                                              chosen && selectedString === row + 1
+                                              !rangeIds.length &&
+                                              chosen &&
+                                              selectedString === row + 1
                                                 ? '#fff2df'
                                                 : 'var(--score-paper-color, #fffefb)'
                                             }
@@ -2267,7 +2316,12 @@ export function GuitarStaff({
                           )
                         ))}
                       {(() => {
-                        const ranges: { start: number; end: number }[] = [];
+                        const ranges: {
+                          start: number;
+                          end: number;
+                          first: number;
+                          last: number;
+                        }[] = [];
                         for (const f of fragments) {
                           if (
                             !noteTones(f.note).some((t) => t.palmMute) ||
@@ -2278,8 +2332,11 @@ export function GuitarStaff({
                           const start = Math.max(0, Math.floor(f.offset + 1e-7));
                           const end = Math.min(barBeats, Math.ceil(f.offset + f.beats - 1e-7));
                           const last = ranges[ranges.length - 1];
-                          if (last && start <= last.end + 1e-7) last.end = Math.max(last.end, end);
-                          else ranges.push({ start, end });
+                          if (last && start <= last.end + 1e-7) {
+                            last.end = Math.max(last.end, end);
+                            last.first = Math.min(last.first, f.offset);
+                            last.last = Math.max(last.last, f.offset);
+                          } else ranges.push({ start, end, first: f.offset, last: f.offset });
                         }
                         const palmEdge = (index: number, end: boolean) => {
                           if (index < 0) return false;
@@ -2295,8 +2352,8 @@ export function GuitarStaff({
                         return ranges.map((r) => {
                           const fromPrevious = r.start === 0 && palmEdge(bar - 1, true);
                           const intoNext = r.end >= barBeats - 1e-7 && palmEdge(bar + 1, false);
-                          const left = fromPrevious ? 0 : xAt(r.start),
-                            right = intoNext ? width : xAt(r.end);
+                          const left = fromPrevious ? 0 : Math.max(0, xAt(r.first) - 8),
+                            right = intoNext ? width : Math.min(width, xAt(r.last) + 8);
                           const y = hasTab ? tabBottom + 40 : top + 18;
                           return (
                             <g

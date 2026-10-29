@@ -4,6 +4,7 @@ import { createContext, useContext } from 'react';
 export type ScoreInspectorTab = 'notes' | 'measures' | 'score' | 'settings';
 export const ScoreEditorLayoutContext = createContext({
   mixerHost: null as HTMLDivElement | null,
+  exportHost: null as HTMLDivElement | null,
   projectActionsOpen: false,
   expanded: false,
   inspectorOpen: false,

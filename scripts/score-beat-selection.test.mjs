@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { URL } from 'node:url';
 import { moduleUrl } from './load-typescript.mjs';
-const { scoreBeatSelectionGroups } = await import(
+const { scoreBeatSelectionGroups, scoreNotesInBeatRange } = await import(
   moduleUrl(new URL('../packages/app/src/lib/scoreSelection.ts', import.meta.url))
 );
 const fragment = (id, offset, beats, extra = {}) => ({
@@ -46,4 +46,35 @@ test('sustained notes occupy later beats, grace notes belong to their onset and 
       { offset: 0.5, ids: ['b'] },
     ],
   );
+});
+
+test('drag endpoints select every intervening beat across systems and voices in either direction', () => {
+  const score = {
+    timeSignature: { beats: 4, beatType: 4 },
+    notes: ['Upper', 'Lower'].flatMap((part) =>
+      Array.from({ length: 16 }, (_, i) => ({
+        id: `${part}/${i}`,
+        part,
+        beats: 2,
+        rest: false,
+        blank: false,
+      })),
+    ),
+  };
+  const expected = ['Upper', 'Lower'].flatMap((part) =>
+    Array.from({ length: 9 }, (_, i) => `${part}/${i + 4}`),
+  );
+  assert.deepEqual(scoreNotesInBeatRange(score, ['Upper', 'Lower'], 8, 24), expected);
+  assert.deepEqual(scoreNotesInBeatRange(score, ['Upper', 'Lower'], 24, 8), expected);
+});
+
+test('continuous selection retains intervening rests as part of the musical range', () => {
+  const score = {
+    notes: [
+      { id: 'a', part: 'Guitar', beats: 1 },
+      { id: 'rest', part: 'Guitar', beats: 1, rest: true },
+      { id: 'b', part: 'Guitar', beats: 1 },
+    ],
+  };
+  assert.deepEqual(scoreNotesInBeatRange(score, ['Guitar'], 0, 2), ['a', 'rest', 'b']);
 });

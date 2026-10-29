@@ -603,6 +603,50 @@ function GuitarTabEditorContent({
       : rows.length > 0 || displayParts.some((p) => score.notes.some((n) => n.part === p))) &&
     playFrom <
       Math.max(...(playAll ? score.parts : displayParts).map((p) => scorePlaybackBeats(score, p)));
+  useEffect(() => {
+    const handlesSpace = (event: globalThis.KeyboardEvent) => {
+      if (
+        (event.code !== 'Space' && event.key !== ' ') ||
+        event.isComposing ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey
+      )
+        return false;
+      const viewport = editor.current?.closest('.score-editor-viewport') ?? editor.current;
+      const target = event.target;
+      if (
+        !viewport ||
+        !(target instanceof Element) ||
+        (!viewport.contains(target) &&
+          target !== document.body &&
+          target !== document.documentElement) ||
+        target.closest('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"]')
+      )
+        return false;
+      return viewport.getBoundingClientRect().width > 0;
+    };
+    const down = (event: globalThis.KeyboardEvent) => {
+      if (!handlesSpace(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat && loaded && (playing || canPlaySelection))
+        onPlay(playFrom, loopEnd, repeatAll);
+    };
+    const up = (event: globalThis.KeyboardEvent) => {
+      if (handlesSpace(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener('keydown', down, true);
+    window.addEventListener('keyup', up, true);
+    return () => {
+      window.removeEventListener('keydown', down, true);
+      window.removeEventListener('keyup', up, true);
+    };
+  }, [loaded, playing, canPlaySelection, onPlay, playFrom, loopEnd, repeatAll]);
+
   const focus = () => editor.current?.focus({ preventScroll: true });
   const onAudition = (played: ScoreNote) =>
     auditionNote({ ...played, guitarTone: guitarToneAt(score, part, before) });

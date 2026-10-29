@@ -60,7 +60,6 @@ import {
 import { scoreInstrument } from '../lib/score';
 import { GuitarTabEditor } from '../components/GuitarTabEditor.web';
 import { ScoreEditorViewport, type ScoreViewActions } from '../components/ScoreEditorViewport.web';
-import { scoreFromMusicXml } from '../lib/scoreImport.web';
 import { useIdentity } from '../state/Identity';
 import { ScoreInstrumentSample } from '../components/ScoreInstrumentSample.web';
 import type { InstrumentSample } from '../lib/samplePitch';
@@ -327,7 +326,6 @@ export function ScoreEditorScreen({
     ? savedInstrument
     : defaultSoundfontInstrument(part, score.instruments?.[part]);
   const [fileBusy, setFileBusy] = useState(false);
-  const xmlInput = useRef<HTMLInputElement>(null);
   const [documentVersion, setDocumentVersion] = useState(0);
   useEffect(
     () => stopAudition,
@@ -1179,6 +1177,8 @@ export function ScoreEditorScreen({
             fileBusy
           }
           onLoad={setImportedVersion}
+          onMidiApply={edit}
+          onXmlApply={edit}
           importAsVersion
           onBusyChange={setFileBusy}
           header={
@@ -1368,69 +1368,6 @@ export function ScoreEditorScreen({
                 )}
               </div>
             )
-          }
-          xmlImport={
-            <>
-              <button
-                type="button"
-                disabled={
-                  !loaded ||
-                  playing ||
-                  fileBusy ||
-                  bandSaving ||
-                  audioLoading ||
-                  sampleLoading ||
-                  soundfontBusy
-                }
-                onClick={() => xmlInput.current?.click()}
-              >
-                MusicXML 가져오기
-              </button>
-              <input
-                type="file"
-                ref={xmlInput}
-                hidden
-                accept=".musicxml,.xml"
-                aria-label="MusicXML 파일 가져오기"
-                disabled={
-                  !loaded ||
-                  playing ||
-                  fileBusy ||
-                  bandSaving ||
-                  audioLoading ||
-                  sampleLoading ||
-                  soundfontBusy
-                }
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = '';
-                  if (!file) return;
-                  if (file.size > 5 * 1024 * 1024) {
-                    setStatus('5MB 이하 MusicXML 파일을 선택해주세요.');
-                    return;
-                  }
-                  void file
-                    .text()
-                    .then((text) => {
-                      if (!alive.current || loadedKey.current !== key) return;
-                      try {
-                        const imported = scoreFromMusicXml(text);
-                        setImportedVersion({
-                          score: imported,
-                          referenceAudio: null,
-                          instrumentSample: null,
-                        });
-                        setStatus('MusicXML을 새 버전으로 가져올 준비가 됐어요.');
-                      } catch (error) {
-                        setStatus(
-                          error instanceof Error ? error.message : 'MusicXML 파일을 읽지 못했어요.',
-                        );
-                      }
-                    })
-                    .catch(() => setStatus('파일을 읽지 못했어요. 다시 선택해주세요.'));
-                }}
-              />
-            </>
           }
           xmlExport={
             <button

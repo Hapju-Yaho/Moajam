@@ -41,6 +41,15 @@ export function ScoreGuitarTechniqueTools({
   const note = score.notes.find((n) => n.id === ids[0]);
   const tone = note ? selectedScoreTone(score, note, string) : undefined;
   const locked = disabled || !tone || tone.dead || !note || note.rest || note.blank;
+  const batchTones = score.notes
+    .filter((n) => ids.includes(n.id) && !n.rest && !n.blank)
+    .flatMap(noteTones);
+  const palmMutePressed = allTones
+    ? batchTones.length > 0 && batchTones.every((t) => t.palmMute)
+    : !!tone?.palmMute;
+  const palmMuteLocked = allTones
+    ? disabled || !batchTones.some((t) => !t.dead) || batchTones.some((t) => t.bend)
+    : locked || !!tone?.bend;
   const bendingLocked =
     locked ||
     ids.some((id) => {
@@ -139,9 +148,9 @@ export function ScoreGuitarTechniqueTools({
         ))}
         <ScoreToolButton
           icon="P.M."
-          disabled={locked || !!tone?.bend}
-          aria-pressed={!!tone?.palmMute}
-          onClick={() => apply({ palmMute: !tone?.palmMute })}
+          disabled={palmMuteLocked}
+          aria-pressed={palmMutePressed}
+          onClick={() => apply({ palmMute: !palmMutePressed })}
         >
           팜뮤트
         </ScoreToolButton>

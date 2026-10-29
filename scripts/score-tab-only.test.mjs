@@ -28,7 +28,7 @@ const score = {
     },
   ],
 };
-const render = (data = score, tabOnly = true) =>
+const render = (data = score, tabOnly = true, rangeIds = []) =>
   renderToStaticMarkup(
     createElement(GuitarStaff, {
       score: data,
@@ -47,7 +47,7 @@ const render = (data = score, tabOnly = true) =>
       inputBeats: 1,
       showTab: true,
       tabOnly,
-      rangeIds: [],
+      rangeIds,
       onRangeSelect() {},
       editable: true,
       layoutWidth: 800,
@@ -122,4 +122,21 @@ test('palm mute crosses adjacent bar boundaries without an end cap or repeated l
   assert.match(lines[1], /^M0 /);
   assert.match(lines[1], /v-5$/);
   assert.equal((html.match(/P\.M\./g) || []).length, 1);
+});
+
+test('TAB region selection hides the single-note cursor box', () => {
+  assert.match(render(), /class="score-cell-cursor"/);
+  assert.doesNotMatch(render(score, true, ['a']), /class="score-cell-cursor"/);
+  assert.match(render(score, true, ['a']), /score-range-highlight/);
+});
+
+test('palm mute on a sustained note ends near its fret rather than at the end of its beat duration', () => {
+  const data = JSON.parse(JSON.stringify(score));
+  data.notes[0].tones[0].palmMute = true;
+  const html = render(data);
+  const fret = Number(html.match(/data-selection-note="a" x="([^"]+)"/)[1]) + 7;
+  const line = html.match(/data-palm-mute-range="true"[\s\S]*?<path d="M([\d.]+) [\d.]+H([\d.]+)v-5/);
+  const left = Number(line[1]), right = Number(line[2]);
+  assert.ok(left < fret && right > fret);
+  assert.ok(right - left < 30);
 });
