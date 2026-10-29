@@ -1,6 +1,20 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react';
 
-export type ScorePlaybackPosition = { current: (() => number | null) | null };
+export type ScorePlaybackPosition = {
+  current: (() => number | null) | null;
+  measure?: (() => { bar: number; offset: number } | null) | null;
+};
+
+export function scorePlaybackBarIndex(starts: number[], beat: number): number {
+  let left = 0,
+    right = starts.length;
+  while (left < right) {
+    const middle = (left + right) >>> 1;
+    if (starts[middle] <= beat) left = middle + 1;
+    else right = middle;
+  }
+  return Math.max(0, left - 1);
+}
 
 /** Update the current measure and optional beat dots from the audio clock. */
 export function useScorePlaybackDisplay(
@@ -18,6 +32,11 @@ export function useScorePlaybackDisplay(
         element: bar,
         start: Number(bar.dataset.playbackStart),
         end: Number(bar.dataset.playbackEnd),
+        index: Number(bar.dataset.playbackBarIndex ?? 0),
+        starts: bar.dataset.playbackBars
+          ? (JSON.parse(bar.dataset.playbackBars) as number[])
+          : [Number(bar.dataset.playbackStart)],
+        progress: [...bar.querySelectorAll<SVGTextElement>('[data-rest-progress]')],
         unit: Number(
           bar.querySelector<SVGGElement>('[data-metronome-unit]')?.dataset.metronomeUnit ?? 1,
         ),
@@ -25,20 +44,33 @@ export function useScorePlaybackDisplay(
       }));
     let bars = readBars();
     let dirty = false;
-    const observer = new MutationObserver(() => {
-      dirty = true;
+    const observer = new MutationObserver((records) => {
+      if (
+        records.some(
+          (record) =>
+            !(record.target instanceof Element && record.target.matches('[data-rest-progress]')),
+        )
+      )
+        dirty = true;
     });
     observer.observe(root.current, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-playback-start', 'data-playback-end', 'data-metronome-unit'],
+      attributeFilter: [
+        'data-playback-start',
+        'data-playback-end',
+        'data-metronome-unit',
+        'data-playback-bars',
+        'data-playback-bar-index',
+      ],
     });
     let lastRow: SVGSVGElement | null = null;
     let previousDot: SVGCircleElement | undefined;
     let frame = 0;
     let previousBar: SVGGElement | undefined;
     let previousNextBar: SVGGElement | undefined;
+    let previousProgress = '';
     const draw = () => {
       const refreshed = dirty;
       if (dirty) {
@@ -46,11 +78,21 @@ export function useScorePlaybackDisplay(
         dirty = false;
       }
       const beat = position ? (position.current?.() ?? null) : latestFallback.current;
+      const measure = position?.measure?.();
       const bar =
-        beat === null ? undefined : bars.find((bar) => beat >= bar.start && beat < bar.end);
+        beat === null
+          ? undefined
+          : measure
+            ? bars.find(
+                (bar) => measure.bar >= bar.index && measure.bar < bar.index + bar.starts.length,
+              )
+            : bars.find((bar) => beat >= bar.start && beat < bar.end);
       if (previousBar !== bar?.element || refreshed) {
         previousBar?.removeAttribute('data-playing-measure');
         previousBar?.removeAttribute('data-playback-active');
+        previousBar
+          ?.querySelectorAll('[data-rest-progress]')
+          .forEach((el) => el.setAttribute('visibility', 'hidden'));
         bar?.element.setAttribute('data-playing-measure', 'true');
         bar?.element.setAttribute('data-playback-active', 'true');
         if (bar) {
@@ -61,14 +103,39 @@ export function useScorePlaybackDisplay(
           }
         }
         previousBar = bar?.element;
-        const next = bar ? bars.find((item) => item.start >= bar.end && item !== bar) : undefined;
+        previousProgress = '';
+      }
+      const logicalBar =
+        bar && measure
+          ? measure.bar - bar.index
+          : bar && beat !== null
+            ? scorePlaybackBarIndex(bar.starts, beat)
+            : 0;
+      const next =
+        bar && logicalBar === bar.starts.length - 1
+          ? bars.find((item) => item.start >= bar.end && item !== bar)
+          : undefined;
+      if (previousNextBar !== next?.element || refreshed) {
         previousNextBar?.removeAttribute('data-next-playing-measure');
         next?.element.setAttribute('data-next-playing-measure', 'true');
         previousNextBar = next?.element;
       }
+      if (bar?.progress.length) {
+        const label = `${logicalBar + 1}번째 마디 진행 중`;
+        if (label !== previousProgress) {
+          bar.progress.forEach((el) => {
+            el.textContent = label;
+            el.setAttribute('visibility', 'visible');
+          });
+          previousProgress = label;
+        }
+      }
       const dot =
         bar && beat !== null
-          ? bar.dots[Math.floor((beat - bar.start) / bar.unit) % Math.max(1, bar.dots.length)]
+          ? bar.dots[
+              Math.floor((measure ? measure.offset : beat - bar.starts[logicalBar]) / bar.unit) %
+                Math.max(1, bar.dots.length)
+            ]
           : undefined;
       if (dot !== previousDot) {
         previousDot?.removeAttribute('data-active');
@@ -83,6 +150,9 @@ export function useScorePlaybackDisplay(
       observer.disconnect();
       previousBar?.removeAttribute('data-playing-measure');
       previousBar?.removeAttribute('data-playback-active');
+      previousBar
+        ?.querySelectorAll('[data-rest-progress]')
+        .forEach((el) => el.setAttribute('visibility', 'hidden'));
       previousNextBar?.removeAttribute('data-next-playing-measure');
       previousDot?.removeAttribute('data-active');
     };

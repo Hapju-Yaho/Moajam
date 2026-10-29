@@ -81,14 +81,12 @@ export function ScoreToolButton({
   children,
   icon,
   className = '',
+  title,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { icon?: ReactNode }) {
   const label = props['aria-label'] ?? textOf(children).replace(/\s+/g, ' ').trim();
   const hintId = useId();
-  const hint =
-    props.title && !props.title.includes(label)
-      ? `${label} · ${props.title}`
-      : (props.title ?? label);
+  const hint = title && !title.includes(label) ? `${label} · ${title}` : (title ?? label);
   return (
     <span className="score-tool-wrap">
       <button

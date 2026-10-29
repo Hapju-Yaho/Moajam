@@ -1,0 +1,381 @@
+.score-export-menu {
+  position: relative;
+}
+.score-export-menu > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+}
+.score-editor-viewport .score-project-header .score-project-actions .score-export-menu > button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 9px 15px;
+  color: #edf3f7;
+  text-align: left;
+}
+.score-export-menu > button svg {
+  flex: 0 0 22px;
+}
+.score-export-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  margin: 10px 0 18px;
+  border: 1px solid #718994;
+  border-radius: 8px;
+  background: #20333e;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.score-export-parts-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.score-export-parts-heading > div {
+  display: flex;
+  gap: 8px;
+}
+.score-export-dialog .score-export-parts-heading button {
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+}
+.score-export-dialog .score-export-parts button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #344b58;
+}
+.score-export-dialog .score-export-parts button[aria-pressed='true'] {
+  background: #29485f;
+  border-color: #607f95;
+  color: #fff;
+}
+.score-export-measures > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.score-export-dialog .score-export-measures label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.score-export-measures input[type='number'] {
+  width: 64px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #859daa;
+  border-radius: 6px;
+  background: #edf3f6;
+  color: #1d303e;
+  font: inherit;
+}
+.score-export-submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  z-index: 100;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid #718994;
+  border-radius: 8px;
+  background: #293c46;
+  box-shadow: 0 8px 24px #10212b55;
+}
+.score-editor-viewport .score-export-submenu button {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  background: transparent;
+  color: #eef4f7;
+  text-align: left;
+  white-space: nowrap;
+}
+.score-editor-viewport .score-export-submenu button:hover:not(:disabled) {
+  background: #3c5662;
+}
+.score-export-dialog {
+  width: min(560px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid #718994;
+  border-radius: 12px;
+  background: #293c46;
+  color: #eef4f7;
+  box-sizing: border-box;
+}
+.score-export-dialog.score-file-floating {
+  position: fixed;
+  inset: 150px auto auto 12px;
+  margin: 0;
+  width: min(380px, calc(100vw - 24px));
+  max-height: calc(100dvh - 170px);
+  overflow: auto;
+  z-index: 1000;
+  box-shadow: 0 10px 32px #10212b44;
+}
+.score-project-menu-divider {
+  border: 0;
+  border-top: 1px solid #71899466;
+  margin: 5px 10px;
+}
+.score-note-edit-category {
+  min-width: 0;
+}
+.score-file-floating .score-export-measures > div {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.score-file-floating .score-export-measures label {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.score-file-floating .score-export-measures input[type='number'] {
+  width: 52px;
+}
+@media (max-height: 600px) {
+  .score-export-dialog.score-file-floating {
+    top: 70px;
+    max-height: calc(100dvh - 86px);
+  }
+}
+.score-export-dialog .score-export-tab-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.score-export-dialog .score-export-tab-options:disabled {
+  opacity: 0.4;
+}
+.score-export-dialog .score-export-tab-options label {
+  margin: 0;
+  white-space: nowrap;
+}
+.score-export-name > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.score-export-name input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px;
+  font: inherit;
+  border: 1px solid #859daa;
+  border-radius: 6px;
+  background: #edf3f6;
+  color: #1d303e;
+}
+.score-editor-viewport .score-export-dialog .score-export-download {
+  display: block;
+  margin-top: 8px;
+  color: #bddbff;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 480px) {
+  .score-export-measures > div {
+    flex-wrap: wrap;
+  }
+}
+.score-export-dialog::backdrop {
+  background: #101b2580;
+}
+.score-export-dialog > section {
+  padding: 20px;
+}
+.score-export-dialog header,
+.score-export-dialog footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.score-export-dialog h2 {
+  flex: 1;
+  margin: 0 0 18px;
+  font-size: 18px;
+}
+.score-export-dialog label {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+.score-export-dialog select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #859daa;
+  border-radius: 6px;
+  background: #edf3f6;
+  color: #1d303e;
+  font: inherit;
+}
+.score-export-dialog .score-export-tab {
+  display: flex;
+  align-items: center;
+}
+.score-export-dialog footer {
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+.score-export-dialog button {
+  padding: 8px 14px;
+  border: 1px solid #859daa;
+  border-radius: 6px;
+  background: #425e6c;
+  color: #eef4f7;
+  cursor: pointer;
+}
+.score-export-dialog button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.score-editor-viewport .score-export-dialog button:not(:disabled) {
+  color: #eef4f7;
+}
+.score-export-dialog footer button:last-child {
+  background: #2365ba;
+  border-color: #91bbf0;
+}
+.score-export-dialog p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.score-editor-viewport .score-export-submenu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.score-midi-import fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.score-midi-import input[type='number'] {
+  padding: 10px;
+  border: 1px solid #859daa;
+  border-radius: 6px;
+  background: #edf3f6;
+  color: #1d303e;
+  font: inherit;
+}
+.score-midi-summary {
+  padding: 14px;
+  border: 1px solid #718994;
+  border-radius: 8px;
+  background: #20333e;
+}
+.score-midi-import [role='alert'] {
+  color: #ffb8b8;
+}
+.score-import-overwrite {
+  width: min(440px, calc(100vw - 32px));
+  border-color: #d59a65;
+}
+.score-file-panel-shade {
+  position: fixed;
+  z-index: 900;
+  background: #101b2580;
+}
+.score-export-dialog.score-file-floating {
+  width: min(300px, calc(100vw - 16px));
+  max-height: none;
+  overflow: visible;
+  font-size: 11px;
+}
+.score-file-floating > section {
+  padding: 12px;
+}
+.score-file-floating h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.score-file-floating :is(header, footer) {
+  gap: 6px;
+}
+.score-file-floating label {
+  gap: 4px;
+  margin: 7px 0;
+}
+.score-file-floating p {
+  margin: 6px 0;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.score-file-floating :is(button, select, input[type='number'], .score-export-name input) {
+  padding: 5px 7px;
+  min-height: 26px;
+  font-size: 11px;
+}
+.score-file-floating footer {
+  margin-top: 10px;
+}
+.score-file-floating .score-midi-summary {
+  padding: 8px;
+}
+.score-file-floating .score-export-parts {
+  gap: 4px;
+  padding: 6px;
+  margin: 6px 0 10px;
+  max-height: none;
+  overflow: visible;
+}
+.score-file-floating .score-export-parts button {
+  gap: 4px;
+  padding: 4px 6px;
+}
+.score-file-floating .score-export-parts svg {
+  width: 16px;
+  height: 16px;
+}
+.score-file-floating .score-export-tab-options {
+  gap: 3px;
+}
+.score-file-floating .score-export-measures input[type='number'] {
+  width: 44px;
+}
+.score-file-floating .score-export-parts-heading {
+  justify-content: flex-start;
+  gap: 8px;
+}
+.score-editor-viewport .score-export-dialog .score-export-select-all {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  padding: 3px 7px;
+  border: 1px solid #526975;
+  border-radius: 4px;
+  background: #202f39;
+  color: #9aabb7;
+}
+.score-editor-viewport .score-export-dialog .score-export-select-all[aria-pressed='true'] {
+  background: #27566f;
+  border-color: #78a9c0;
+  color: #fff;
+}
+.score-editor-viewport .score-export-dialog .score-export-parts button[aria-pressed='true'] {
+  background: #27566f;
+  border-color: #78a9c0;
+  color: #fff;
+  opacity: 1;
+}
+.score-editor-viewport .score-export-dialog .score-export-parts button[aria-pressed='false'] {
+  background: #202f39;
+  border-color: #475560;
+  color: #9aabb7;
+  opacity: 0.6;
+}

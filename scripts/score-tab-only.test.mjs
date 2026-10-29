@@ -28,7 +28,7 @@ const score = {
     },
   ],
 };
-const render = (data = score, tabOnly = true) =>
+const render = (data = score, tabOnly = true, rangeIds = []) =>
   renderToStaticMarkup(
     createElement(GuitarStaff, {
       score: data,
@@ -47,12 +47,55 @@ const render = (data = score, tabOnly = true) =>
       inputBeats: 1,
       showTab: true,
       tabOnly,
-      rangeIds: [],
+      rangeIds,
       onRangeSelect() {},
       editable: true,
       layoutWidth: 800,
     }),
   );
+
+test('vibrato sits close above TAB and stretches with the note duration', () => {
+  const span = (beats) => {
+    const data = {
+      ...score,
+      notes: [
+        { ...score.notes[0], beats, tones: [{ ...score.notes[0].tones[0], vibrato: true }] },
+        ...(beats < 4
+          ? [{ ...score.notes[0], id: 'rest', beats: 4 - beats, rest: true, tones: [] }]
+          : []),
+      ],
+    };
+    const html = render(data);
+    const path = html.match(/data-vibrato="true" d="([^"]+)"/)[1];
+    const coords = [...path.matchAll(/[ML] ([\d.-]+) ([\d.-]+)/g)].map((m) => [
+      Number(m[1]),
+      Number(m[2]),
+    ]);
+    assert.equal(coords[0][1], 96);
+    return coords.at(-1)[0] - coords[0][0];
+  };
+  assert.ok(span(4) > span(1) * 3.5);
+});
+
+test('TAB-only systems remove unused upper/lower space while preserving palm mute clearance', () => {
+  const data = {
+    ...score,
+    notes: Array.from({ length: 8 }, (_, i) => ({
+      ...score.notes[0],
+      id: `compact-${i}`,
+      tones: [{ ...score.notes[0].tones[0], palmMute: true }],
+    })),
+  };
+  const html = render(data);
+  const boxes = [...html.matchAll(/class="score-system"[^>]*viewBox="([^"]+)"/g)].map((m) =>
+    m[1].split(' ').map(Number),
+  );
+  assert.equal(boxes.length, 2);
+  assert.equal(boxes[0][1], 0);
+  assert.equal(boxes[1][1], 54);
+  assert.ok(boxes[1][3] < 200);
+  assert.ok(boxes[1][1] + boxes[1][3] >= 235);
+});
 
 test('TAB only omits staff SVG, uses its own coordinates and retains editing/playback targets', () => {
   const tab = render(),
@@ -64,6 +107,11 @@ test('TAB only omits staff SVG, uses its own coordinates and retains editing/pla
   assert.match(tab, /viewBox="0 0 /);
   assert.match(combined, /data-staff-tone/);
   assert.ok(tab.length < combined.length);
+  const stringYs = (html) =>
+    [...html.matchAll(/<line x1="45"[^>]*y1="([^"]+)"/g)].map((m) => Number(m[1]));
+  assert.equal(stringYs(tab)[1] - stringYs(tab)[0], 16);
+  assert.equal(stringYs(combined)[1] - stringYs(combined)[0], 20);
+
   const high = JSON.parse(JSON.stringify(score));
   high.notes[0].tones[0].pitch = 110;
   const svgSize = (html) => html.match(/<svg[^>]*viewBox="([^"]+)"/)[1];
@@ -75,9 +123,11 @@ test('TAB only retains bends, harmonics, tuplets and grace notes without staff c
   data.notes[0].tones[0].bend = { kind: 'release', amount: 2 };
   let html = render(data);
   assert.equal((html.match(/data-guitar-bend="release"/g) || []).length, 1);
-  data.notes[0].tones[0] = { pitch: 64, string: 1, fret: 12, harmonic: 'natural' };
+  data.notes[0].pitch = 76;
+  data.notes[0].tones[0] = { pitch: 76, string: 1, fret: 12, harmonic: 'natural' };
   html = render(data);
-  assert.equal((html.match(/N\.H\./g) || []).length, 1);
+  assert.doesNotMatch(html, /N\.H\./);
+  assert.match(html, /&lt;12&gt;/);
   data.notes.unshift({ ...data.notes[0], id: 'grace', beats: 0, graceBeats: 0.25 });
   html = render(data);
   assert.match(html, /data-grace-note="grace"/);
@@ -96,4 +146,43 @@ test('TAB-only triplets, repeat bars and slides keep only their TAB notation', (
   html = render(data);
   assert.match(html, /data-slide-edge="slideIn"/);
   assert.doesNotMatch(html, /data-staff-tone|data-barline="staff"/);
+});
+
+test('palm mute crosses adjacent bar boundaries without an end cap or repeated label', () => {
+  const data = JSON.parse(JSON.stringify(score));
+  data.notes = Array.from({ length: 8 }, (_, i) => ({
+    ...data.notes[0],
+    id: `p${i}`,
+    beats: 1,
+    tones: [{ pitch: 64, string: 1, fret: 0, palmMute: true }],
+  }));
+  const html = render(data);
+  const lines = [...html.matchAll(/data-palm-mute-range="true"[\s\S]*?<path d="([^"]+)"/g)].map(
+    (m) => m[1],
+  );
+  assert.equal(lines.length, 2);
+  assert.doesNotMatch(lines[0], /v-5/);
+  assert.match(lines[1], /^M0 /);
+  assert.match(lines[1], /v-5$/);
+  assert.equal((html.match(/P\.M\./g) || []).length, 1);
+});
+
+test('TAB region selection hides the single-note cursor box', () => {
+  assert.match(render(), /class="score-cell-cursor"/);
+  assert.doesNotMatch(render(score, true, ['a']), /class="score-cell-cursor"/);
+  assert.match(render(score, true, ['a']), /score-range-highlight/);
+});
+
+test('palm mute on a sustained note ends near its fret rather than at the end of its beat duration', () => {
+  const data = JSON.parse(JSON.stringify(score));
+  data.notes[0].tones[0].palmMute = true;
+  const html = render(data);
+  const fret = Number(html.match(/data-selection-note="a" x="([^"]+)"/)[1]) + 7;
+  const line = html.match(
+    /data-palm-mute-range="true"[\s\S]*?<path d="M([\d.]+) [\d.]+H([\d.]+)v-5/,
+  );
+  const left = Number(line[1]),
+    right = Number(line[2]);
+  assert.ok(left < fret && right > fret);
+  assert.ok(right - left < 30);
 });

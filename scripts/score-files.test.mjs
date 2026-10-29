@@ -375,3 +375,17 @@ test('PDF prints a note equation above BPM only when a global feel is enabled', 
     assert.doesNotMatch(markup, /data-rhythm-feel=/);
   }
 });
+
+test('PDF TAB-only option omits staff notation while retaining TAB notes', () => {
+  const score = {
+    title: 'TAB PDF',
+    bpm: 120,
+    parts: ['Guitar'],
+    instruments: { Guitar: 'guitar' },
+    sync: {},
+    notes: [note('a', { beats: 4, tones: [{ pitch: 64, string: 1, fret: 0 }] })],
+  };
+  const html = scorePdfMarkup(score, 'Guitar', true, 800, ['Guitar'], true);
+  assert.doesNotMatch(html, /data-staff-tone|data-barline="staff"/);
+  assert.match(html, /data-barline="tab"/);
+});

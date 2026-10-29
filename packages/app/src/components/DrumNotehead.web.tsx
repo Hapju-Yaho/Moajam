@@ -50,12 +50,12 @@ export function DrumNotehead({
           rx="5"
           ry="3.3"
           transform={`rotate(-18 ${x} ${y})`}
-          fill={hollow || beats >= 2 ? '#fffefb' : color}
+          fill={hollow || beats >= 2 ? 'var(--score-paper-color, #fffefb)' : color}
         />
       ) : head === 'diamond' ? (
-        <path d={`M${x} ${y - 5}l5 5 -5 5 -5 -5Z`} fill={beats >= 2 ? '#fffefb' : color} />
+        <path d={`M${x} ${y - 5}l5 5 -5 5 -5 -5Z`} fill={beats >= 2 ? 'var(--score-paper-color, #fffefb)' : color} />
       ) : head === 'triangle' ? (
-        <path d={`M${x} ${y - 5}l5 9h-10Z`} fill={beats >= 2 ? '#fffefb' : color} />
+        <path d={`M${x} ${y - 5}l5 9h-10Z`} fill={beats >= 2 ? 'var(--score-paper-color, #fffefb)' : color} />
       ) : (
         <>
           <path d={`M${x - 4} ${y - 4}l8 8m-8 0l8 -8`} />

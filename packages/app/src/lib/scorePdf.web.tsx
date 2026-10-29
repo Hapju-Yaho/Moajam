@@ -12,6 +12,7 @@ export function scorePdfMarkup(
   showTab: boolean,
   layoutWidth = 800,
   parts = scorePartStaves(score, part),
+  tabOnly = false,
 ): string {
   // Share the editor's effective drawing width, without its selection or cursor.
   if (!Number.isFinite(layoutWidth) || layoutWidth <= 0) layoutWidth = 800;
@@ -39,6 +40,7 @@ export function scorePdfMarkup(
       emptyBeat={0}
       inputBeats={1}
       showTab={showTab}
+      tabOnly={tabOnly}
       rangeIds={[]}
       onRangeSelect={ignore}
       editable={false}
@@ -126,6 +128,7 @@ export async function createScorePdf(
   showTab: boolean,
   layoutWidth = 800,
   ensemble = false,
+  tabOnly = false,
 ): Promise<Blob> {
   if (!parts.length || parts.some((part) => !score.parts.includes(part)))
     throw new Error('PDF에 저장할 파트를 선택해주세요.');
@@ -145,7 +148,7 @@ export async function createScorePdf(
   for (const group of groups) {
     const part = group[0];
     const container = document.createElement('div');
-    container.innerHTML = scorePdfMarkup(score, part, showTab, layoutWidth, group);
+    container.innerHTML = scorePdfMarkup(score, part, showTab, layoutWidth, group, tabOnly);
     const error = container.querySelector('[role="alert"]');
     if (error) throw new Error(error.textContent || '악보를 표시하지 못했어요.');
     const combined = [...container.querySelectorAll<HTMLElement>('.score-ensemble-system')];

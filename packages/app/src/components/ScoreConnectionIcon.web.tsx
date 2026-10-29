@@ -1,4 +1,3 @@
-import { scoreSlidePath } from '../lib/scoreLayout';
 import type { ScoreConnectionType } from '../lib/score';
 
 /** Notation-shaped icons: pitch rises upward and time advances to the right. */
@@ -42,9 +41,7 @@ export function ScoreConnectionIcon({
       {edge ? (
         <>
           {note(type === 'slideIn' ? 29 : 7, type === 'slideIn' ? y2 : y1)}
-          <path
-            d={scoreSlidePath(type === 'slideIn' ? 4 : 12, y1, type === 'slideIn' ? 24 : 33, y2)}
-          />
+          <path d={`M${type === 'slideIn' ? 4 : 12} ${y1}L${type === 'slideIn' ? 24 : 33} ${y2}`} />
         </>
       ) : (
         <>

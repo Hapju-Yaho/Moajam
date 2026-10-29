@@ -1,3 +1,9 @@
+import { ScoreXmlImport } from './ScoreXmlImport.web';
+import { ScoreMidiImport } from './ScoreMidiImport.web';
+import type { Score } from '../lib/score';
+import { prepareScoreExport, scoreExportFiles, type ScoreExportOptions } from '../lib/scoreExport';
+import { createPortal } from 'react-dom';
+import { ScoreExportMenu } from './ScoreExportMenu.web';
 import { useScoreEditorLayout } from './ScoreEditorLayout.web';
 import { scorePartStaves, scorePartOwner } from '../lib/scoreParts';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
@@ -19,6 +25,8 @@ export function ScoreFileActions({
   part,
   disabled,
   onLoad,
+  onMidiApply,
+  onXmlApply,
   onBusyChange,
   shared = false,
   header,
@@ -33,6 +41,8 @@ export function ScoreFileActions({
   part: string;
   disabled: boolean;
   onLoad: (document: ScoreDocument) => void;
+  onMidiApply?: (score: Score) => void;
+  onXmlApply?: (score: Score) => void;
   onBusyChange: (busy: boolean) => void;
   shared?: boolean;
   header?: ReactNode;
@@ -53,18 +63,27 @@ export function ScoreFileActions({
   const [scope, setScope] = useState('current');
   const [midiScope, setMidiScope] = useState('all');
   const [showTab, setShowTab] = useState(true);
-  const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
+  const [downloads, setDownloads] = useState<{ url: string; name: string }[]>([]);
+  const urls = useRef<string[]>([]);
+  const download = downloads.at(-1);
   const input = useRef<HTMLInputElement>(null);
+  const xmlInput = useRef<HTMLInputElement>(null);
+  const [xmlFile, setXmlFile] = useState<File | null>(null);
+  const [moajamFile, setMoajamFile] = useState<File | null>(null);
+  const midiInput = useRef<HTMLInputElement>(null);
+  const [midiFile, setMidiFile] = useState<File | null>(null);
   const root = useRef<HTMLElement>(null);
   const generation = useRef(0);
   useEffect(
     () => () => {
-      if (download) URL.revokeObjectURL(download.url);
+      urls.current.forEach((url) => URL.revokeObjectURL(url));
     },
-    [download],
+    [],
   );
   const deliver = (name: string, file: Blob) => {
-    setDownload({ url: URL.createObjectURL(file), name });
+    const url = URL.createObjectURL(file);
+    urls.current.push(url);
+    setDownloads((previous) => [...previous, { url, name }]);
     downloadBlob(name, file);
   };
   useEffect(
@@ -80,6 +99,9 @@ export function ScoreFileActions({
     setBusy(true);
     onBusyChange(true);
     setMessage('');
+    urls.current.forEach((url) => URL.revokeObjectURL(url));
+    urls.current = [];
+    setDownloads([]);
     try {
       await work(active);
     } catch (error) {
@@ -109,9 +131,12 @@ export function ScoreFileActions({
         throw new Error('160MB 이하의 악보 파일을 선택해주세요.');
       if (!file.size) throw new Error('비어 있는 파일은 불러올 수 없어요.');
       const parsed = parseScoreFile(await file.text());
-      if (active()) setPending(parsed);
+      if (active()) {
+        setPending(parsed);
+        layout.setFilePanel('file');
+      }
     });
-  const pdf = () =>
+  const pdf = (pdfScope = scope, pdfTab = showTab, options?: ScoreExportOptions) =>
     run(async (active) => {
       setMessage('PDF를 만들고 있어요…');
       const { createScorePdf } = await import('../lib/scorePdf.web');
@@ -120,17 +145,35 @@ export function ScoreFileActions({
         ?.closest('.score-editor-viewport')
         ?.querySelector('.score-systems');
       const layoutWidth = Number(staff?.getAttribute('data-layout-width')) || 800;
+      const prepared = options ? prepareScoreExport(document.score, options) : null;
+      if (options && prepared) {
+        for (const entry of scoreExportFiles(document.score, options, 'pdf')) {
+          const file = await createScorePdf(
+            prepared.score,
+            entry.parts,
+            options.tab,
+            layoutWidth,
+            false,
+            options.tabOnly,
+          );
+          if (!active()) return;
+          deliver(entry.name, file);
+        }
+        setMessage('PDF 파일 다운로드를 시작했어요.');
+        return;
+      }
       const file = await createScorePdf(
-        document.score,
-        scope !== 'current' ? document.score.parts : scorePartStaves(document.score, part),
-        showTab,
+        prepared?.score ?? document.score,
+        prepared?.parts ??
+          (pdfScope !== 'current' ? document.score.parts : scorePartStaves(document.score, part)),
+        pdfTab,
         layoutWidth,
-        scope === 'ensemble',
+        options?.ensemble ?? pdfScope === 'ensemble',
       );
       if (!active()) return;
       deliver(
         scoreFileName(
-          `${document.score.title}${scope !== 'current' ? '' : ` - ${scorePartOwner(document.score, part)}`}`,
+          `${document.score.title}${pdfScope !== 'current' ? '' : ` - ${scorePartOwner(document.score, part)}`}`,
           'pdf',
         ),
         file,
@@ -138,15 +181,26 @@ export function ScoreFileActions({
       setMessage('PDF 다운로드를 시작했어요.');
     });
   const locked = disabled || busy;
-  const midi = () =>
+  const midi = (exportScope = midiScope, options?: ScoreExportOptions) =>
     run(async (active) => {
       const { scoreToMidi } = await import('../lib/scoreMidi');
       if (!active()) return;
+      const prepared = options ? prepareScoreExport(document.score, options) : null;
       const parts =
-        midiScope === 'all' ? document.score.parts : scorePartStaves(document.score, part);
+        prepared?.parts ??
+        (exportScope === 'all' ? document.score.parts : scorePartStaves(document.score, part));
+      if (options && prepared) {
+        for (const entry of scoreExportFiles(document.score, options, 'midi'))
+          deliver(
+            entry.name,
+            new Blob([scoreToMidi(prepared.score, entry.parts)], { type: 'audio/midi' }),
+          );
+        setMessage('MIDI 파일 다운로드를 시작했어요.');
+        return;
+      }
       deliver(
-        scoreFileName(`${document.score.title}${midiScope === 'all' ? '' : ` - ${part}`}`, 'mid'),
-        new Blob([scoreToMidi(document.score, parts)], { type: 'audio/midi' }),
+        scoreFileName(`${document.score.title}${exportScope === 'all' ? '' : ` - ${part}`}`, 'mid'),
+        new Blob([scoreToMidi(prepared?.score ?? document.score, parts)], { type: 'audio/midi' }),
       );
       setMessage('MIDI 다운로드를 시작했어요. 파트별 음표·BPM·반복 순서를 저장했어요.');
     });
@@ -158,6 +212,98 @@ export function ScoreFileActions({
       aria-busy={busy}
       data-collapsed={!expanded && !layout.expanded}
     >
+      {layout.exportHost &&
+        createPortal(
+          <ScoreExportMenu
+            disabled={locked}
+            message={message}
+            downloads={downloads}
+            score={document.score}
+            part={scorePartOwner(document.score, part)}
+            onSave={() => void save()}
+            onImport={() => input.current?.click()}
+            onMidiImport={onMidiApply ? () => midiInput.current?.click() : undefined}
+            onXmlImport={
+              onXmlApply
+                ? () => xmlInput.current?.click()
+                : xmlImport
+                  ? () =>
+                      root.current
+                        ?.querySelector<HTMLInputElement>('input[accept=".musicxml,.xml"]')
+                        ?.click()
+                  : undefined
+            }
+            onPdf={(options) => void pdf('all', options.tab, options)}
+            onMidi={(options) => void midi('all', options)}
+            xmlExport={xmlExport}
+          />,
+          layout.exportHost,
+        )}
+      <input
+        ref={xmlInput}
+        hidden
+        type="file"
+        accept=".musicxml,.xml"
+        aria-label="MusicXML 파일 가져오기"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file) setXmlFile(file);
+        }}
+      />
+      {xmlFile &&
+        root.current &&
+        onXmlApply &&
+        createPortal(
+          <ScoreXmlImport
+            file={xmlFile}
+            score={document.score}
+            part={scorePartOwner(document.score, part)}
+            onApply={onXmlApply}
+            onClose={() => setXmlFile(null)}
+          />,
+          root.current.closest('.score-editor-viewport') ?? window.document.body,
+        )}
+      {moajamFile &&
+        root.current &&
+        onXmlApply &&
+        createPortal(
+          <ScoreXmlImport
+            format=".moajam"
+            file={moajamFile}
+            score={document.score}
+            part={scorePartOwner(document.score, part)}
+            onApply={onXmlApply}
+            onClose={() => setMoajamFile(null)}
+          />,
+          root.current.closest('.score-editor-viewport') ?? window.document.body,
+        )}
+      <input
+        ref={midiInput}
+        hidden
+        type="file"
+        accept=".mid,.midi,audio/midi"
+        aria-label="MIDI 파일 가져오기"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file) setMidiFile(file);
+        }}
+      />
+      {midiFile &&
+        root.current &&
+        onMidiApply &&
+        createPortal(
+          <ScoreMidiImport
+            key={midiFile.name + '/' + midiFile.lastModified}
+            file={midiFile}
+            score={document.score}
+            part={scorePartOwner(document.score, part)}
+            onApply={onMidiApply}
+            onClose={() => setMidiFile(null)}
+          />,
+          root.current.closest('.score-editor-viewport') ?? window.document.body,
+        )}
       {layout.expanded && (
         <button className="score-file-close" onClick={() => layout.setFilePanel(null)}>
           닫기
@@ -193,10 +339,19 @@ export function ScoreFileActions({
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 event.target.value = '';
-                if (file) void load(file);
+                if (file) {
+                  if (onXmlApply) setMoajamFile(file);
+                  else void load(file);
+                }
               }}
             />
-            {xmlImport}
+            {onXmlApply ? (
+              <button type="button" disabled={locked} onClick={() => xmlInput.current?.click()}>
+                MusicXML 가져오기
+              </button>
+            ) : (
+              xmlImport
+            )}
           </div>
         </div>
         <div className="score-file-row score-file-export-row">

@@ -1,8 +1,14 @@
 export const scoreBeatX = (offset: number, width: number) => 24 + (offset / 4) * (width - 40);
 
 // Match the 12px semibold TAB label, including its small staff-line knockout.
-export function scoreTabLabel(fret: number | undefined, dead = false, parenthesized = false) {
-  const label = dead ? 'X' : parenthesized ? `(${fret})` : String(fret ?? '');
+export function scoreTabLabel(
+  fret: number | undefined,
+  dead = false,
+  parenthesized = false,
+  naturalHarmonic = false,
+) {
+  const base = naturalHarmonic ? `<${fret ?? ''}>` : String(fret ?? '');
+  const label = dead ? 'X' : parenthesized ? `(${base})` : base;
   const width = [...label].reduce((sum, char) => sum + (char === '(' || char === ')' ? 4 : 7), 0);
   return { label, halfWidth: width / 2 + 1.5 };
 }
@@ -153,6 +159,48 @@ export function scoreSystemLayouts(
         (weights[index] ?? 100)) /
       100,
   );
+  // Four-bar systems read more evenly when spare room goes to the narrow bars.
+  // Respect glyph spacing and explicit per-bar width adjustments.
+  if (
+    measures.length === 4 &&
+    !equalWidths &&
+    measures.every((_, index) => (weights[index] ?? 100) === (weights[0] ?? 100))
+  ) {
+    const required = measures.map(
+      (points) =>
+        scoreMeasureLayout(
+          points.map((point) => ({ ...point, space: point.minSpace ?? point.space })),
+          0,
+        ).width,
+    );
+    if (required.reduce((sum, width) => sum + width, 0) <= availableWidth) {
+      const pending = new Set([0, 1, 2, 3]);
+      let remaining = availableWidth;
+      while (pending.size) {
+        const share = remaining / pending.size;
+        const constrained = [...pending].filter((index) => required[index] > share);
+        if (!constrained.length) {
+          for (const index of pending) preferred[index] = share;
+          break;
+        }
+        for (const index of constrained) {
+          preferred[index] = required[index];
+          remaining -= required[index];
+          pending.delete(index);
+        }
+      }
+    } else if (measures.some((points) => points.length <= 1)) {
+      // Even a rest-only bar needs a readable share when the other bars are dense.
+      const floor = Math.max(0, availableWidth) * 0.175;
+      const demands = required.map((width) => Math.max(0, width - floor));
+      const totalDemand = demands.reduce((sum, width) => sum + width, 0);
+      for (let index = 0; index < 4; index++)
+        preferred[index] =
+          floor +
+          (Math.max(0, availableWidth) - floor * 4) *
+            (totalDemand ? demands[index] / totalDemand : 0.25);
+    }
+  }
   const preferredTotal = preferred.reduce((sum, width) => sum + width, 0);
   return measures
     .map((points, index) => {

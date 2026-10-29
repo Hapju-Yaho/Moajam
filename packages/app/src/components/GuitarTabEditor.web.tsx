@@ -1,4 +1,5 @@
-import { ScorePlaybackReadout, ScorePlaybackMeasure } from './ScorePlaybackReadout.web';
+import { setScoreVibrato } from '../lib/score';
+import { ScorePlaybackMeasure } from './ScorePlaybackReadout.web';
 import { ScoreGuitarTechniqueTools } from './ScoreGuitarTechniqueTools.web';
 import { keyboardKeyIsWritten } from '../lib/scoreTuning';
 import { enterDrumVoice } from '../lib/scoreDrumEntry';
@@ -481,12 +482,18 @@ function GuitarTabEditorContent({
   const multiDrums = isDrums && voiceMultiMode;
   const multiKeyboard = isKeyboard;
   const rows = score.notes.filter((note) => note.part === part);
+  const boxParts = isDrums
+    ? (Object.entries(score.drumVoices ?? {}).find(
+        ([upper, lower]) => upper === part || lower === part,
+      ) ?? [part])
+    : [part];
+  const boxNotes = score.notes.filter((n) => boxParts.includes(n.part));
   const chordPositions = scoreChordPositions(score, part);
   const note = rows.find((item) => item.id === selected);
   const rangeStart = range ? rows.findIndex((item) => item.id === range.anchor) : -1;
   const rangeEnd = range ? rows.findIndex((item) => item.id === range.end) : -1;
   const rangeNotes = range?.ids
-    ? rows.filter((n) => range.ids!.includes(n.id))
+    ? boxNotes.filter((n) => range.ids!.includes(n.id))
     : rangeStart >= 0 && rangeEnd >= 0
       ? rows.slice(Math.min(rangeStart, rangeEnd), Math.max(rangeStart, rangeEnd) + 1)
       : [];
@@ -553,13 +560,20 @@ function GuitarTabEditorContent({
   const noteStart = note
     ? rows.slice(0, rows.indexOf(note)).reduce((sum, item) => scoreBeat(sum + item.beats), 0)
     : endBeat;
+  const boxAnchor = range?.ids?.length ? rangeNotes[0] : undefined;
+  const boxBefore = boxAnchor
+    ? score.notes
+        .filter((n) => n.part === boxAnchor.part)
+        .slice(0, score.notes.filter((n) => n.part === boxAnchor.part).indexOf(boxAnchor))
+        .reduce((sum, n) => scoreBeat(sum + n.beats), 0)
+    : undefined;
   const before = note
     ? selectedAt?.id === note.id &&
       selectedAt.beat >= noteStart &&
       selectedAt.beat < noteStart + note.beats
       ? selectedAt.beat
       : noteStart
-    : (emptyBeat ?? endBeat);
+    : (emptyBeat ?? boxBefore ?? endBeat);
   const entryBeats =
     !note || note.blank ? scoreEntryDuration(score, part, before, beats, emptyMeasure) : beats;
   const selectedBeat = note && !note.blank ? (note.graceBeats ?? note.beats) : entryBeats;
@@ -568,7 +582,7 @@ function GuitarTabEditorContent({
   const dotted = DOTTED_SCORE_BEATS.includes(writtenBeat);
   const base = dotted ? writtenBeat / 1.5 : writtenBeat;
   const disabled = !loaded || playing || readOnly || (editInExpandedOnly && !layout.expanded);
-  const hasSelection = !!note || emptyBeat !== null;
+  const hasSelection = !!note || rangeNotes.length > 0 || emptyBeat !== null;
   const loopStart = repeatBars
     ? scoreMeasureStart(score, part, repeatBars.start - 1)
     : rangeNotes.length
@@ -590,6 +604,50 @@ function GuitarTabEditorContent({
       : rows.length > 0 || displayParts.some((p) => score.notes.some((n) => n.part === p))) &&
     playFrom <
       Math.max(...(playAll ? score.parts : displayParts).map((p) => scorePlaybackBeats(score, p)));
+  useEffect(() => {
+    const handlesSpace = (event: globalThis.KeyboardEvent) => {
+      if (
+        (event.code !== 'Space' && event.key !== ' ') ||
+        event.isComposing ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey
+      )
+        return false;
+      const viewport = editor.current?.closest('.score-editor-viewport') ?? editor.current;
+      const target = event.target;
+      if (
+        !viewport ||
+        !(target instanceof Element) ||
+        (!viewport.contains(target) &&
+          target !== document.body &&
+          target !== document.documentElement) ||
+        target.closest('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"]')
+      )
+        return false;
+      return viewport.getBoundingClientRect().width > 0;
+    };
+    const down = (event: globalThis.KeyboardEvent) => {
+      if (!handlesSpace(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat && loaded && (playing || canPlaySelection))
+        onPlay(playFrom, loopEnd, repeatAll);
+    };
+    const up = (event: globalThis.KeyboardEvent) => {
+      if (handlesSpace(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener('keydown', down, true);
+    window.addEventListener('keyup', up, true);
+    return () => {
+      window.removeEventListener('keydown', down, true);
+      window.removeEventListener('keyup', up, true);
+    };
+  }, [loaded, playing, canPlaySelection, onPlay, playFrom, loopEnd, repeatAll]);
+
   const focus = () => editor.current?.focus({ preventScroll: true });
   const onAudition = (played: ScoreNote) =>
     auditionNote({ ...played, guitarTone: guitarToneAt(score, part, before) });
@@ -922,7 +980,16 @@ function GuitarTabEditorContent({
   };
   const toggleDeadNote = () => {
     if (disabled || isDrums || !hasSelection) return;
-    if (multiple || selectedTone) {
+    if (range && instrument.tuning.length) {
+      commit(
+        setScoreArticulation(
+          score,
+          copiedSelection.map((n) => n.id),
+          'dead',
+        ),
+        true,
+      );
+    } else if (multiple || selectedTone) {
       commit(
         setScoreToneArticulation(
           score,
@@ -1811,10 +1878,36 @@ function GuitarTabEditorContent({
         {instrument.label} {instrument.capo ? `· 카포 ${instrument.capo}` : ''}
       </span>
       <div className="score-expanded-view-controls">
+        <div className="score-expanded-history">
+          <button
+            aria-label="크게 보기 실행 취소"
+            disabled={!canUndo || disabled}
+            onClick={() => {
+              onUndo();
+              focus();
+            }}
+          >
+            ↶
+          </button>
+          <button
+            aria-label="크게 보기 다시 실행"
+            disabled={!canRedo || disabled}
+            onClick={() => {
+              onRedo();
+              focus();
+            }}
+          >
+            ↷
+          </button>
+        </div>
         <div className="score-expanded-view-tools-host" ref={onViewToolsHost} />
         {instrument.tuning.length > 0 && (
-          <button aria-pressed={showTab} onClick={() => setShowTab(!showTab)}>
-            {showTab ? '오선 + TAB' : 'TAB'}
+          <button
+            className="score-tab-view-toggle"
+            aria-pressed={showTab}
+            onClick={() => setShowTab(!showTab)}
+          >
+            {showTab ? '오선 + TAB' : 'TAB만'}
           </button>
         )}
         {!transportHost && (
@@ -1990,37 +2083,6 @@ function GuitarTabEditorContent({
         />
       )}
       <div className="score-detail-inspector">
-        <div className="score-palette-common">
-          {' '}
-          <div className="score-expanded-history">
-            <button
-              aria-label="크게 보기 실행 취소"
-              disabled={!canUndo || disabled}
-              onClick={() => {
-                onUndo();
-                focus();
-              }}
-            >
-              ↶
-            </button>
-            <button
-              aria-label="크게 보기 다시 실행"
-              disabled={!canRedo || disabled}
-              onClick={() => {
-                onRedo();
-                focus();
-              }}
-            >
-              ↷
-            </button>
-            <span>편집</span>
-          </div>
-          <small className="score-palette-location">
-            {hasSelection
-              ? `${location.bar + 1}마디 · ${Number((location.offset + 1).toFixed(3))}박`
-              : '악보에서 위치를 선택하세요'}
-          </small>
-        </div>
         <div
           className="guitar-inputbar score-pitch-tools"
           data-fretted={instrument.tuning.length > 0 ? 'true' : undefined}
@@ -2108,9 +2170,9 @@ function GuitarTabEditorContent({
                     select(selected, Number(event.target.value), before, location.bar);
                   }}
                 >
-                  {instrument.tuning.map((open, index) => (
+                  {instrument.tuning.map((_, index) => (
                     <option key={index} value={index + 1}>
-                      {index + 1}번 · {pitchName(open)}
+                      {index + 1}번 줄
                     </option>
                   ))}
                 </select>
@@ -2288,18 +2350,120 @@ function GuitarTabEditorContent({
             마디 쉼표 입력
           </ScoreToolButton>
         </div>
-
-        <div className="guitar-inputbar score-beat-insert-tools" hidden={toolTab !== 'notes'}>
-          {(['before', 'after'] as const).map((side) => (
-            <ScoreToolButton
-              key={side}
-              icon={<ScoreMeasureIcon name={side === 'before' ? 'beat-before' : 'beat-after'} />}
-              disabled={disabled || multiple || !note}
-              onClick={() => insert(create(), side)}
+        <section className="score-note-edit-category" hidden={toolTab !== 'notes'}>
+          <span className="score-tool-group-label">편집</span>
+          <div className="score-note-inspector">
+            {' '}
+            <button
+              disabled={!copiedSelection.length}
+              onClick={() => copySelection(true)}
+              title="Ctrl+C · 선택한 박의 모든 줄 복사"
             >
-              {side === 'before' ? '앞에 박자 삽입' : '뒤에 박자 삽입'}
-            </ScoreToolButton>
-          ))}
+              선택 복사
+            </button>
+            <button
+              disabled={!clipboard.length || disabled || !hasSelection}
+              onClick={() => pasteSelection()}
+              title="Ctrl+V · 선택 위치 앞에 삽입하고 뒤 음표 이동"
+            >
+              여기에 붙여넣기
+            </button>
+            <button
+              disabled={disabled || multiple || !note || rows[0]?.id === note.id}
+              onClick={() => note && commit(moveScoreNote(score, note.id, -1))}
+            >
+              앞으로 이동
+            </button>
+            <button
+              disabled={disabled || multiple || !note || rows.at(-1)?.id === note.id}
+              onClick={() => note && commit(moveScoreNote(score, note.id, 1))}
+            >
+              뒤로 이동
+            </button>
+            <button
+              disabled={!note || disabled}
+              onClick={() => {
+                if (deleteSelectedMeasureRests()) return;
+                if (note)
+                  commit(
+                    (copiedSelection.length > 1 ? clearScoreNotes : removeScoreNotes)(
+                      score,
+                      copiedSelection.map((item) => item.id),
+                    ),
+                  );
+                deselect();
+              }}
+            >
+              선택 삭제
+            </button>
+            {note && !multiple && instrument.tuning.length > 0 && (
+              <button
+                disabled={disabled}
+                onClick={() => commit(removeScoreString(score, note.id, activeString))}
+              >
+                선택 줄 지우기
+              </button>
+            )}
+          </div>{' '}
+          <div className="guitar-inputbar score-beat-insert-tools" hidden={toolTab !== 'notes'}>
+            {(['before', 'after'] as const).map((side) => (
+              <ScoreToolButton
+                key={side}
+                icon={<ScoreMeasureIcon name={side === 'before' ? 'beat-before' : 'beat-after'} />}
+                disabled={disabled || multiple || !note}
+                onClick={() => insert(create(), side)}
+              >
+                {side === 'before' ? '앞에 박자 삽입' : '뒤에 박자 삽입'}
+              </ScoreToolButton>
+            ))}
+          </div>
+        </section>{' '}
+        <div className="guitar-inputbar score-chord-tools" hidden={toolTab !== 'notes'}>
+          {' '}
+          <div className="score-document-chord">
+            <label className="score-measure-chord-input">
+              코드
+              <input
+                ref={measureChordInput}
+                aria-label="선택 위치 코드"
+                placeholder="예: Am7, D/F♯"
+                maxLength={40}
+                value={hasSelection ? (chordPositions[before] ?? '') : ''}
+                disabled={disabled || !hasSelection}
+                onChange={(event) =>
+                  commit(
+                    setScoreBeatChord(score, part, before, event.target.value),
+                    false,
+                    `chord/${part}/${before}`,
+                  )
+                }
+                onBlur={onEditComplete}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    focus();
+                  }
+                }}
+              />
+            </label>
+            <ScoreToolbarHelp label="코드 입력 도움말">
+              악보에서 위치를 선택한 뒤 코드를 입력하세요. 코드 표시는 해당 위치 위에 나타납니다.
+            </ScoreToolbarHelp>
+          </div>
+        </div>
+        <div className="score-note-inspector" hidden={toolTab !== 'notes'}>
+          {' '}
+          <label>
+            가사{' '}
+            <input
+              aria-label="선택 음표 가사"
+              placeholder="가사"
+              value={note?.lyric ?? ''}
+              disabled={disabled || !note || multiple}
+              onChange={(event) => update({ lyric: event.target.value }, `lyric/${note?.id}`)}
+              onBlur={onEditComplete}
+            />
+          </label>
         </div>
         <div className="score-backing-inspector-host" ref={onBackingHost} />
         <div className="guitar-inputbar score-document-settings" hidden={toolTab !== 'score'}>
@@ -2402,12 +2566,17 @@ function GuitarTabEditorContent({
                       focus();
                     }}
                   >
-                    {Object.entries(guitarToneLabels).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                        {value === 'clean' ? ' · 드라이브 해제' : ''}
-                      </option>
-                    ))}
+                    {Object.entries(guitarToneLabels)
+                      .filter(
+                        ([value]) =>
+                          instrument.id.startsWith('bass') || !['finger', 'slap'].includes(value),
+                      )
+                      .map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                          {value === 'clean' ? ' · 드라이브 해제' : ''}
+                        </option>
+                      ))}
                   </select>
                   <button
                     type="button"
@@ -2431,9 +2600,7 @@ function GuitarTabEditorContent({
         )}
         <div
           className="guitar-inputbar score-guitar-technique-tools"
-          hidden={
-            toolTab !== 'measures' || !instrument.tuning.length || instrument.id.startsWith('bass')
-          }
+          hidden={toolTab !== 'measures' || !instrument.tuning.length}
         >
           <ScoreGuitarTechniqueTools
             score={score}
@@ -2444,11 +2611,21 @@ function GuitarTabEditorContent({
             onEdit={(next) => commit(next, true)}
             onError={setMessage}
             onGhost={toggleDeadNote}
-            ghostPressed={articulationPressed('dead')}
-            ghostDisabled={disabled || !hasSelection || (multiple && !toneSelection.length)}
+            allTones={!!range}
+            ghostPressed={
+              range
+                ? soundingSelection.length > 0 &&
+                  soundingSelection.every((n) => noteTones(n).every((t) => t.dead))
+                : articulationPressed('dead')
+            }
+            ghostDisabled={
+              disabled ||
+              !hasSelection ||
+              (range ? !soundingSelection.length : multiple && !toneSelection.length)
+            }
           />
         </div>
-        {(!instrument.tuning.length || instrument.id.startsWith('bass')) && (
+        {!instrument.tuning.length && (
           <div
             className="guitar-inputbar score-connections"
             hidden={toolTab !== 'measures'}
@@ -2766,15 +2943,48 @@ function GuitarTabEditorContent({
                   </ScoreToolButton>
                 );
               })}
-            <ScoreToolButton
-              disabled={disabled || !copiedSelection.some((n) => n.connection)}
-              onClick={() => connectNotes(null)}
-            >
-              연결 해제
-            </ScoreToolButton>
+            {instrument.tuning.length > 0 && (
+              <ScoreToolButton
+                icon="∿"
+                aria-label="비브라토"
+                disabled={
+                  disabled || !soundingSelection.some((n) => noteTones(n).some((t) => !t.dead))
+                }
+                aria-pressed={
+                  (range
+                    ? soundingSelection.flatMap(noteTones)
+                    : toneSelection.flatMap(noteTones).filter((t) => t.string === activeString)
+                  ).filter((t) => !t.dead).length > 0 &&
+                  (range
+                    ? soundingSelection.flatMap(noteTones)
+                    : toneSelection.flatMap(noteTones).filter((t) => t.string === activeString)
+                  )
+                    .filter((t) => !t.dead)
+                    .every((t) => t.vibrato)
+                }
+                onClick={() => {
+                  const tones = (
+                    range
+                      ? soundingSelection.flatMap(noteTones)
+                      : toneSelection.flatMap(noteTones).filter((t) => t.string === activeString)
+                  ).filter((t) => !t.dead);
+                  commit(
+                    setScoreVibrato(
+                      score,
+                      copiedSelection.map((n) => n.id),
+                      activeString,
+                      !tones.every((t) => t.vibrato),
+                      !!range,
+                    ),
+                    true,
+                  );
+                }}
+              >
+                비브라토
+              </ScoreToolButton>
+            )}
           </div>
         )}
-
         {isDrums && (
           <div
             className="score-measure-tools score-percussion-tools"
@@ -2975,137 +3185,6 @@ function GuitarTabEditorContent({
             </small>
           </div>
         </>
-        <div className="score-range-status" hidden={toolTab !== 'notes'} role="status">
-          {' '}
-          <strong className="score-location-readout" aria-label="현재 마디와 박">
-            <ScorePlaybackReadout
-              score={score}
-              part={part}
-              position={playbackPosition}
-              fallback={playbackBeat}
-              idle={
-                hasSelection
-                  ? `${location.bar + 1}마디 · ${Number((location.offset + 1).toFixed(3))}박`
-                  : ''
-              }
-            />
-          </strong>
-          {multiple
-            ? `${rangeNotes.length}개 박 선택 · ${rangeNotes.reduce((sum, item) => scoreBeat(sum + item.beats), 0)}박 길이 · 모든 줄 포함`
-            : isDrums
-              ? '↑↓로 오선 위치를 고르고 숫자키로 기호를 입력·변경하세요. Enter는 현재 기호 입력 · [ ] 길이 · R 선택 성부 쉼표'
-              : isPitchedStaff
-                ? isKeyboard
-                  ? '↑↓ 오선 위치 · 1 조표 기본 · 2 변화음(샵/제자리) · Enter 현재 음 입력 · 같은 박에 입력하면 화음 · Delete 현재 위치 삭제'
-                  : '↑↓ 음높이(반음) · ←→ 박 이동 · Enter / 1 입력 · 같은 박에 입력하면 화음 · [ ] 길이 · R 쉼표'
-                : '악보의 칸을 선택해 음표를 입력하세요. Ctrl+←→ 마디 이동 · Ctrl+↑↓ 악보 줄 이동 · 드래그로 여러 박 선택'}
-          <button onClick={deselect} style={{ visibility: multiple ? 'visible' : 'hidden' }}>
-            선택 해제
-          </button>
-        </div>
-        <div className="guitar-inputbar score-chord-tools" hidden={toolTab !== 'notes'}>
-          {' '}
-          <div className="score-document-chord">
-            <label className="score-measure-chord-input">
-              코드
-              <input
-                ref={measureChordInput}
-                aria-label="선택 위치 코드"
-                placeholder="예: Am7, D/F♯"
-                maxLength={40}
-                value={hasSelection ? (chordPositions[before] ?? '') : ''}
-                disabled={disabled || !hasSelection}
-                onChange={(event) =>
-                  commit(
-                    setScoreBeatChord(score, part, before, event.target.value),
-                    false,
-                    `chord/${part}/${before}`,
-                  )
-                }
-                onBlur={onEditComplete}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    focus();
-                  }
-                }}
-              />
-            </label>
-            <ScoreToolbarHelp label="코드 입력 도움말">
-              악보에서 위치를 선택한 뒤 코드를 입력하세요. 코드 표시는 해당 위치 위에 나타납니다.
-            </ScoreToolbarHelp>
-          </div>
-        </div>
-        <div className="score-note-inspector" hidden={toolTab !== 'notes'}>
-          <strong>
-            {multiple
-              ? `${rangeNotes.length}개 박 선택 · ${rangeNotes.reduce((sum, item) => scoreBeat(sum + item.beats), 0)}박 길이`
-              : note
-                ? '선택한 박'
-                : '새 음표'}
-          </strong>
-          <label>
-            가사{' '}
-            <input
-              aria-label="선택 음표 가사"
-              placeholder="가사"
-              value={note?.lyric ?? ''}
-              disabled={disabled || !note || multiple}
-              onChange={(event) => update({ lyric: event.target.value }, `lyric/${note?.id}`)}
-              onBlur={onEditComplete}
-            />
-          </label>
-          <button
-            disabled={!copiedSelection.length}
-            onClick={() => copySelection(true)}
-            title="Ctrl+C · 선택한 박의 모든 줄 복사"
-          >
-            선택 복사
-          </button>
-          <button
-            disabled={!clipboard.length || disabled || !hasSelection}
-            onClick={() => pasteSelection()}
-            title="Ctrl+V · 선택 위치 앞에 삽입하고 뒤 음표 이동"
-          >
-            여기에 붙여넣기
-          </button>
-          <button
-            disabled={disabled || multiple || !note || rows[0]?.id === note.id}
-            onClick={() => note && commit(moveScoreNote(score, note.id, -1))}
-          >
-            앞으로 이동
-          </button>
-          <button
-            disabled={disabled || multiple || !note || rows.at(-1)?.id === note.id}
-            onClick={() => note && commit(moveScoreNote(score, note.id, 1))}
-          >
-            뒤로 이동
-          </button>
-          <button
-            disabled={!note || disabled}
-            onClick={() => {
-              if (deleteSelectedMeasureRests()) return;
-              if (note)
-                commit(
-                  (copiedSelection.length > 1 ? clearScoreNotes : removeScoreNotes)(
-                    score,
-                    copiedSelection.map((item) => item.id),
-                  ),
-                );
-              deselect();
-            }}
-          >
-            선택 삭제
-          </button>
-          {note && !multiple && instrument.tuning.length > 0 && (
-            <button
-              disabled={disabled}
-              onClick={() => commit(removeScoreString(score, note.id, activeString))}
-            >
-              선택 줄 지우기
-            </button>
-          )}
-        </div>
       </div>
       <div className="score-workspace">
         {voiceToolsHost &&
@@ -3224,8 +3303,12 @@ function GuitarTabEditorContent({
             rangeIds={rangeNotes.map((item) => item.id)}
             onBoxSelect={(ids) => {
               if (disabled) return;
-              const chosen = rows.filter((n) => ids.includes(n.id));
-              select(chosen[0]?.id ?? null);
+              const chosen = boxNotes.filter((n) => ids.includes(n.id));
+              if (!chosen.length) {
+                deselect();
+                return;
+              }
+              select(chosen.find((n) => n.part === part)?.id ?? chosen[0]?.id ?? null);
               if (chosen.length)
                 setRange({
                   anchor: chosen[0].id,

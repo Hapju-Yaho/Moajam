@@ -8,10 +8,12 @@ export function TabRhythm({
   tuning,
   y,
   xAt,
+  stringSpacing = 20,
 }: {
   fragments: ScoreFragment[];
   tuning: readonly number[];
   y: number;
+  stringSpacing?: number;
   xAt: (offset: number) => number;
 }) {
   const notes = fragments.filter(({ note }) => note.graceBeats === undefined);
@@ -27,7 +29,9 @@ export function TabRhythm({
     ),
   );
   const fretY = (index: number) =>
-    y + (Math.max(...tabTones(notes[index].note, tuning).map((t) => t.string ?? 1)) - 1) * 20;
+    y +
+    (Math.max(...tabTones(notes[index].note, tuning).map((t) => t.string ?? 1)) - 1) *
+      stringSpacing;
   const end = (indices: number[]) =>
     Math.max(...indices.map(fretY)) + 31 + Math.max(0, ...indices.map((i) => flags(i) - 2)) * 5;
   return (

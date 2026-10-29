@@ -74,6 +74,7 @@ export function ScoreEditorViewport({
   shared = false,
   status,
   initiallyExpanded = false,
+  viewStateKey,
   projectBar,
   onRequestClose,
 }: PropsWithChildren<{
@@ -82,6 +83,7 @@ export function ScoreEditorViewport({
   shared?: boolean;
   status?: string;
   initiallyExpanded?: boolean;
+  viewStateKey?: string;
   projectBar?: ReactNode | ((status?: string, actions?: ScoreViewActions) => ReactNode);
   onRequestClose?: (close: () => void) => void;
 }>) {
@@ -90,8 +92,29 @@ export function ScoreEditorViewport({
   const helpButton = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const [projectActionsOpen, setProjectActionsOpen] = useState(false);
+  const [exportHost, setExportHost] = useState<HTMLDivElement | null>(null);
   const [mixerHost, setMixerHost] = useState<HTMLDivElement | null>(null);
-  const [expanded, setExpanded] = useState(initiallyExpanded);
+  const [expanded, setExpanded] = useState(() => {
+    if (initiallyExpanded) return true;
+    try {
+      return (
+        !!viewStateKey &&
+        sessionStorage.getItem(`moajam/score-edit-view/${viewStateKey}`) === 'expanded'
+      );
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (!viewStateKey) return;
+    try {
+      const storageKey = `moajam/score-edit-view/${viewStateKey}`;
+      if (expanded) sessionStorage.setItem(storageKey, 'expanded');
+      else sessionStorage.removeItem(storageKey);
+    } catch {
+      // Editing still works if browser storage is unavailable.
+    }
+  }, [expanded, viewStateKey]);
   const titleId = useId();
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspector, setInspector] = useState<ScoreInspectorTab>('notes');
@@ -105,7 +128,9 @@ export function ScoreEditorViewport({
       const target = event.target;
       if (
         target instanceof Element &&
-        target.closest('.score-project-actions, .score-project-actions-toggle')
+        target.closest(
+          '.score-project-actions, .score-project-actions-toggle, .score-export-submenu',
+        )
       )
         return;
       setProjectActionsOpen(false);
@@ -152,6 +177,7 @@ export function ScoreEditorViewport({
         document.querySelector('dialog[open]') ||
         root.current?.querySelector('.score-backing-help-content') ||
         root.current?.querySelector('.score-measure-menu') ||
+        root.current?.querySelector('.score-export-submenu') ||
         (event.target instanceof HTMLElement && event.target.closest('.score-editable-title input'))
       )
         return;
@@ -193,16 +219,7 @@ export function ScoreEditorViewport({
       단축키
     </button>
   );
-  const fileButton = (
-    <div className="score-expanded-file-buttons">
-      <button
-        aria-expanded={filePanel === 'file'}
-        onClick={() => setFilePanel(filePanel === 'file' ? null : 'file')}
-      >
-        파일 · 내보내기⌄
-      </button>
-    </div>
-  );
+  const fileButton = <div className="score-expanded-file-buttons" ref={setExportHost} />;
   const editButton = (
     <button
       ref={fullscreenButton}
@@ -218,6 +235,7 @@ export function ScoreEditorViewport({
     <ScoreEditorLayoutContext.Provider
       value={{
         mixerHost,
+        exportHost,
         projectActionsOpen,
         expanded,
         inspector,

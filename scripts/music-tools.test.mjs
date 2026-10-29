@@ -558,7 +558,7 @@ test('TAB entry adds chord strings, replaces only the chosen string and clears t
   const original = { ...fixture(), notes: [{ ...note('g1', 'Guitar'), rest: true }] };
   const first = setScoreFret(original, 'g1', 1, 3);
   const chord = setScoreFret(first, 'g1', 2, 2);
-  assert.deepEqual(noteTones(chord.notes[0]), [
+  assert.deepEqual(JSON.parse(JSON.stringify(noteTones(chord.notes[0]))), [
     { string: 1, fret: 3, pitch: 67, ghost: false, dead: false },
     { string: 2, fret: 2, pitch: 61, ghost: false, dead: false },
   ]);

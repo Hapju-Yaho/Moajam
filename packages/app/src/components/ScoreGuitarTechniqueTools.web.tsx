@@ -1,13 +1,19 @@
 import {
   noteTones,
+  canSetScoreNaturalHarmonics,
+  setScoreNaturalHarmonics,
   scoreInstrument,
   selectedScoreTone,
   setScoreGuitarTechnique,
+  setScoreBassTechnique,
+  canSetScoreStrum,
+  setScoreStrum,
   type Score,
 } from '../lib/score';
 import { supportsNaturalHarmonic, type GuitarTechniqueFields } from '../lib/scoreGuitarTechniques';
 import { ScoreToolButton } from './ScoreToolButton.web';
 import { ScoreBendGraph } from './ScoreBendGraph.web';
+import { ScoreStrumMark } from './ScoreStrumMark.web';
 
 export function ScoreGuitarTechniqueTools({
   score,
@@ -20,6 +26,7 @@ export function ScoreGuitarTechniqueTools({
   onGhost,
   ghostPressed,
   ghostDisabled,
+  allTones,
 }: {
   score: Score;
   part: string;
@@ -31,12 +38,23 @@ export function ScoreGuitarTechniqueTools({
   onGhost: () => void;
   ghostPressed: boolean;
   ghostDisabled: boolean;
+  allTones: boolean;
 }) {
   const instrument = scoreInstrument(score, part);
-  if (!instrument.tuning.length || instrument.id.startsWith('bass')) return null;
+  if (!instrument.tuning.length) return null;
+  const isBass = instrument.id.startsWith('bass');
   const note = score.notes.find((n) => n.id === ids[0]);
   const tone = note ? selectedScoreTone(score, note, string) : undefined;
   const locked = disabled || !tone || tone.dead || !note || note.rest || note.blank;
+  const batchTones = score.notes
+    .filter((n) => ids.includes(n.id) && !n.rest && !n.blank)
+    .flatMap(noteTones);
+  const palmMutePressed = allTones
+    ? batchTones.length > 0 && batchTones.every((t) => t.palmMute)
+    : !!tone?.palmMute;
+  const palmMuteLocked = allTones
+    ? disabled || !batchTones.some((t) => !t.dead) || batchTones.some((t) => t.bend)
+    : locked || !!tone?.bend;
   const bendingLocked =
     locked ||
     ids.some((id) => {
@@ -59,6 +77,69 @@ export function ScoreGuitarTechniqueTools({
     ['prebend', '프리벤드', '↑'],
     ['prebend-release', '프리벤드 릴리즈', '↑↘'],
   ] as const;
+  const harmonicButtons = (
+    [
+      ['natural', 'N.H.', '내추럴 하모닉스'],
+      ['pinch', 'P.H.', '피킹 하모닉스'],
+    ] as const
+  )
+    .filter(([harmonic]) => !isBass || harmonic === 'natural')
+    .map(([harmonic, icon, label]) => (
+      <ScoreToolButton
+        key={harmonic}
+        icon={icon}
+        disabled={
+          harmonic === 'natural' && allTones
+            ? disabled || !canSetScoreNaturalHarmonics(score, ids)
+            : locked ||
+              !!tone?.bend ||
+              (harmonic === 'natural' &&
+                ids.some((id) => {
+                  const selected = score.notes.find((n) => n.id === id);
+                  return (
+                    !selected ||
+                    !supportsNaturalHarmonic(selectedScoreTone(score, selected, string)?.fret)
+                  );
+                }))
+        }
+        aria-pressed={
+          harmonic === 'natural' && allTones
+            ? ids.length > 0 &&
+              ids.every((id) => {
+                const n = score.notes.find((n) => n.id === id);
+                return !!n && noteTones(n).every((t) => t.harmonic === 'natural');
+              })
+            : tone?.harmonic === harmonic
+        }
+        title={
+          harmonic === 'natural'
+            ? '3·4·5·7·9·12·16·19·24프렛의 배음'
+            : '높은 배음을 강조한 근사 재생'
+        }
+        onClick={() => {
+          if (harmonic === 'natural' && allTones) {
+            try {
+              onEdit(
+                setScoreNaturalHarmonics(
+                  score,
+                  ids,
+                  !ids.every((id) =>
+                    noteTones(score.notes.find((n) => n.id === id)!).every(
+                      (t) => t.harmonic === 'natural',
+                    ),
+                  ),
+                ),
+              );
+              onError('');
+            } catch (error) {
+              onError((error as Error).message);
+            }
+          } else apply({ harmonic: tone?.harmonic === harmonic ? undefined : harmonic });
+        }}
+      >
+        {label}
+      </ScoreToolButton>
+    ));
   return (
     <>
       <span className="score-tool-group-label">주법</span>
@@ -72,77 +153,127 @@ export function ScoreGuitarTechniqueTools({
         >
           고스트노트
         </ScoreToolButton>
-        {(
-          [
-            ['natural', 'N.H.', '내추럴 하모닉스'],
-            ['pinch', 'P.H.', '피킹 하모닉스'],
-          ] as const
-        ).map(([harmonic, icon, label]) => (
-          <ScoreToolButton
-            key={harmonic}
-            icon={icon}
-            disabled={
-              locked ||
-              !!tone?.bend ||
-              (harmonic === 'natural' &&
-                ids.some((id) => {
-                  const selected = score.notes.find((n) => n.id === id);
-                  return (
-                    !selected ||
-                    !supportsNaturalHarmonic(selectedScoreTone(score, selected, string)?.fret)
-                  );
-                }))
-            }
-            aria-pressed={tone?.harmonic === harmonic}
-            title={
-              harmonic === 'natural'
-                ? '3·4·5·7·9·12·16·19·24프렛의 배음'
-                : '높은 배음을 강조한 근사 재생'
-            }
-            onClick={() => apply({ harmonic: tone?.harmonic === harmonic ? undefined : harmonic })}
-          >
-            {label}
-          </ScoreToolButton>
-        ))}
+        {!isBass && harmonicButtons}
         <ScoreToolButton
           icon="P.M."
-          disabled={locked || !!tone?.bend}
-          aria-pressed={!!tone?.palmMute}
-          onClick={() => apply({ palmMute: !tone?.palmMute })}
+          disabled={palmMuteLocked}
+          aria-pressed={palmMutePressed}
+          onClick={() => apply({ palmMute: !palmMutePressed })}
         >
           팜뮤트
         </ScoreToolButton>
+        {isBass &&
+          (['thumb', 'pluck'] as const).map((technique) => {
+            const selected = allTones ? batchTones : tone ? [tone] : [];
+            const pressed =
+              selected.length > 0 && selected.every((t) => t.bassTechnique === technique);
+            return (
+              <ScoreToolButton
+                key={technique}
+                icon={technique === 'thumb' ? 'T' : 'P'}
+                disabled={disabled || !selected.length}
+                aria-pressed={pressed}
+                onClick={() =>
+                  onEdit(
+                    setScoreBassTechnique(
+                      score,
+                      ids,
+                      string,
+                      pressed ? undefined : technique,
+                      allTones,
+                    ),
+                  )
+                }
+              >
+                {technique === 'thumb' ? '썸' : '플럭'}
+              </ScoreToolButton>
+            );
+          })}
+        {isBass && harmonicButtons}
       </div>
-      <span className="score-tool-group-label">벤딩</span>
-      <div className="score-bend-selectors">
-        <label>
-          종류
-          <select
-            aria-label="벤딩 종류"
-            disabled={bendingLocked && !tone?.bend}
-            value={tone?.bend?.kind ?? ''}
-            onChange={(e) => {
-              const kind = e.target.value as NonNullable<GuitarTechniqueFields['bend']>['kind'];
-              apply({ bend: kind ? { kind, amount: tone?.bend?.amount ?? 2 } : undefined });
-            }}
-          >
-            <option value="">없음</option>
-            {kinds.map(([kind, label]) => (
-              <option key={kind} value={kind}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {tone?.bend && note && (
-        <ScoreBendGraph
-          key={`${note.id}/${tone.bend.kind}`}
-          bend={tone.bend}
-          beats={note.beats}
-          disabled={disabled || bendingLocked}
-          onChange={(bend) => apply({ bend })}
-        />
+      {!isBass && (
+        <>
+          <span className="score-tool-group-label">스트로크</span>
+          <div className="score-guitar-technique-grid score-strum-tools">
+            {(['up', 'down'] as const).map((direction) => {
+              const pressed =
+                ids.length > 0 &&
+                ids.every((id) => {
+                  const selected = score.notes.find((n) => n.id === id);
+                  return (
+                    !!selected &&
+                    noteTones(selected).length > 0 &&
+                    noteTones(selected).every((t) => t.strum === direction)
+                  );
+                });
+              return (
+                <ScoreToolButton
+                  key={direction}
+                  icon={
+                    <svg viewBox="0 0 24 32">
+                      <ScoreStrumMark direction={direction} x={12} top={3} bottom={29} />
+                    </svg>
+                  }
+                  disabled={disabled || !canSetScoreStrum(score, ids)}
+                  aria-pressed={pressed}
+                  title="같은 박에 3개 이상의 줄을 연주할 때 적용"
+                  onClick={() =>
+                    onEdit(setScoreStrum(score, ids, { strum: pressed ? undefined : direction }))
+                  }
+                >
+                  {direction === 'up' ? '업 스트로크' : '다운 스트로크'}
+                </ScoreToolButton>
+              );
+            })}
+            <ScoreToolButton
+              icon=">"
+              disabled={disabled || !canSetScoreStrum(score, ids)}
+              aria-pressed={
+                ids.length > 0 && ids.every((id) => score.notes.find((n) => n.id === id)?.accent)
+              }
+              onClick={() =>
+                onEdit(
+                  setScoreStrum(score, ids, {
+                    accent: !ids.every((id) => score.notes.find((n) => n.id === id)?.accent),
+                  }),
+                )
+              }
+            >
+              악센트
+            </ScoreToolButton>
+          </div>
+          <span className="score-tool-group-label">벤딩</span>
+          <div className="score-bend-selectors">
+            <label>
+              종류
+              <select
+                aria-label="벤딩 종류"
+                disabled={bendingLocked && !tone?.bend}
+                value={tone?.bend?.kind ?? ''}
+                onChange={(e) => {
+                  const kind = e.target.value as NonNullable<GuitarTechniqueFields['bend']>['kind'];
+                  apply({ bend: kind ? { kind, amount: tone?.bend?.amount ?? 2 } : undefined });
+                }}
+              >
+                <option value="">없음</option>
+                {kinds.map(([kind, label]) => (
+                  <option key={kind} value={kind}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {tone?.bend && note && (
+            <ScoreBendGraph
+              key={`${note.id}/${tone.bend.kind}`}
+              bend={tone.bend}
+              beats={note.beats}
+              disabled={disabled || bendingLocked}
+              onChange={(bend) => apply({ bend })}
+            />
+          )}
+        </>
       )}
     </>
   );

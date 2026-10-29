@@ -683,6 +683,16 @@
   padding: 12px 14px;
   border-bottom: 1px solid #d9e1dc;
 }
+.score-detail-inspector > .score-note-edit-category {
+  padding: 14px 0;
+  border-bottom: 1px solid #d9e1dc;
+}
+.score-note-edit-category > .score-note-inspector,
+.score-note-edit-category > .score-beat-insert-tools {
+  background: transparent;
+  border-bottom: 0;
+  padding: 8px 0;
+}
 .guitar-toolbar {
   background: #f9fbfa;
   position: sticky;
@@ -806,7 +816,8 @@
   min-height: 420px;
 }
 .score-page {
-  background: #fffefb;
+  --score-paper-color: #fffefb;
+  background: var(--score-paper-color);
   box-shadow: 0 2px 9px #263c3410;
   border: 1px solid #e1e5df;
   padding: 25px 20px;
@@ -2248,6 +2259,46 @@
   padding: 5px;
   white-space: nowrap;
   justify-content: center;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  box-sizing: border-box;
+  flex-direction: row;
+}
+.score-editor-viewport .score-pitch-tools[data-fretted='true'] :is(select, input) {
+  height: 30px;
+  min-height: 30px;
+  box-sizing: border-box;
+}
+.score-editor-viewport .score-expanded-view-controls .score-expanded-history {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 10px 0 0;
+}
+.score-editor-viewport .score-expanded-view-controls .score-expanded-history button {
+  width: 26px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+}
+.score-expanded-view-controls .score-expanded-history span {
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+.score-editor-viewport .score-expanded-view-controls .score-tab-view-toggle {
+  flex: 0 0 90px;
+  width: 90px;
+  min-width: 90px;
+  height: 28px;
+  min-height: 28px;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 .score-chord-tools .score-measure-chord-input {
   display: flex;

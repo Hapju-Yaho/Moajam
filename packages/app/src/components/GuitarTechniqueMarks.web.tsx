@@ -20,9 +20,7 @@ export function GuitarTechniqueMarks({
   showStaff?: boolean;
 }) {
   if (!tone.bend && !tone.harmonic) return null;
-  const label = [tone.harmonic === 'natural' ? 'N.H.' : tone.harmonic === 'pinch' ? 'P.H.' : '']
-    .filter(Boolean)
-    .join(' ');
+  const label = tone.harmonic === 'pinch' ? 'P.H.' : '';
   return (
     <g data-guitar-technique="true" pointerEvents="none" fill="#344b3e" stroke="#344b3e">
       {label && (

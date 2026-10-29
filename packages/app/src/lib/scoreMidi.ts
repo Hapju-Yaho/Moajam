@@ -132,7 +132,15 @@ export function scoreToMidi(
             order: -1,
             bytes: [
               192 | channel,
-              change.tone === 'overdrive' ? 29 : change.tone === 'distortion' ? 30 : program,
+              change.tone === 'overdrive'
+                ? 29
+                : change.tone === 'distortion'
+                  ? 30
+                  : change.tone === 'finger'
+                    ? 33
+                    : change.tone === 'slap'
+                      ? 36
+                      : program,
             ],
           });
       }
