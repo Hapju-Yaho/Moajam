@@ -1,4 +1,4 @@
-import { ScorePlaybackReadout, ScorePlaybackMeasure } from './ScorePlaybackReadout.web';
+import { ScorePlaybackMeasure } from './ScorePlaybackReadout.web';
 import { ScoreGuitarTechniqueTools } from './ScoreGuitarTechniqueTools.web';
 import { keyboardKeyIsWritten } from '../lib/scoreTuning';
 import { enterDrumVoice } from '../lib/scoreDrumEntry';
@@ -2354,18 +2354,120 @@ function GuitarTabEditorContent({
             마디 쉼표 입력
           </ScoreToolButton>
         </div>
-
-        <div className="guitar-inputbar score-beat-insert-tools" hidden={toolTab !== 'notes'}>
-          {(['before', 'after'] as const).map((side) => (
-            <ScoreToolButton
-              key={side}
-              icon={<ScoreMeasureIcon name={side === 'before' ? 'beat-before' : 'beat-after'} />}
-              disabled={disabled || multiple || !note}
-              onClick={() => insert(create(), side)}
+        <section className="score-note-edit-category" hidden={toolTab !== 'notes'}>
+          <span className="score-tool-group-label">편집</span>
+          <div className="score-note-inspector">
+            {' '}
+            <button
+              disabled={!copiedSelection.length}
+              onClick={() => copySelection(true)}
+              title="Ctrl+C · 선택한 박의 모든 줄 복사"
             >
-              {side === 'before' ? '앞에 박자 삽입' : '뒤에 박자 삽입'}
-            </ScoreToolButton>
-          ))}
+              선택 복사
+            </button>
+            <button
+              disabled={!clipboard.length || disabled || !hasSelection}
+              onClick={() => pasteSelection()}
+              title="Ctrl+V · 선택 위치 앞에 삽입하고 뒤 음표 이동"
+            >
+              여기에 붙여넣기
+            </button>
+            <button
+              disabled={disabled || multiple || !note || rows[0]?.id === note.id}
+              onClick={() => note && commit(moveScoreNote(score, note.id, -1))}
+            >
+              앞으로 이동
+            </button>
+            <button
+              disabled={disabled || multiple || !note || rows.at(-1)?.id === note.id}
+              onClick={() => note && commit(moveScoreNote(score, note.id, 1))}
+            >
+              뒤로 이동
+            </button>
+            <button
+              disabled={!note || disabled}
+              onClick={() => {
+                if (deleteSelectedMeasureRests()) return;
+                if (note)
+                  commit(
+                    (copiedSelection.length > 1 ? clearScoreNotes : removeScoreNotes)(
+                      score,
+                      copiedSelection.map((item) => item.id),
+                    ),
+                  );
+                deselect();
+              }}
+            >
+              선택 삭제
+            </button>
+            {note && !multiple && instrument.tuning.length > 0 && (
+              <button
+                disabled={disabled}
+                onClick={() => commit(removeScoreString(score, note.id, activeString))}
+              >
+                선택 줄 지우기
+              </button>
+            )}
+          </div>{' '}
+          <div className="guitar-inputbar score-beat-insert-tools" hidden={toolTab !== 'notes'}>
+            {(['before', 'after'] as const).map((side) => (
+              <ScoreToolButton
+                key={side}
+                icon={<ScoreMeasureIcon name={side === 'before' ? 'beat-before' : 'beat-after'} />}
+                disabled={disabled || multiple || !note}
+                onClick={() => insert(create(), side)}
+              >
+                {side === 'before' ? '앞에 박자 삽입' : '뒤에 박자 삽입'}
+              </ScoreToolButton>
+            ))}
+          </div>
+        </section>{' '}
+        <div className="guitar-inputbar score-chord-tools" hidden={toolTab !== 'notes'}>
+          {' '}
+          <div className="score-document-chord">
+            <label className="score-measure-chord-input">
+              코드
+              <input
+                ref={measureChordInput}
+                aria-label="선택 위치 코드"
+                placeholder="예: Am7, D/F♯"
+                maxLength={40}
+                value={hasSelection ? (chordPositions[before] ?? '') : ''}
+                disabled={disabled || !hasSelection}
+                onChange={(event) =>
+                  commit(
+                    setScoreBeatChord(score, part, before, event.target.value),
+                    false,
+                    `chord/${part}/${before}`,
+                  )
+                }
+                onBlur={onEditComplete}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    focus();
+                  }
+                }}
+              />
+            </label>
+            <ScoreToolbarHelp label="코드 입력 도움말">
+              악보에서 위치를 선택한 뒤 코드를 입력하세요. 코드 표시는 해당 위치 위에 나타납니다.
+            </ScoreToolbarHelp>
+          </div>
+        </div>
+        <div className="score-note-inspector" hidden={toolTab !== 'notes'}>
+          {' '}
+          <label>
+            가사{' '}
+            <input
+              aria-label="선택 음표 가사"
+              placeholder="가사"
+              value={note?.lyric ?? ''}
+              disabled={disabled || !note || multiple}
+              onChange={(event) => update({ lyric: event.target.value }, `lyric/${note?.id}`)}
+              onBlur={onEditComplete}
+            />
+          </label>
         </div>
         <div className="score-backing-inspector-host" ref={onBackingHost} />
         <div className="guitar-inputbar score-document-settings" hidden={toolTab !== 'score'}>
@@ -2850,7 +2952,6 @@ function GuitarTabEditorContent({
             </ScoreToolButton>
           </div>
         )}
-
         {isDrums && (
           <div
             className="score-measure-tools score-percussion-tools"
@@ -3051,137 +3152,6 @@ function GuitarTabEditorContent({
             </small>
           </div>
         </>
-        <div className="score-range-status" hidden={toolTab !== 'notes'} role="status">
-          {' '}
-          <strong className="score-location-readout" aria-label="현재 마디와 박">
-            <ScorePlaybackReadout
-              score={score}
-              part={part}
-              position={playbackPosition}
-              fallback={playbackBeat}
-              idle={
-                hasSelection
-                  ? `${location.bar + 1}마디 · ${Number((location.offset + 1).toFixed(3))}박`
-                  : ''
-              }
-            />
-          </strong>
-          {multiple
-            ? `${rangeNotes.length}개 박 선택 · ${rangeNotes.reduce((sum, item) => scoreBeat(sum + item.beats), 0)}박 길이 · 모든 줄 포함`
-            : isDrums
-              ? '↑↓로 오선 위치를 고르고 숫자키로 기호를 입력·변경하세요. Enter는 현재 기호 입력 · [ ] 길이 · R 선택 성부 쉼표'
-              : isPitchedStaff
-                ? isKeyboard
-                  ? '↑↓ 오선 위치 · 1 조표 기본 · 2 변화음(샵/제자리) · Enter 현재 음 입력 · 같은 박에 입력하면 화음 · Delete 현재 위치 삭제'
-                  : '↑↓ 음높이(반음) · ←→ 박 이동 · Enter / 1 입력 · 같은 박에 입력하면 화음 · [ ] 길이 · R 쉼표'
-                : '악보의 칸을 선택해 음표를 입력하세요. Ctrl+←→ 마디 이동 · Ctrl+↑↓ 악보 줄 이동 · 드래그로 여러 박 선택'}
-          <button onClick={deselect} style={{ visibility: multiple ? 'visible' : 'hidden' }}>
-            선택 해제
-          </button>
-        </div>
-        <div className="guitar-inputbar score-chord-tools" hidden={toolTab !== 'notes'}>
-          {' '}
-          <div className="score-document-chord">
-            <label className="score-measure-chord-input">
-              코드
-              <input
-                ref={measureChordInput}
-                aria-label="선택 위치 코드"
-                placeholder="예: Am7, D/F♯"
-                maxLength={40}
-                value={hasSelection ? (chordPositions[before] ?? '') : ''}
-                disabled={disabled || !hasSelection}
-                onChange={(event) =>
-                  commit(
-                    setScoreBeatChord(score, part, before, event.target.value),
-                    false,
-                    `chord/${part}/${before}`,
-                  )
-                }
-                onBlur={onEditComplete}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    focus();
-                  }
-                }}
-              />
-            </label>
-            <ScoreToolbarHelp label="코드 입력 도움말">
-              악보에서 위치를 선택한 뒤 코드를 입력하세요. 코드 표시는 해당 위치 위에 나타납니다.
-            </ScoreToolbarHelp>
-          </div>
-        </div>
-        <div className="score-note-inspector" hidden={toolTab !== 'notes'}>
-          <strong>
-            {multiple
-              ? `${rangeNotes.length}개 박 선택 · ${rangeNotes.reduce((sum, item) => scoreBeat(sum + item.beats), 0)}박 길이`
-              : note
-                ? '선택한 박'
-                : '새 음표'}
-          </strong>
-          <label>
-            가사{' '}
-            <input
-              aria-label="선택 음표 가사"
-              placeholder="가사"
-              value={note?.lyric ?? ''}
-              disabled={disabled || !note || multiple}
-              onChange={(event) => update({ lyric: event.target.value }, `lyric/${note?.id}`)}
-              onBlur={onEditComplete}
-            />
-          </label>
-          <button
-            disabled={!copiedSelection.length}
-            onClick={() => copySelection(true)}
-            title="Ctrl+C · 선택한 박의 모든 줄 복사"
-          >
-            선택 복사
-          </button>
-          <button
-            disabled={!clipboard.length || disabled || !hasSelection}
-            onClick={() => pasteSelection()}
-            title="Ctrl+V · 선택 위치 앞에 삽입하고 뒤 음표 이동"
-          >
-            여기에 붙여넣기
-          </button>
-          <button
-            disabled={disabled || multiple || !note || rows[0]?.id === note.id}
-            onClick={() => note && commit(moveScoreNote(score, note.id, -1))}
-          >
-            앞으로 이동
-          </button>
-          <button
-            disabled={disabled || multiple || !note || rows.at(-1)?.id === note.id}
-            onClick={() => note && commit(moveScoreNote(score, note.id, 1))}
-          >
-            뒤로 이동
-          </button>
-          <button
-            disabled={!note || disabled}
-            onClick={() => {
-              if (deleteSelectedMeasureRests()) return;
-              if (note)
-                commit(
-                  (copiedSelection.length > 1 ? clearScoreNotes : removeScoreNotes)(
-                    score,
-                    copiedSelection.map((item) => item.id),
-                  ),
-                );
-              deselect();
-            }}
-          >
-            선택 삭제
-          </button>
-          {note && !multiple && instrument.tuning.length > 0 && (
-            <button
-              disabled={disabled}
-              onClick={() => commit(removeScoreString(score, note.id, activeString))}
-            >
-              선택 줄 지우기
-            </button>
-          )}
-        </div>
       </div>
       <div className="score-workspace">
         {voiceToolsHost &&

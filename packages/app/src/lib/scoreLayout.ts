@@ -159,6 +159,38 @@ export function scoreSystemLayouts(
         (weights[index] ?? 100)) /
       100,
   );
+  // Four-bar systems read more evenly when spare room goes to the narrow bars.
+  // Respect glyph spacing and explicit per-bar width adjustments.
+  if (
+    measures.length === 4 &&
+    !equalWidths &&
+    measures.every((_, index) => (weights[index] ?? 100) === (weights[0] ?? 100))
+  ) {
+    const required = measures.map(
+      (points) =>
+        scoreMeasureLayout(
+          points.map((point) => ({ ...point, space: point.minSpace ?? point.space })),
+          0,
+        ).width,
+    );
+    if (required.reduce((sum, width) => sum + width, 0) <= availableWidth) {
+      const pending = new Set([0, 1, 2, 3]);
+      let remaining = availableWidth;
+      while (pending.size) {
+        const share = remaining / pending.size;
+        const constrained = [...pending].filter((index) => required[index] > share);
+        if (!constrained.length) {
+          for (const index of pending) preferred[index] = share;
+          break;
+        }
+        for (const index of constrained) {
+          preferred[index] = required[index];
+          remaining -= required[index];
+          pending.delete(index);
+        }
+      }
+    }
+  }
   const preferredTotal = preferred.reduce((sum, width) => sum + width, 0);
   return measures
     .map((points, index) => {

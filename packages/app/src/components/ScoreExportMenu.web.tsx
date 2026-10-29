@@ -1,3 +1,4 @@
+import { useScoreFilePanel } from './useScoreFilePanel.web';
 import { scoreInstrument, type Score } from '../lib/score';
 import { scoreVisibleParts } from '../lib/scoreParts';
 import {
@@ -43,6 +44,7 @@ export function ScoreExportMenu({
   const [position, setPosition] = useState({ left: 0, top: 0 });
   const [open, setOpen] = useState<'import' | 'export' | null>(null);
   const [format, setFormat] = useState<'PDF' | 'MIDI' | null>(null);
+  useScoreFilePanel(dialog, !!format);
   const parts = scoreVisibleParts(score);
   const count = scoreExportMeasureCount(score);
   const [selectedParts, setSelectedParts] = useState<string[]>([part]);
@@ -73,7 +75,7 @@ export function ScoreExportMenu({
     return () => document.removeEventListener('pointerdown', close);
   }, [open]);
   useEffect(() => {
-    if (format && !dialog.current?.open) dialog.current?.showModal();
+    if (format && !dialog.current?.open) dialog.current?.show();
   }, [format]);
   const close = () => {
     dialog.current?.close();
@@ -226,7 +228,7 @@ export function ScoreExportMenu({
         root.current &&
         createPortal(
           <dialog
-            className="score-export-dialog"
+            className="score-export-dialog score-file-floating"
             ref={dialog}
             aria-labelledby="score-export-dialog-title"
             onCancel={() => setFormat(null)}
@@ -249,22 +251,19 @@ export function ScoreExportMenu({
               <section className="score-export-part-section" aria-label="출력 파트">
                 <div className="score-export-parts-heading">
                   <strong>출력 파트</strong>
-                  <div>
-                    <button
-                      type="button"
-                      disabled={disabled || parts.every((name) => selectedParts.includes(name))}
-                      onClick={() => setSelectedParts(parts)}
-                    >
-                      전체 선택
-                    </button>
-                    <button
-                      type="button"
-                      disabled={disabled || !selectedParts.length}
-                      onClick={() => setSelectedParts([])}
-                    >
-                      전체 해제
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="score-export-select-all"
+                    disabled={disabled}
+                    aria-pressed={parts.every((name) => selectedParts.includes(name))}
+                    onClick={() =>
+                      setSelectedParts(
+                        parts.every((name) => selectedParts.includes(name)) ? [] : parts,
+                      )
+                    }
+                  >
+                    전체 선택
+                  </button>
                 </div>
                 <div className="score-export-parts" role="group" aria-label="출력할 파트 선택">
                   {parts.map((name) => (

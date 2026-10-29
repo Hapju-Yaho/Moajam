@@ -69,6 +69,7 @@ export function ScoreFileActions({
   const input = useRef<HTMLInputElement>(null);
   const xmlInput = useRef<HTMLInputElement>(null);
   const [xmlFile, setXmlFile] = useState<File | null>(null);
+  const [moajamFile, setMoajamFile] = useState<File | null>(null);
   const midiInput = useRef<HTMLInputElement>(null);
   const [midiFile, setMidiFile] = useState<File | null>(null);
   const root = useRef<HTMLElement>(null);
@@ -263,6 +264,20 @@ export function ScoreFileActions({
           />,
           root.current.closest('.score-editor-viewport') ?? window.document.body,
         )}
+      {moajamFile &&
+        root.current &&
+        onXmlApply &&
+        createPortal(
+          <ScoreXmlImport
+            format=".moajam"
+            file={moajamFile}
+            score={document.score}
+            part={scorePartOwner(document.score, part)}
+            onApply={onXmlApply}
+            onClose={() => setMoajamFile(null)}
+          />,
+          root.current.closest('.score-editor-viewport') ?? window.document.body,
+        )}
       <input
         ref={midiInput}
         hidden
@@ -324,7 +339,10 @@ export function ScoreFileActions({
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 event.target.value = '';
-                if (file) void load(file);
+                if (file) {
+                  if (onXmlApply) setMoajamFile(file);
+                  else void load(file);
+                }
               }}
             />
             {onXmlApply ? (

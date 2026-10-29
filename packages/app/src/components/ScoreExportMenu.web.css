@@ -55,8 +55,8 @@
   background: #344b58;
 }
 .score-export-dialog .score-export-parts button[aria-pressed='true'] {
-  background: #2365ba;
-  border-color: #91bbf0;
+  background: #29485f;
+  border-color: #607f95;
   color: #fff;
 }
 .score-export-measures > div {
@@ -112,6 +112,41 @@
   background: #293c46;
   color: #eef4f7;
   box-sizing: border-box;
+}
+.score-export-dialog.score-file-floating {
+  position: fixed;
+  inset: 150px auto auto 12px;
+  margin: 0;
+  width: min(380px, calc(100vw - 24px));
+  max-height: calc(100dvh - 170px);
+  overflow: auto;
+  z-index: 1000;
+  box-shadow: 0 10px 32px #10212b44;
+}
+.score-project-menu-divider {
+  border: 0;
+  border-top: 1px solid #71899466;
+  margin: 5px 10px;
+}
+.score-note-edit-category {
+  min-width: 0;
+}
+.score-file-floating .score-export-measures > div {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.score-file-floating .score-export-measures label {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.score-file-floating .score-export-measures input[type='number'] {
+  width: 52px;
+}
+@media (max-height: 600px) {
+  .score-export-dialog.score-file-floating {
+    top: 70px;
+    max-height: calc(100dvh - 86px);
+  }
 }
 .score-export-dialog .score-export-tab-options {
   display: flex;
@@ -238,8 +273,7 @@
   color: #1d303e;
   font: inherit;
 }
-.score-midi-summary,
-.score-midi-overwrite {
+.score-midi-summary {
   padding: 14px;
   border: 1px solid #718994;
   border-radius: 8px;
@@ -248,6 +282,100 @@
 .score-midi-import [role='alert'] {
   color: #ffb8b8;
 }
-.score-midi-overwrite {
+.score-import-overwrite {
+  width: min(440px, calc(100vw - 32px));
   border-color: #d59a65;
+}
+.score-file-panel-shade {
+  position: fixed;
+  z-index: 900;
+  background: #101b2580;
+}
+.score-export-dialog.score-file-floating {
+  width: min(300px, calc(100vw - 16px));
+  max-height: none;
+  overflow: visible;
+  font-size: 11px;
+}
+.score-file-floating > section {
+  padding: 12px;
+}
+.score-file-floating h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.score-file-floating :is(header, footer) {
+  gap: 6px;
+}
+.score-file-floating label {
+  gap: 4px;
+  margin: 7px 0;
+}
+.score-file-floating p {
+  margin: 6px 0;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.score-file-floating :is(button, select, input[type='number'], .score-export-name input) {
+  padding: 5px 7px;
+  min-height: 26px;
+  font-size: 11px;
+}
+.score-file-floating footer {
+  margin-top: 10px;
+}
+.score-file-floating .score-midi-summary {
+  padding: 8px;
+}
+.score-file-floating .score-export-parts {
+  gap: 4px;
+  padding: 6px;
+  margin: 6px 0 10px;
+  max-height: none;
+  overflow: visible;
+}
+.score-file-floating .score-export-parts button {
+  gap: 4px;
+  padding: 4px 6px;
+}
+.score-file-floating .score-export-parts svg {
+  width: 16px;
+  height: 16px;
+}
+.score-file-floating .score-export-tab-options {
+  gap: 3px;
+}
+.score-file-floating .score-export-measures input[type='number'] {
+  width: 44px;
+}
+.score-file-floating .score-export-parts-heading {
+  justify-content: flex-start;
+  gap: 8px;
+}
+.score-editor-viewport .score-export-dialog .score-export-select-all {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  padding: 3px 7px;
+  border: 1px solid #526975;
+  border-radius: 4px;
+  background: #202f39;
+  color: #9aabb7;
+}
+.score-editor-viewport .score-export-dialog .score-export-select-all[aria-pressed='true'] {
+  background: #27566f;
+  border-color: #78a9c0;
+  color: #fff;
+}
+.score-editor-viewport .score-export-dialog .score-export-parts button[aria-pressed='true'] {
+  background: #27566f;
+  border-color: #78a9c0;
+  color: #fff;
+  opacity: 1;
+}
+.score-editor-viewport .score-export-dialog .score-export-parts button[aria-pressed='false'] {
+  background: #202f39;
+  border-color: #475560;
+  color: #9aabb7;
+  opacity: 0.6;
 }

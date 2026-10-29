@@ -1,3 +1,5 @@
+import { useScoreFilePanel } from './useScoreFilePanel.web';
+import { ScoreImportOverwrite } from './ScoreImportOverwrite.web';
 import { useEffect, useRef, useState } from 'react';
 import { scoreMeasureCount, scoreBarBeats, type Score } from '../lib/score';
 import { scoreVisibleParts } from '../lib/scoreParts';
@@ -22,6 +24,7 @@ export function ScoreMidiImport({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  useScoreFilePanel(dialog);
   const [data, setData] = useState<MidiImportData | null>(null),
     [error, setError] = useState('');
   const [track, setTrack] = useState(0),
@@ -31,7 +34,7 @@ export function ScoreMidiImport({
   const [confirm, setConfirm] = useState(false),
     [applied, setApplied] = useState(false);
   useEffect(() => {
-    dialog.current?.showModal();
+    dialog.current?.show();
     let active = true;
     if (file.size > 10 * 1024 * 1024) {
       setError('10MB 이하 MIDI 파일을 선택해주세요.');
@@ -75,7 +78,7 @@ export function ScoreMidiImport({
   return (
     <dialog
       ref={dialog}
-      className="score-export-dialog score-midi-import"
+      className="score-export-dialog score-midi-import score-file-floating"
       aria-labelledby="score-midi-import-title"
       onCancel={onClose}
       onClick={(event) => {
@@ -171,27 +174,16 @@ export function ScoreMidiImport({
         )}
         {error && <p role="alert">{error}</p>}
         {applied && <p role="status">MIDI 악보를 삽입했어요. 프로젝트를 저장해주세요.</p>}
-        {confirm ? (
-          <section
-            className="score-midi-overwrite"
-            role="alertdialog"
-            aria-label="MIDI 덮어쓰기 확인"
-          >
-            <strong>기존 음표를 덮어쓸까요?</strong>
-            <p>
-              {target}의 {start()}마디부터 삽입할 구간에 음표가 있어요. 기존 음표를 지우고 MIDI로
-              바꿉니다.
-            </p>
-            <footer>
-              <button type="button" onClick={() => setConfirm(false)}>
-                취소
-              </button>
-              <button type="button" onClick={() => apply(true)}>
-                덮어쓰기
-              </button>
-            </footer>
-          </section>
-        ) : (
+        {confirm && (
+          <ScoreImportOverwrite
+            format="MIDI"
+            target={target}
+            bar={start()}
+            onCancel={() => setConfirm(false)}
+            onConfirm={() => apply(true)}
+          />
+        )}
+        {
           <footer>
             <button type="button" onClick={onClose}>
               닫기
@@ -202,7 +194,7 @@ export function ScoreMidiImport({
               </button>
             )}
           </footer>
-        )}
+        }
       </section>
     </dialog>
   );

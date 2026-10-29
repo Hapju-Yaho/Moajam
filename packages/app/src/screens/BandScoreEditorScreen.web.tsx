@@ -320,7 +320,9 @@ export function BandScoreProjects(
         hidden={!!active && !(actions?.menuOpen ?? actionsOpen)}
       >
         {actions?.file}
+        <hr className="score-project-menu-divider" />
         {actions?.shortcuts}
+        <hr className="score-project-menu-divider" />
         <button disabled={locked} onClick={() => open('new')}>
           새 프로젝트
         </button>

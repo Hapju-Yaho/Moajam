@@ -683,6 +683,16 @@
   padding: 12px 14px;
   border-bottom: 1px solid #d9e1dc;
 }
+.score-detail-inspector > .score-note-edit-category {
+  padding: 14px 0;
+  border-bottom: 1px solid #d9e1dc;
+}
+.score-note-edit-category > .score-note-inspector,
+.score-note-edit-category > .score-beat-insert-tools {
+  background: transparent;
+  border-bottom: 0;
+  padding: 8px 0;
+}
 .guitar-toolbar {
   background: #f9fbfa;
   position: sticky;

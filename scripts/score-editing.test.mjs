@@ -361,6 +361,31 @@ test('dot toggles shift following notes and chord anchors without losing notes o
   );
 });
 
+test('four-bar rows balance widths while retaining dense notation space and manual widths', () => {
+  const sparse = [{ offset: 0, space: 40, minSpace: 24 }];
+  const ordinary = [0, 1, 2, 3].map((offset) => ({ offset, space: 40, minSpace: 24 }));
+  const balanced = scoreSystemLayouts([sparse, ordinary, sparse, ordinary], 1000);
+  balanced.forEach((layout) => assert.ok(Math.abs(layout.width - 250) < 1e-8));
+  const dense = Array.from({ length: 32 }, (_, i) => ({ offset: i / 8, space: 44, minSpace: 24 }));
+  const layouts = scoreSystemLayouts([sparse, dense, sparse, ordinary], 1600);
+  assert.ok(
+    layouts[1].width >=
+      scoreMeasureLayout(
+        dense.map((p) => ({ ...p, space: p.minSpace })),
+        0,
+      ).width,
+  );
+  assert.ok(layouts[1].width > layouts[0].width);
+  assert.ok(Math.abs(layouts.reduce((sum, l) => sum + l.width, 0) - 1600) < 1e-8);
+  const manual = scoreSystemLayouts(
+    [sparse, sparse, sparse, sparse],
+    1000,
+    false,
+    [200, 100, 100, 100],
+  );
+  assert.ok(Math.abs(manual[0].width / manual[1].width - 2) < 1e-8);
+});
+
 test('spacing preserves duration ratios through the final note, including compact and equal-width rows', () => {
   const points = [0, 0.5, 1, 1.5, 2].map((offset) => ({ offset, space: 40, minSpace: 24 }));
   const assertRatio = (layout, halfBeat = 0.5, end = 4) => {
