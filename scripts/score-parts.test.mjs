@@ -152,7 +152,7 @@ test('capo preserves written frets while transposing only that part, and survive
     }),
   );
   assert.deepEqual(restored.score.capos, renamed.capos);
-  assert.deepEqual(restored.score.notes, renamed.notes);
+  assert.deepEqual(restored.score.notes, JSON.parse(JSON.stringify(renamed.notes)));
   assert.match(scorePdfMarkup(capo, '기타 1', true), /Capo = 3 fret/);
   assert.match(scorePdfMarkup(capo, '기타 1', false), /Capo = 3 fret/);
   assert.equal(model.removeScorePart(renamed, '어쿠스틱').capos['어쿠스틱'], undefined);

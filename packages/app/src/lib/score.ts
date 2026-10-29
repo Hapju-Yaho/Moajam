@@ -1064,7 +1064,10 @@ function resizeDurationMeasure(before: Score, after: Score, note: ScoreNote, del
       remove = scoreBeat(remove - amount);
     }
   }
-  return { ...after, measureLengths: { ...before.measureLengths, [note.part]: lengths } };
+  return cleanScoreMeasurePadding({
+    ...after,
+    measureLengths: { ...before.measureLengths, [note.part]: lengths },
+  });
 }
 
 export function scoreMeasureCount(score: Score, part: string): number {
@@ -1553,8 +1556,55 @@ function blankScoreTime(part: string, length: number, makeId: () => string) {
   return notes;
 }
 
+// Duration edits can leave editor-only padding beyond a normal bar. Remove only
+// that trailing padding; never discard written notes/rests or shorten later bars.
+export function cleanScoreMeasurePadding(score: Score, makeId = () => clientId()): Score {
+  const normal = scoreBarBeats(score);
+  let next = score;
+  for (const part of score.parts) {
+    const bars = Object.keys(score.measureLengths?.[part] ?? {})
+      .map(Number)
+      .sort((a, b) => b - a);
+    for (const bar of bars) {
+      const length = scoreMeasureDuration(next, part, bar);
+      if (length <= normal) continue;
+      const fragments = scoreMeasures(next, part)[bar] ?? [];
+      if (fragments.some((f) => !f.note.blank && scoreBeat(f.offset + f.beats) > normal)) continue;
+      const start = scoreMeasureStart(next, part, bar);
+      const order = new Map(next.notes.map((note, index) => [note.id, index]));
+      next = spliceScorePartTime(
+        next,
+        part,
+        scoreBeat(start + normal),
+        scoreBeat(start + length),
+        0,
+        makeId,
+      );
+      next = {
+        ...next,
+        notes: next.notes
+          .slice()
+          .sort(
+            (a, b) =>
+              (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+              (order.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+          ),
+      };
+      next = {
+        ...next,
+        measureLengths: {
+          ...next.measureLengths,
+          [part]: { ...next.measureLengths?.[part], [bar]: normal },
+        },
+      };
+    }
+  }
+  return next;
+}
+
 // Keep every instrument's editable timeline as long as the longest part.
 export function alignScoreMeasures(score: Score, makeId = () => clientId()): Score {
+  score = cleanScoreMeasurePadding(score, makeId);
   const count = Math.max(1, ...score.parts.map((part) => scoreMeasureCount(score, part)));
   const additions = score.parts.flatMap((part) => {
     const used = score.notes

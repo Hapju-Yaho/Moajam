@@ -60,6 +60,7 @@ import {
 import { scoreInstrument } from '../lib/score';
 import { GuitarTabEditor } from '../components/GuitarTabEditor.web';
 import { ScoreEditorViewport, type ScoreViewActions } from '../components/ScoreEditorViewport.web';
+import { cleanScoreMeasurePadding } from '../lib/score';
 import { useIdentity } from '../state/Identity';
 import { ScoreInstrumentSample } from '../components/ScoreInstrumentSample.web';
 import type { InstrumentSample } from '../lib/samplePitch';
@@ -226,7 +227,7 @@ export function ScoreEditorScreen({
   const [instrumentControlsHost, setInstrumentControlsHost] = useState<HTMLDivElement | null>(null);
   const [transportHost, setTransportHost] = useState<HTMLDivElement | null>(null);
   const [playbackBeat, setPlaybackBeat] = useState<number | null>(null);
-  const playbackPosition = useRef<ScorePlaybackPosition['current']>(null);
+  const playbackPosition = useRef<ScorePlaybackPosition['current']>(null) as ScorePlaybackPosition;
   const playbackTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const output = useRef<ReturnType<typeof createScoreOutput> | null>(null);
@@ -445,9 +446,11 @@ export function ScoreEditorScreen({
           setPreviewApplied(!scoreProjectId && scoreView === 'applied');
           setPendingVersion(null);
           setImportedVersion(null);
+          const originalScore = library.applied.score;
+          const repairedScore = cleanScoreMeasurePadding(originalScore);
           const document =
             scoreProjectId || scoreView === 'applied'
-              ? { ...library.applied, score: alignScoreMeasures(library.applied.score) }
+              ? { ...library.applied, score: alignScoreMeasures(repairedScore) }
               : {
                   ...library.applied,
                   score: replaceScorePart(
@@ -464,7 +467,9 @@ export function ScoreEditorScreen({
           setAudioPosition(0);
           setScore(document.score);
           setPart(first.part);
-          setSavedDocument(document);
+          setSavedDocument(
+            repairedScore !== originalScore ? { ...document, score: originalScore } : document,
+          );
           loadedKey.current = key;
           setLoaded(true);
           setStatus(
@@ -633,6 +638,7 @@ export function ScoreEditorScreen({
     if (playbackTimer.current !== null) clearInterval(playbackTimer.current);
     playbackTimer.current = null;
     playbackPosition.current = null;
+    playbackPosition.measure = null;
     setPlaybackBeat(null);
     void context.current?.close();
     context.current = null;
@@ -818,7 +824,7 @@ export function ScoreEditorScreen({
         ensemblePlayback ? ensemblePlayback.toSelected(toWritten(startBeat)) : toWritten(startBeat),
       );
       setCursor(null);
-      playbackPosition.current = () => {
+      const writtenPosition = () => {
         if (context.current !== ctx) return null;
         const duration = ((endBeat - startBeat) * 60) / score.bpm;
         const elapsed = Math.max(0, ctx.currentTime - startAt);
@@ -827,8 +833,21 @@ export function ScoreEditorScreen({
           segments,
           ((looping ? elapsed % duration : elapsed) * score.bpm) / 60,
         );
-        const written = toWritten(beat);
-        return ensemblePlayback ? ensemblePlayback.toSelected(written) : written;
+        return toWritten(beat);
+      };
+      playbackPosition.current = () => {
+        const written = writtenPosition();
+        return written === null
+          ? null
+          : ensemblePlayback
+            ? ensemblePlayback.toSelected(written)
+            : written;
+      };
+      playbackPosition.measure = () => {
+        const written = writtenPosition();
+        if (written === null) return null;
+        const location = scoreMeasureAtBeat(playbackScore, part, written);
+        return { bar: location.bar, offset: location.offset };
       };
       referenceTime.current = Math.max(0, referenceOffset + (startBeat * 60) / score.bpm);
       let lastPositionUpdate = -Infinity;
@@ -1119,6 +1138,8 @@ export function ScoreEditorScreen({
       entityId={entityId}
     >
       <ScoreEditorViewport
+        key={key}
+        viewStateKey={`${userId}/${key}`}
         projectBar={projectControls}
         onRequestClose={onRequestEditClose}
         initiallyExpanded={scoreView === 'expanded'}

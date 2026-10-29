@@ -168,22 +168,6 @@ export function ScorePartMixer({
                     <span key={index}>{index === 0 || (index + 1) % 4 === 0 ? index + 1 : ''}</span>
                   ))}
                 </span>
-                <button
-                  className="score-mixer-collapse"
-                  onClick={() => setOpen(!open)}
-                  aria-expanded={open}
-                >
-                  {open ? '간략히' : '자세히 보기'}
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      display: 'inline-flex',
-                      transform: open ? 'rotate(180deg)' : undefined,
-                    }}
-                  >
-                    <AppIcon name="chevron-down" size={16} color="currentColor" />
-                  </span>
-                </button>
               </span>
             </div>
             <div className="score-mixer-instrument-rows">

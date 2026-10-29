@@ -7,6 +7,20 @@ import { SongLyricsPanel } from './SongLyrics.web';
 import { BandScoreProjects } from '../screens/BandScoreEditorScreen.web';
 import './BandSongPractice.web.css';
 import { PracticeSectionHeading } from './PracticeSectionHeading.web';
+import { useIdentity } from '../state/Identity';
+
+type PracticeView = 'recording' | 'score' | 'pdf' | 'lyrics';
+function readPracticeView(key: string, initial: PracticeView): PracticeView {
+  if (initial === 'pdf') return initial;
+  try {
+    const saved = sessionStorage.getItem(key);
+    if (saved === 'recording' || saved === 'score' || saved === 'pdf' || saved === 'lyrics')
+      return saved;
+  } catch {
+    /* Browser storage is optional. */
+  }
+  return initial;
+}
 
 export function BandSongPractice({
   songId,
@@ -17,13 +31,22 @@ export function BandSongPractice({
   initialView,
   studioProps,
 }: BandSongPracticeProps) {
-  const [view, setView] = useState<'recording' | 'score' | 'pdf' | 'lyrics'>(initialView);
+  const user = useIdentity();
+  const viewKey = `moajam/song-practice-view/${user}/${workspaceId}/${songId}`;
+  const [view, setView] = useState<PracticeView>(() => readPracticeView(viewKey, initialView));
   const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
   useEffect(() => setToolbarHost(document.getElementById('band-song-practice-toolbar')), []);
-  useEffect(() => setView(initialView), [initialView, songId]);
+  useEffect(() => setView(readPracticeView(viewKey, initialView)), [initialView, viewKey]);
   const choose = (next: typeof view) => {
     if (next === view) return;
-    const action = () => setView(next);
+    const action = () => {
+      try {
+        sessionStorage.setItem(viewKey, next);
+      } catch {
+        /* Browser storage is optional. */
+      }
+      setView(next);
+    };
     if (
       window.dispatchEvent(
         new CustomEvent('moajam:before-navigate', { cancelable: true, detail: action }),

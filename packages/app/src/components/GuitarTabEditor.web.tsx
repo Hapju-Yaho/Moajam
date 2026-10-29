@@ -1878,10 +1878,36 @@ function GuitarTabEditorContent({
         {instrument.label} {instrument.capo ? `· 카포 ${instrument.capo}` : ''}
       </span>
       <div className="score-expanded-view-controls">
+        <div className="score-expanded-history">
+          <button
+            aria-label="크게 보기 실행 취소"
+            disabled={!canUndo || disabled}
+            onClick={() => {
+              onUndo();
+              focus();
+            }}
+          >
+            ↶
+          </button>
+          <button
+            aria-label="크게 보기 다시 실행"
+            disabled={!canRedo || disabled}
+            onClick={() => {
+              onRedo();
+              focus();
+            }}
+          >
+            ↷
+          </button>
+        </div>
         <div className="score-expanded-view-tools-host" ref={onViewToolsHost} />
         {instrument.tuning.length > 0 && (
-          <button aria-pressed={showTab} onClick={() => setShowTab(!showTab)}>
-            {showTab ? '오선 + TAB' : 'TAB'}
+          <button
+            className="score-tab-view-toggle"
+            aria-pressed={showTab}
+            onClick={() => setShowTab(!showTab)}
+          >
+            {showTab ? '오선 + TAB' : 'TAB만'}
           </button>
         )}
         {!transportHost && (
@@ -2057,37 +2083,6 @@ function GuitarTabEditorContent({
         />
       )}
       <div className="score-detail-inspector">
-        <div className="score-palette-common">
-          {' '}
-          <div className="score-expanded-history">
-            <button
-              aria-label="크게 보기 실행 취소"
-              disabled={!canUndo || disabled}
-              onClick={() => {
-                onUndo();
-                focus();
-              }}
-            >
-              ↶
-            </button>
-            <button
-              aria-label="크게 보기 다시 실행"
-              disabled={!canRedo || disabled}
-              onClick={() => {
-                onRedo();
-                focus();
-              }}
-            >
-              ↷
-            </button>
-            <span>편집</span>
-          </div>
-          <small className="score-palette-location">
-            {hasSelection
-              ? `${location.bar + 1}마디 · ${Number((location.offset + 1).toFixed(3))}박`
-              : '악보에서 위치를 선택하세요'}
-          </small>
-        </div>
         <div
           className="guitar-inputbar score-pitch-tools"
           data-fretted={instrument.tuning.length > 0 ? 'true' : undefined}

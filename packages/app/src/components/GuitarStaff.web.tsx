@@ -736,8 +736,7 @@ export function GuitarStaff({
           alignedParts ? false : score.equalWidthRows?.[part]?.includes(line),
           bars.map(
             ({ bar, span }) =>
-              (score.measureWidths?.[alignedParts?.[0] ?? part]?.[bar] ??
-                (measureRestBars.has(bar) ? 175 : 100)) * span,
+              (score.measureWidths?.[alignedParts?.[0] ?? part]?.[bar] ?? 100) * span,
           ),
           bars.map(({ displayBeats }) => (alignedParts ? 4 : displayBeats)),
         ).map((layout, index) =>
@@ -871,7 +870,13 @@ export function GuitarStaff({
           ),
         );
         const top = !renderStaff
-          ? 0
+          ? Math.min(
+              line === 0 && showTempo && system.start === 0 ? 0 : 54,
+              ...directionCounts.map((count, column) =>
+                count ? directionBaselines[column] - (count - 1) * 16 - 16 : Infinity,
+              ),
+              ...bars.map(({ bar }) => (score.navigation?.[bar]?.ending ? 6 : 54)),
+            )
           : Math.min(
               hasGuitarTechniques ? -20 : Infinity,
               // Reserve space for high cymbals and their marks without shifting rows as the cursor moves.
@@ -927,9 +932,19 @@ export function GuitarStaff({
               ),
             )
           : 0;
+        const techniqueFooter = renderStaff
+          ? hasGuitarTechniques
+            ? 86
+            : 0
+          : bars.some(({ fragments }) =>
+                fragments.some(({ note }) =>
+                  noteTones(note).some((t) => t.palmMute || t.harmonic === 'pinch'),
+                ),
+              )
+            ? 50
+            : 0;
         const bottom = hasTab
-          ? Math.max(tabInkBottom + 8, tabBottom + (hasGuitarTechniques ? 86 : 0)) +
-            (hasLyrics ? 24 : 0)
+          ? Math.max(tabInkBottom + 8, tabBottom + techniqueFooter) + (hasLyrics ? 24 : 0)
           : Math.max(190, ...positions.map((y) => y + 55));
         const visibleTop = top;
         const measureBottom = Math.max(bottom - 18, hasTab ? tabInkBottom + 4 : 140);
@@ -1239,7 +1254,17 @@ export function GuitarStaff({
                       }}
                       transform={`translate(${prefix + layouts.slice(0, column).reduce((sum, layout) => sum + layout.width, 0)}, 0)`}
                       data-playback-start={barStart}
+                      data-playback-bar-index={bar}
                       data-playback-end={endBeat}
+                      data-playback-bars={
+                        span > 1
+                          ? JSON.stringify(
+                              Array.from({ length: span }, (_, i) =>
+                                scoreMeasureStart(score, part, bar + i),
+                              ),
+                            )
+                          : undefined
+                      }
                       data-playback-measure="true"
                     >
                       {editable &&
@@ -2282,6 +2307,18 @@ export function GuitarStaff({
                                 >
                                   {span}
                                 </text>
+                                {span > 1 && (
+                                  <text
+                                    data-rest-progress="true"
+                                    x={width / 2 + String(span).length * 7 + 10}
+                                    y={center - 25}
+                                    textAnchor="start"
+                                    fontSize="11"
+                                    fill="#85918c"
+                                    stroke="none"
+                                    visibility="hidden"
+                                  />
+                                )}
                               </g>
                             ))}
                           </g>

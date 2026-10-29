@@ -112,15 +112,13 @@ try {
     await evaluate(`${api}.seek(${beat})`);
     await pause(350);
     const info = await evaluate(
-      `({bar:document.querySelector('[data-playing-measure=true]')?.getAttribute('aria-label'),current:document.querySelector('.score-mixer-bars [data-current=true]')?.title,activeNotes:document.querySelectorAll('[data-playing-note=true]').length,cursors:document.querySelectorAll('[data-playback-cursor]').length,visible:document.querySelectorAll('.score-system').length,readout:document.querySelector('.score-location-readout').textContent,transport:document.querySelector('.score-transport-location').textContent})`,
+      `({bar:document.querySelector('[data-playing-measure=true]')?.getAttribute('aria-label'),current:document.querySelector('.score-mixer-bars [data-current=true]')?.title,activeNotes:document.querySelectorAll('[data-playing-note=true]').length,cursors:document.querySelectorAll('[data-playback-cursor]').length,visible:document.querySelectorAll('.score-system').length,transport:document.querySelector('.score-transport-location').textContent})`,
     );
     if (!info.bar?.startsWith(String(Math.floor(beat / 4) + 1))) throw Error(JSON.stringify(info));
     if (!info.current?.startsWith(String(Math.floor(beat / 4) + 1)))
       throw Error('Mixer ' + JSON.stringify(info));
     if (info.visible >= rows / 2 || info.activeNotes !== 0 || info.cursors !== 0)
       throw Error('Virtualization/highlight ' + JSON.stringify(info));
-    if (!info.readout.startsWith(String(Math.floor(beat / 4) + 1)))
-      throw Error('Readout ' + JSON.stringify(info));
     if (!info.transport.startsWith(String(Math.floor(beat / 4) + 1)))
       throw Error('Transport ' + JSON.stringify(info));
     console.log('PASS seek', beat, info);

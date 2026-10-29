@@ -46,6 +46,7 @@ export function BandScoreProjects(
   const state = useMockAppState();
   const user = useIdentity();
   const workspaceId = props.personal ? `local-recording/score/${user}` : state.workspaceId;
+  const selectionKey = `moajam/score-project-selection/${user}/${workspaceId}/${props.songId}`;
   const workspace = state.workspace;
   const [projects, setProjects] = useState<ScoreProject[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -91,9 +92,15 @@ export function BandScoreProjects(
     void refresh()
       .then((rows) => {
         if (!alive.current) return;
+        let remembered: string | null = null;
+        try {
+          remembered = sessionStorage.getItem(selectionKey);
+        } catch {
+          /* Browser storage is optional. */
+        }
         const selected = props.projectId
           ? rows.find((item) => item.id === props.projectId)
-          : rows[0];
+          : (rows.find((item) => item.id === remembered) ?? rows[0]);
         if (props.projectId && !selected)
           setError(
             '요청한 악보 프로젝트가 삭제되었거나 존재하지 않아요. 프로젝트 선택에서 다른 프로젝트를 열어주세요.',
@@ -111,7 +118,15 @@ export function BandScoreProjects(
       .finally(() => {
         if (alive.current) setLoading(false);
       });
-  }, [refresh, props.projectId]);
+  }, [refresh, props.projectId, selectionKey]);
+  useEffect(() => {
+    if (!active) return;
+    try {
+      sessionStorage.setItem(selectionKey, active);
+    } catch {
+      /* Browser storage is optional. */
+    }
+  }, [active, selectionKey]);
   useEffect(() => {
     if (mode) panel.current?.showModal();
     else panel.current?.close();

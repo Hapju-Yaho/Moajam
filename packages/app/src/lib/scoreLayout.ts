@@ -189,6 +189,16 @@ export function scoreSystemLayouts(
           pending.delete(index);
         }
       }
+    } else if (measures.some((points) => points.length <= 1)) {
+      // Even a rest-only bar needs a readable share when the other bars are dense.
+      const floor = Math.max(0, availableWidth) * 0.175;
+      const demands = required.map((width) => Math.max(0, width - floor));
+      const totalDemand = demands.reduce((sum, width) => sum + width, 0);
+      for (let index = 0; index < 4; index++)
+        preferred[index] =
+          floor +
+          (Math.max(0, availableWidth) - floor * 4) *
+            (totalDemand ? demands[index] / totalDemand : 0.25);
     }
   }
   const preferredTotal = preferred.reduce((sum, width) => sum + width, 0);

@@ -74,6 +74,7 @@ export function ScoreEditorViewport({
   shared = false,
   status,
   initiallyExpanded = false,
+  viewStateKey,
   projectBar,
   onRequestClose,
 }: PropsWithChildren<{
@@ -82,6 +83,7 @@ export function ScoreEditorViewport({
   shared?: boolean;
   status?: string;
   initiallyExpanded?: boolean;
+  viewStateKey?: string;
   projectBar?: ReactNode | ((status?: string, actions?: ScoreViewActions) => ReactNode);
   onRequestClose?: (close: () => void) => void;
 }>) {
@@ -92,7 +94,27 @@ export function ScoreEditorViewport({
   const [projectActionsOpen, setProjectActionsOpen] = useState(false);
   const [exportHost, setExportHost] = useState<HTMLDivElement | null>(null);
   const [mixerHost, setMixerHost] = useState<HTMLDivElement | null>(null);
-  const [expanded, setExpanded] = useState(initiallyExpanded);
+  const [expanded, setExpanded] = useState(() => {
+    if (initiallyExpanded) return true;
+    try {
+      return (
+        !!viewStateKey &&
+        sessionStorage.getItem(`moajam/score-edit-view/${viewStateKey}`) === 'expanded'
+      );
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (!viewStateKey) return;
+    try {
+      const storageKey = `moajam/score-edit-view/${viewStateKey}`;
+      if (expanded) sessionStorage.setItem(storageKey, 'expanded');
+      else sessionStorage.removeItem(storageKey);
+    } catch {
+      // Editing still works if browser storage is unavailable.
+    }
+  }, [expanded, viewStateKey]);
   const titleId = useId();
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspector, setInspector] = useState<ScoreInspectorTab>('notes');

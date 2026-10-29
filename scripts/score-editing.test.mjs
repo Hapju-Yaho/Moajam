@@ -384,6 +384,10 @@ test('four-bar rows balance widths while retaining dense notation space and manu
     [200, 100, 100, 100],
   );
   assert.ok(Math.abs(manual[0].width / manual[1].width - 2) < 1e-8);
+  const restRow = scoreSystemLayouts([[], dense, dense, dense], 800);
+  assert.ok(restRow[0].width >= 140);
+  assert.ok(Math.max(...restRow.map((l) => l.width)) / restRow[0].width < 2);
+  assert.ok(Math.abs(restRow.reduce((sum, l) => sum + l.width, 0) - 800) < 1e-8);
 });
 
 test('spacing preserves duration ratios through the final note, including compact and equal-width rows', () => {

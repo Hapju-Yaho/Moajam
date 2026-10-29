@@ -77,6 +77,26 @@ test('vibrato sits close above TAB and stretches with the note duration', () => 
   assert.ok(span(4) > span(1) * 3.5);
 });
 
+test('TAB-only systems remove unused upper/lower space while preserving palm mute clearance', () => {
+  const data = {
+    ...score,
+    notes: Array.from({ length: 8 }, (_, i) => ({
+      ...score.notes[0],
+      id: `compact-${i}`,
+      tones: [{ ...score.notes[0].tones[0], palmMute: true }],
+    })),
+  };
+  const html = render(data);
+  const boxes = [...html.matchAll(/class="score-system"[^>]*viewBox="([^"]+)"/g)].map((m) =>
+    m[1].split(' ').map(Number),
+  );
+  assert.equal(boxes.length, 2);
+  assert.equal(boxes[0][1], 0);
+  assert.equal(boxes[1][1], 54);
+  assert.ok(boxes[1][3] < 200);
+  assert.ok(boxes[1][1] + boxes[1][3] >= 235);
+});
+
 test('TAB only omits staff SVG, uses its own coordinates and retains editing/playback targets', () => {
   const tab = render(),
     combined = render(score, false);
