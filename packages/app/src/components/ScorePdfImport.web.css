@@ -402,6 +402,7 @@
   background: #ffffff;
 }
 .score-pdf-drop {
+  position: relative;
   border: 2px dashed #aac2dc;
   border-radius: 10px;
   padding: 18px 12px;
@@ -464,9 +465,58 @@
   color: #b83939;
 }
 .score-pdf-drop[data-has-file='true'] .score-pdf-upload-actions {
-  flex-direction: row;
-  grid-column: 1 / -1;
+  flex-direction: column;
+  grid-column: 2;
   margin: 0;
+}
+.score-pdf-file-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.score-pdf-drop[data-preview='true'] {
+  min-height: 290px;
+}
+.score-pdf-drop[data-preview='true'] .score-pdf-file-column,
+.score-pdf-drop[data-preview='true'] .score-pdf-upload-actions {
+  visibility: hidden;
+}
+.score-pdf-upload-preview {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #edf2f6;
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 1;
+}
+.score-pdf-upload-preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+}
+.score-pdf-upload-preview-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+.score-pdf-upload-preview-heading button {
+  flex-shrink: 0;
+}
+.score-pdf-upload-preview iframe {
+  display: block;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  background: white;
 }
 .score-pdf-preview-column {
   display: grid;
@@ -806,6 +856,7 @@
 }
 .score-pdf-page-selection > div {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 6px 12px;
   margin: 6px 0;
@@ -814,6 +865,28 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
+}
+.score-pdf-page-selection input[type='text'] {
+  width: 160px;
+  min-width: 80px;
+}
+.score-pdf-page-selection input[type='text']:disabled {
+  background: #e1e5e9;
+  border-color: #c9cfd5;
+  color: #8a939c;
+  cursor: not-allowed;
+  opacity: 1;
+}
+.score-pdf-page-selection input[type='text']:disabled::placeholder {
+  color: #969fa7;
+}
+.score-pdf-page-selection button[aria-pressed='true'] {
+  background: #476b88;
+  color: #fff;
+  border-color: #476b88;
+}
+.score-pdf-page-selection [role='alert'] {
+  color: #b03838;
 }
 .score-pdf-page-selection small {
   display: block;
