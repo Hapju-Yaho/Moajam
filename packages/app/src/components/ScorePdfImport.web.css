@@ -929,3 +929,46 @@
     animation: none;
   }
 }
+.score-pdf-temporary-jobs {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #bccbd7;
+}
+.score-pdf-temporary-jobs > strong {
+  font-size: 12px;
+}
+.score-pdf-temporary-jobs ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.score-pdf-temporary-jobs li {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #d6e0e8;
+}
+.score-pdf-temporary-jobs li > button:first-child {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: #304e65;
+}
+.score-pdf-temporary-jobs li strong {
+  overflow-wrap: anywhere;
+}
+.score-pdf-temporary-jobs li > button:last-child {
+  flex-shrink: 0;
+  background: transparent;
+  border: 0;
+  color: #a74a4a;
+  font-size: 20px;
+}
+.score-pdf-temporary-jobs li[data-current='true'] {
+  background: #dfebf4;
+  border-radius: 5px;
+}

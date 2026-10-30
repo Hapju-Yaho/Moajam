@@ -21,6 +21,7 @@ import {
   ArrayMaxSize,
   ValidateNested,
   IsString,
+  IsUUID,
   MaxLength,
   Max,
   Min,
@@ -41,6 +42,9 @@ class RetryDto {
 }
 class AnalyzeDto {
   @IsOptional() @IsBoolean() retry?: boolean;
+}
+class CleanupQueryDto {
+  @IsOptional() @IsUUID() keepId?: string;
 }
 class MeasureTargetDto {
   @IsString() @MaxLength(40) part!: string;
@@ -65,6 +69,15 @@ class StructureDto {
 @Controller('score-pdf/jobs')
 export class ScorePdfController {
   constructor(private readonly service: ScorePdfService) {}
+  @Get() list(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.list(user.id);
+  }
+  @Get(':id/source') source(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.service.source(user.id, id);
+  }
+  @Delete() clearInactive(@CurrentUser() user: AuthenticatedUser, @Query() query: CleanupQueryDto) {
+    return this.service.clearInactive(user.id, query.keepId);
+  }
   @Post() async start(
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: FastifyRequest,

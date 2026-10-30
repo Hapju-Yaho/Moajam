@@ -21,6 +21,7 @@ type Prepared = {
   name: string;
   size: number;
   pages: number;
+  scoreType?: string;
   expiresAt: string;
   message: string;
   status: 'prepared' | 'analyzing' | 'structure_review' | 'completed' | 'failed';
@@ -90,6 +91,29 @@ export function ScorePdfImport({
   const [error, setError] = useState('');
   const [statusCheckDelayed, setStatusCheckDelayed] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [temporaryJobs, setTemporaryJobs] = useState<Prepared[]>([]);
+  const [temporaryError, setTemporaryError] = useState('');
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const items = await api<Prepared[]>('/score-pdf/jobs');
+        if (active) {
+          setTemporaryJobs(items);
+          setTemporaryError('');
+        }
+      } catch {
+        if (active) setTemporaryError('임시 작업 목록을 불러오지 못했어요.');
+      }
+    };
+    void refresh();
+    const timer = setInterval(() => void refresh(), 5000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [open, job?.id, job?.status]);
   const [dragging, setDragging] = useState(false);
   const [format, setFormat] = useState('moajam');
   const [scoreType, setScoreType] = useState('guitar-tab');
@@ -115,6 +139,7 @@ export function ScorePdfImport({
   const [bandPicking, setBandPicking] = useState(false);
   const selection = useRef(0);
   const bandRequest = useRef(0);
+  const cleanupRequest = useRef<Promise<unknown>>(Promise.resolve());
   const [source, setSource] = useState<Score | null>(null);
   const [sourceStartMeasure, setSourceStartMeasure] = useState(1);
   const [downloadParts, setDownloadParts] = useState<string[] | null>(null);
@@ -220,7 +245,7 @@ export function ScorePdfImport({
     setAnalysisFile(null);
     setShowIssueReview(true);
     setSelectedIssues([]);
-    if (job) void api(`/score-pdf/jobs/${job.id}`, 'DELETE').catch(() => {});
+    if (job) cleanupRequest.current = api(`/score-pdf/jobs/${job.id}`, 'DELETE').catch(() => {});
     setJob(null);
     setSource(null);
     setDownloadParts(null);
@@ -326,6 +351,7 @@ export function ScorePdfImport({
     setError('');
     try {
       const data = new FormData();
+      await cleanupRequest.current;
       let extracted = file;
       if (selectedPages.length !== pages) {
         const { selectScorePdfPages } = await import('../lib/scorePdfPages');
@@ -337,8 +363,8 @@ export function ScorePdfImport({
       }
       setAnalysisFile(extracted);
       data.append('file', extracted);
-      const next = await api<Prepared>(`/score-pdf/jobs?scoreType=${scoreType}`, 'POST', data);
       const previous = job;
+      const next = await api<Prepared>(`/score-pdf/jobs?scoreType=${scoreType}`, 'POST', data);
       setJob(next);
       const started = await api<Prepared>(`/score-pdf/jobs/${next.id}/analyze`, 'POST', {
         retry: next.status === 'failed',
@@ -346,7 +372,7 @@ export function ScorePdfImport({
       setJob(started);
       setApplied(false);
       if (previous && previous.id !== next.id)
-        void api(`/score-pdf/jobs/${previous.id}`, 'DELETE').catch(() => {});
+        cleanupRequest.current = api(`/score-pdf/jobs/${previous.id}`, 'DELETE').catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : 'PDF를 준비하지 못했어요.');
     } finally {
@@ -486,6 +512,98 @@ export function ScorePdfImport({
       setBusy(false);
     }
   };
+  const openTemporary = async (id: string) => {
+    if (working || cancelling) return;
+    setBusy(true);
+    try {
+      const [result, original] = await Promise.all([
+        api<Result>(`/score-pdf/jobs/${id}/result`),
+        api<{ name: string; base64: string }>(`/score-pdf/jobs/${id}/source`),
+      ]);
+      const bytes = Uint8Array.from(atob(original.base64), (char) => char.charCodeAt(0));
+      const restored = new File([bytes], original.name, { type: 'application/pdf' });
+      selection.current++;
+      setFile(restored);
+      setAnalysisFile(restored);
+      setPages(result.pages);
+      setReading(false);
+      setName(result.name.replace(/\.pdf$/i, ''));
+      if (result.scoreType) setScoreType(result.scoreType);
+      setSource(result.result ? validateScoreDocument(result.result.score) : null);
+      setSourceStartMeasure(result.result?.sourceStartMeasure ?? 1);
+      setWarnings(result.warnings ?? []);
+      setDownloadParts(null);
+      setPreviewBar(1);
+      setSelectedIssues([]);
+      setShowIssueReview(true);
+      setShowRetry(false);
+      setApplied(false);
+      setConfirm(false);
+      setError('');
+      setJob(result);
+    } catch {
+      setTemporaryError('임시 작업을 열지 못했어요. 만료되었거나 서버 연결이 끊겼을 수 있어요.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const temporaryList = (
+    <div className="score-pdf-temporary-jobs">
+      {temporaryJobs.length > 0 && (
+        <>
+          <strong>남아있는 임시 작업이 있습니다.</strong>
+          <ul>
+            {temporaryJobs.map((item) => (
+              <li key={item.id} data-current={job?.id === item.id}>
+                <button
+                  type="button"
+                  disabled={working || cancelling}
+                  onClick={() => void openTemporary(item.id)}
+                  aria-current={job?.id === item.id ? 'true' : undefined}
+                >
+                  <strong>{item.name}</strong>
+                  <small>
+                    {item.pages}페이지 ·{' '}
+                    {
+                      {
+                        prepared: '준비됨',
+                        analyzing: '분석 중',
+                        structure_review: '마디 확인',
+                        completed: '완료',
+                        failed: '실패',
+                      }[item.status]
+                    }
+                  </small>
+                </button>
+                <button
+                  type="button"
+                  disabled={working || cancelling}
+                  aria-label={`${item.name} 임시 작업 삭제`}
+                  title="임시 작업 삭제"
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      await api(`/score-pdf/jobs/${item.id}`, 'DELETE');
+                      if (job?.id === item.id) clearJob();
+                      setTemporaryJobs((items) => items.filter((value) => value.id !== item.id));
+                      setTemporaryError('');
+                    } catch {
+                      setTemporaryError('임시 작업을 삭제하지 못했어요. 다시 시도해주세요.');
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {temporaryError && <small role="alert">{temporaryError}</small>}
+    </div>
+  );
   return (
     <dialog
       ref={dialog}
@@ -900,6 +1018,38 @@ export function ScorePdfImport({
                     : '악보 추출'}
             </button>
             {error && <p role="alert">{error}</p>}
+            {error.includes('준비') && (
+              <div>
+                <small>
+                  이 화면에서 사용하지 않는 이전 PDF 임시 작업을 정리할 수 있어요. 분석 중인 작업과
+                  저장한 악보는 유지됩니다.
+                </small>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      const result = await api<{ removed: number }>(
+                        `/score-pdf/jobs${job ? `?keepId=${encodeURIComponent(job.id)}` : ''}`,
+                        'DELETE',
+                      );
+                      setError(
+                        result.removed
+                          ? '이전 PDF 준비 작업을 정리했어요. 악보 추출을 다시 눌러주세요.'
+                          : '정리할 이전 작업이 없어요. 진행 중인 분석이 있다면 완료 후 다시 시도해주세요.',
+                      );
+                    } catch {
+                      setError('이전 준비 작업을 정리하지 못했어요. 서버 연결을 확인해주세요.');
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  이전 PDF 준비 작업 정리
+                </button>
+              </div>
+            )}
           </div>
           <div className="score-pdf-preview-column">
             <section
@@ -1122,6 +1272,7 @@ export function ScorePdfImport({
                   )}
                 </>
               )}
+              {temporaryList}
             </section>
             <button
               type="button"
@@ -1132,6 +1283,7 @@ export function ScorePdfImport({
             </button>
           </div>
         </div>
+        {(job?.status === 'structure_review' || viewingIssues) && temporaryList}
         <fieldset
           className="score-pdf-apply"
           style={
