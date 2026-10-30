@@ -10,6 +10,38 @@ async function pdf(pages = 1) {
   for (let i = 0; i < pages; i++) doc.addPage();
   return Buffer.from(await doc.save());
 }
+
+test('temporary job list and PDF restoration are owner scoped and deletion updates the list', async () => {
+  const service = new ScorePdfService();
+  try {
+    const bytes = await pdf(2);
+    const alice = await service.start('alice', 'alice.pdf', bytes);
+    const bob = await service.start('bob', 'bob.pdf', await pdf(1));
+    assert.deepEqual(service.list('alice').map(job => job.id), [alice.id]);
+    assert.deepEqual(service.list('bob').map(job => job.id), [bob.id]);
+    assert.deepEqual(Buffer.from(service.source('alice', alice.id).base64, 'base64'), bytes);
+    assert.throws(() => service.source('bob', alice.id));
+    assert.throws(() => service.remove('bob', alice.id));
+    service.remove('alice', alice.id);
+    assert.deepEqual(service.list('alice'), []);
+    assert.throws(() => service.source('alice', alice.id));
+    assert.equal(service.list('bob').length, 1);
+  } finally { service.onModuleDestroy(); }
+});
+
+test('cleanup removes only own inactive PDF preparations and keeps current and other users jobs', async () => {
+  const service = new ScorePdfService();
+  try {
+    const old = await service.start('alice', 'old.pdf', await pdf(1));
+    const kept = await service.start('alice', 'current.pdf', await pdf(2));
+    const other = await service.start('bob', 'other.pdf', await pdf(3));
+    assert.deepEqual(service.clearInactive('alice', kept.id), { removed: 1 });
+    assert.throws(() => service.status('alice', old.id));
+    assert.equal(service.status('alice', kept.id).status, 'prepared');
+    assert.equal(service.status('bob', other.id).status, 'prepared');
+    assert.equal((await service.start('alice', 'replacement.pdf', await pdf(4))).status, 'prepared');
+  } finally { service.onModuleDestroy(); }
+});
 test('PDF preparation: entire Base64, deduplication, ownership and no fabricated result', async () => {
   const service = new ScorePdfService();
   try {

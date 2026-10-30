@@ -149,10 +149,28 @@ export async function requestRecognition(
     jsonParsed: false,
   };
   const diagnostics = recognitionDiagnostics(undefined, text, diagnosticMeta, options.key);
+  if (result.status === 'failed')
+    throw new RecognitionError(
+      'OPENAI_RESPONSE_FAILED',
+      'OpenAI에서 분석 작업을 실패로 종료했어요. 진단 정보의 응답 상태를 확인해주세요.',
+      usage,
+      diagnostics,
+    );
+  if (result.status === 'cancelled')
+    throw new RecognitionError(
+      'OPENAI_CANCELLED',
+      'OpenAI 분석 작업이 취소되었어요.',
+      usage,
+      diagnostics,
+    );
   if (result.status !== 'completed')
     throw new RecognitionError(
       'INCOMPLETE_RESPONSE',
-      '응답이 끝까지 생성되지 않았어요. PDF를 나누거나 출력 토큰 한도를 확인해주세요.',
+      result.incomplete_details?.reason === 'max_output_tokens'
+        ? `이번 요청의 출력 토큰 한도(${options.maxTokens.toLocaleString()}개)에 도달했어요. 출력 ${usage.outputTokens.toLocaleString()}개(추론 ${diagnosticMeta.reasoningTokens?.toLocaleString() ?? '확인 불가'}개 포함). 재분석할 마디 수를 줄여주세요. 이전 재분석 횟수와는 별개입니다.`
+        : result.incomplete_details?.reason === 'content_filter'
+          ? 'OpenAI의 콘텐츠 필터로 응답 생성이 중단됐어요. 토큰 한도 초과와는 다른 원인입니다.'
+          : '응답이 끝까지 생성되지 않았어요. 진단 정보의 providerStatus와 incompleteReason을 확인해주세요.',
       usage,
       diagnostics,
     );

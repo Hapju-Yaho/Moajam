@@ -208,6 +208,17 @@ export class ScorePdfService implements OnModuleDestroy {
       },
     };
   }
+  list(owner: string) {
+    this.prune();
+    return [...this.jobs.values()]
+      .filter((job) => job.owner === owner)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((job) => this.status(owner, job.id));
+  }
+  source(owner: string, id: string) {
+    const job = this.get(owner, id);
+    return { name: job.name, base64: job.pdf.toString('base64') };
+  }
   result(owner: string, id: string) {
     const job = this.get(owner, id);
     return {
@@ -640,5 +651,15 @@ export class ScorePdfService implements OnModuleDestroy {
     this.get(owner, id).abort?.abort();
     this.jobs.delete(id);
     return { ok: true };
+  }
+  clearInactive(owner: string, keepId?: string) {
+    this.prune();
+    let removed = 0;
+    for (const [id, job] of this.jobs) {
+      if (job.owner !== owner || id === keepId || job.state === 'analyzing') continue;
+      this.jobs.delete(id);
+      removed++;
+    }
+    return { removed };
   }
 }

@@ -4,6 +4,35 @@ import { backgroundResponse, type AnalysisProgress } from './background-response
 
 const reply = (status: string) => Response.json({ id: 'resp_test', status });
 
+test('provider token exhaustion, filter, failure and cancellation have distinct messages', async () => {
+  const { requestRecognition, RecognitionError } = await import('./pdf-recognition.client.js');
+  const cases = [
+    { status: 'incomplete', reason: 'max_output_tokens', code: 'INCOMPLETE_RESPONSE', message: /32,000.*출력 32,000.*추론 30,000/ },
+    { status: 'incomplete', reason: 'content_filter', code: 'INCOMPLETE_RESPONSE', message: /콘텐츠 필터/ },
+    { status: 'failed', code: 'OPENAI_RESPONSE_FAILED', message: /실패로 종료/ },
+    { status: 'cancelled', code: 'OPENAI_CANCELLED', message: /취소/ },
+  ];
+  for (const sample of cases) {
+    let calls = 0;
+    await assert.rejects(requestRecognition({}, {
+      key: 'fake', model: 'test-only', maxTokens: 32000,
+      fetcher: async () => {
+        calls++;
+        return Response.json({ id: 'resp_test', status: sample.status,
+          incomplete_details: { reason: sample.reason },
+          usage: { input_tokens: 100, output_tokens: 32000, total_tokens: 32100, output_tokens_details: { reasoning_tokens: 30000 } }, output: [] });
+      },
+    }), error => {
+      assert.ok(error instanceof RecognitionError);
+      assert.equal(error.code, sample.code);
+      assert.match(error.message, sample.message);
+      assert.equal(error.diagnostics?.providerStatus, sample.status);
+      return true;
+    });
+    assert.equal(calls, 1);
+  }
+});
+
 test('background polls the same response and reports real provider states', async () => {
   const requests: string[] = [];
   const progress: AnalysisProgress[] = [];
