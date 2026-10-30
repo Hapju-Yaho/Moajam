@@ -3158,6 +3158,7 @@ export function pasteScoreNotes(
   copied: ScoreClipboardNote[],
   beat: number,
   makeId: () => string,
+  overwrite = false,
 ): { score: Score; ids: string[] } {
   if (
     !score.parts.includes(part) ||
@@ -3210,6 +3211,40 @@ export function pasteScoreNotes(
       notes.push(note);
       continue;
     }
+    if (overwrite) {
+      const start = at,
+        end = scoreBeat(at + note.beats);
+      at = end;
+      if (end <= beat && start < beat) {
+        notes.push(note);
+        continue;
+      }
+      if (!inserted) {
+        if (start < beat)
+          notes.push({
+            ...note,
+            beats: scoreBeat(beat - start),
+            connection: undefined,
+            slurTo: undefined,
+          });
+        notes.push(...additions);
+        inserted = true;
+      }
+      if (start >= copiedAt) {
+        notes.push(note);
+        continue;
+      }
+      delete sync[note.id];
+      if (end > copiedAt)
+        notes.push({
+          ...note,
+          id: makeId(),
+          beats: scoreBeat(end - copiedAt),
+          connection: undefined,
+          slurTo: undefined,
+        });
+      continue;
+    }
     if (!inserted && beat === at) {
       notes.push(...additions);
       inserted = true;
@@ -3237,8 +3272,22 @@ export function pasteScoreNotes(
       `붙여넣으면 프로젝트 전체의 음표·쉼표·빈 박 데이터가 ${next.notes.length.toLocaleString()}개가 되어 2,000개 제한을 넘어요. 삭제한 구간의 연속된 빈 박은 정리한 상태입니다.`,
     );
   const retimed = retimeScore(score, next.notes, [part], (position) =>
-    position >= beat ? position + copiedAt - beat : position,
+    !overwrite && position >= beat ? position + copiedAt - beat : position,
   );
+  if (overwrite) {
+    function outside<T>(changes: Record<number, T> | undefined) {
+      return Object.fromEntries(
+        Object.entries(changes ?? {}).filter(
+          ([position]) => Number(position) < beat || Number(position) >= copiedAt,
+        ),
+      );
+    }
+    retimed.beatChords = { ...retimed.beatChords, [part]: outside(retimed.beatChords?.[part]) };
+    retimed.guitarToneChanges = {
+      ...retimed.guitarToneChanges,
+      [part]: outside(retimed.guitarToneChanges?.[part]),
+    };
+  }
   next = {
     ...retimed,
     sync: next.sync,
@@ -3255,7 +3304,7 @@ export function pasteScoreNotes(
       [part]: { ...retimed.beatChords?.[part], ...insertedChords },
     },
   };
-  return { score: next, ids: additions.map((note) => note.id) };
+  return { score: cleanScoreConnections(next), ids: additions.map((note) => note.id) };
 }
 
 export type ScoreFragment = {

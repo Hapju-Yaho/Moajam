@@ -25,6 +25,7 @@ export function ScoreImportOverwrite({
       className="score-export-dialog score-import-overwrite"
       role="alertdialog"
       aria-label={`${format} 덮어쓰기 확인`}
+      onKeyDown={(event) => event.stopPropagation()}
       onCancel={(event) => {
         event.preventDefault();
         event.stopPropagation();

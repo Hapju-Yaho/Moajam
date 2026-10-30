@@ -1,6 +1,7 @@
 import {
   copyScoreSelection,
   pasteScoreSelection,
+  scorePasteConflicts,
   scoreClipboardDuration,
 } from '../lib/scoreDrumClipboard';
 import { setScoreVibrato } from '../lib/score';
@@ -19,6 +20,7 @@ import { ScoreTransportIcon } from './ScoreTransportIcon.web';
 import { ScoreRepeatDialog } from './ScoreRepeatDialog.web';
 import { ScoreToolbarHelp } from './ScoreToolbarHelp.web';
 import { ScoreMeasureIcon } from './ScoreMeasureIcon.web';
+import { ScoreImportOverwrite } from './ScoreImportOverwrite.web';
 import { useScoreEditorLayout } from './ScoreEditorLayout.web';
 import {
   scoreNaturalPitch,
@@ -379,6 +381,7 @@ function GuitarTabEditorContent({
     ensemble || (displayParts.length > 1 && scoreInstrument(score, part).id !== 'drums')
       ? ScoreEnsemble
       : GuitarStaff;
+  const [pendingPaste, setPendingPaste] = useState<{ copied: ScoreClipboardNote[]; beat: number; part: string } | null>(null);
   const [string, setString] = useState(1),
     [beats, setBeats] = useState(1);
   const [inputTriplet, setInputTriplet] = useState(false);
@@ -806,7 +809,7 @@ function GuitarTabEditorContent({
     }
     focus();
   };
-  const pasteSelection = (copied = clipboardRef.current) => {
+  const pasteSelection = (copied = clipboardRef.current, confirmedBeat?: number) => {
     if (disabled) {
       setMessage(
         playing
@@ -828,24 +831,25 @@ function GuitarTabEditorContent({
       return;
     }
     try {
-      const result = pasteScoreSelection(
-        score,
-        part,
-        copied,
-        note && !note.blank ? noteStart : before,
-        () => clientId(),
-      );
+      // A continued note can share an ID with a note in the previous measure.
+      // Paste at the clicked beat, not at that underlying note's original start.
+      const position = confirmedBeat ?? before;
+      if (confirmedBeat === undefined && scorePasteConflicts(score, part, copied, position)) {
+        setPendingPaste({ copied: structuredClone(copied), beat: position, part });
+        return;
+      }
+      const result = pasteScoreSelection(score, part, copied, position, () => clientId(), true);
       commit(result.score);
-      const end = scoreBeat(
-        (note && !note.blank ? noteStart : before) + scoreClipboardDuration(copied),
-      );
+      const end = scoreBeat(position + scoreClipboardDuration(copied));
       // Alignment may replace padding IDs. Keep the insertion cursor in absolute time.
       onSelect(null);
       setSelectedAt(null);
       setEmptyBeat(end);
       setEmptyMeasure(scoreMeasureAtBeat(result.score, part, end).bar);
       setRange(null);
-      setMessage(`${result.ids.length}개 박을 붙여넣었어요. 뒤의 음표는 그만큼 뒤로 이동했어요.`);
+      setMessage(
+        `${result.ids.length}개 박을 해당 위치에 붙여넣었어요. 뒤의 음표 위치는 유지됩니다.`,
+      );
       digits.current = null;
       focus();
     } catch (error) {
@@ -2132,6 +2136,22 @@ function GuitarTabEditorContent({
           : instrumentHeading}
         <div ref={onLeftToolsHost} />
       </div>
+      {pendingPaste && (
+        <ScoreImportOverwrite
+          format="복사한"
+          target={pendingPaste.part}
+          bar={scoreMeasureAtBeat(score, pendingPaste.part, pendingPaste.beat).bar + 1}
+          onCancel={() => {
+            setPendingPaste(null);
+            focus();
+          }}
+          onConfirm={() => {
+            const pending = pendingPaste;
+            setPendingPaste(null);
+            if (pending.part === part) pasteSelection(pending.copied, pending.beat);
+          }}
+        />
+      )}
       {transportHost ? createPortal(transport, transportHost) : transport}
       {repeatDialog && (
         <ScoreRepeatDialog

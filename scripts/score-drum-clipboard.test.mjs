@@ -1,7 +1,7 @@
 ﻿import assert from 'node:assert/strict';
 import test from 'node:test';
 import { moduleUrl } from './load-typescript.mjs';
-const { copyScoreSelection, pasteScoreSelection, scoreClipboardDuration } = await import(
+const { copyScoreSelection, pasteScoreSelection, scoreClipboardDuration, scorePasteConflicts } = await import(
   moduleUrl(new URL('../packages/app/src/lib/scoreDrumClipboard.ts', import.meta.url))
 );
 const { readScoreClipboard } = await import(
@@ -51,6 +51,83 @@ let sequence = 0;
 const makeId = () => `paste-${++sequence}`;
 const roundTrip = (notes) =>
   readScoreClipboard(JSON.stringify({ type: 'moajam-score', version: 1, notes }));
+
+test('paired drum overwrite aligns by measure when old lower-voice bars have extra time', async () => {
+  const { alignScoreMeasures, scoreMeasureStart } = await import(moduleUrl(new URL('../packages/app/src/lib/score.ts', import.meta.url)));
+  const score = source();
+  score.measureLengths = { Feet: { 1: 4.5 } };
+  score.notes = [
+    note('u1', 'Hands', 42, 4), note('u2', 'Hands', 38, 4),
+    { ...note('u3', 'Hands', 60, 4, true), blank: true }, note('u4', 'Hands', 49, 4),
+    note('l1', 'Feet', 36, 4), note('l2', 'Feet', 44, 4.5),
+    { ...note('l3', 'Feet', 60, 4, true), blank: true }, note('l4', 'Feet', 36, 4),
+  ];
+  const copied = copyScoreSelection(score, 'Hands', ['u1', 'l1']);
+  for (const active of ['Hands', 'Feet']) {
+    const beat = scoreMeasureStart(score, active, 2);
+    assert.equal(scorePasteConflicts(score, active, copied, beat), false);
+    const result = alignScoreMeasures(pasteScoreSelection(score, active, copied, beat, makeId, true).score, makeId);
+    assert.ok(timeline(result, 'Hands').some(n => n.at === 8 && n.pitch === 42 && !n.rest));
+    assert.ok(timeline(result, 'Feet').some(n => n.at === 8.5 && n.pitch === 36 && !n.rest));
+    assert.ok(result.notes.some(n => n.id === 'l2' && n.beats === 4.5));
+    assert.ok(result.notes.some(n => n.id === 'l4'));
+  }
+});
+
+test('pasting at bar three uses clicked beat even when lower rest starts in bar two', async () => {
+  const { scoreVoiceCursor } = await import(moduleUrl(new URL('../packages/app/src/lib/scoreParts.ts', import.meta.url)));
+  const score = source();
+  score.notes = [
+    ...Array.from({ length: 8 }, (_, i) => note(`upper-${i}`, 'Hands', 42, 1)),
+    { ...note('upper-empty', 'Hands', 60, 4, true), blank: true },
+    note('upper-four', 'Hands', 42, 4),
+    note('lower-one', 'Feet', 36, 4),
+    note('lower-two', 'Feet', 36, 3.5),
+    note('lower-rest', 'Feet', 60, 4.5, true),
+    note('lower-four', 'Feet', 36, 4),
+  ];
+  const copied = copyScoreSelection(score, 'Hands', ['upper-0', 'upper-1', 'upper-2', 'upper-3', 'lower-one']);
+  const cursor = scoreVoiceCursor(score, 'Feet', 2, 0);
+  assert.equal(cursor.beat, 8);
+  assert.equal(scorePasteConflicts(score, 'Feet', copied, cursor.beat), false);
+  assert.equal(scorePasteConflicts(score, 'Feet', copied, 7.5), true);
+  const result = pasteScoreSelection(score, 'Feet', copied, cursor.beat, makeId, true).score;
+  assert.equal(timeline(result, 'Hands').find(row => row.at === 12).pitch, 42);
+  assert.equal(timeline(result, 'Feet').find(row => row.at === 12).pitch, 36);
+  assert.equal(result.notes.find(n => n.id === 'lower-two').beats, 3.5);
+});
+
+test('overwrite paste replaces paired voices without shifting later bars or deleting the source', () => {
+  const original = source();
+  const copied = copyScoreSelection(original, 'Hands', ['h3', 'f2', 'f3']);
+  assert.equal(scorePasteConflicts(original, 'Hands', copied, 0), true);
+  const result = pasteScoreSelection(original, 'Hands', copied, 0, makeId, true).score;
+  assert.deepEqual(timeline(result, 'Hands'), [
+    { at: 0, beats: 4, pitch: 49, rest: false },
+    { at: 4, beats: 4, pitch: 49, rest: false },
+  ]);
+  assert.deepEqual(timeline(result, 'Feet'), [
+    { at: 0, beats: 1, pitch: 36, rest: false },
+    { at: 1, beats: 3, pitch: 60, rest: true },
+    { at: 4, beats: 1, pitch: 36, rest: false },
+    { at: 5, beats: 3, pitch: 60, rest: true },
+  ]);
+  assert.deepEqual(result.notes.filter(n => n.part === 'Guitar'), original.notes.filter(n => n.part === 'Guitar'));
+  assert.ok(result.notes.some(n => n.id === 'h3'));
+});
+
+test('overwrite paste keeps partial boundary notes and silence needs no confirmation', () => {
+  const original = source();
+  const copied = copyScoreSelection(original, 'Hands', ['h0']);
+  const result = pasteScoreSelection(original, 'Hands', copied, 5, makeId, true).score;
+  assert.deepEqual(timeline(result, 'Hands').filter(n => n.at >= 4), [
+    { at: 4, beats: 1, pitch: 49, rest: false },
+    { at: 5, beats: 1, pitch: 42, rest: false },
+    { at: 6, beats: 2, pitch: 49, rest: false },
+  ]);
+  assert.equal(scorePasteConflicts(original, 'Feet', copied, 5), false);
+  assert.equal(scorePasteConflicts(original, 'Hands', copied, 8), false);
+});
 
 test('two drum voices copy a shared interval and survive system clipboard round-trip', () => {
   const score = source(),

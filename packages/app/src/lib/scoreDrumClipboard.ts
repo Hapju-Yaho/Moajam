@@ -4,6 +4,8 @@ import {
   pasteScoreNotes,
   scoreBeat,
   scoreInstrument,
+  scoreMeasureAtBeat,
+  scoreMeasureStart,
   type Score,
   type ScoreClipboardNote,
   type ScoreNote,
@@ -126,9 +128,10 @@ export function pasteScoreSelection(
   copied: ScoreClipboardNote[],
   beat: number,
   makeId: () => string,
+  overwrite = false,
 ): { score: Score; ids: string[] } {
   if (!copied.some((n) => n.copiedDrumVoice))
-    return pasteScoreNotes(score, part, copied, beat, makeId);
+    return pasteScoreNotes(score, part, copied, beat, makeId, overwrite);
   const owner = scorePartOwner(score, part);
   if (scoreInstrument(score, owner).id !== 'drums')
     throw new Error('위·아래 성부를 함께 붙여넣으려면 드럼 파트를 선택해주세요.');
@@ -139,14 +142,48 @@ export function pasteScoreSelection(
   if (copied.some((n) => !n.copiedDrumVoice) || !spans[0] || spans[0] !== spans[1])
     throw new Error('복사한 드럼 성부의 길이가 올바르지 않아요. 다시 복사해주세요.');
   let next = enableDrumVoices(compactScoreBlanks(score), owner, makeId);
+  const position = scoreMeasureAtBeat(score, part, beat);
   const staves = [owner, next.drumVoices![owner]],
     ids: string[] = [];
   for (let i = 0; i < 2; i++) {
-    next = splitDrumBoundary(next, staves[i], beat, makeId);
+    const targetBeat = scoreBeat(scoreMeasureStart(score, staves[i], position.bar) + position.offset);
+    if (!overwrite) next = splitDrumBoundary(next, staves[i], targetBeat, makeId);
     const rows = voices[i].map(({ copiedDrumVoice: _, ...note }) => note);
-    const result = pasteScoreNotes(next, staves[i], rows, beat, makeId);
+    const result = pasteScoreNotes(next, staves[i], rows, targetBeat, makeId, overwrite);
     next = result.score;
     ids.push(...result.ids);
   }
   return { score: next, ids };
+}
+
+export function scorePasteConflicts(
+  score: Score,
+  part: string,
+  copied: ScoreClipboardNote[],
+  beat: number,
+): boolean {
+  const owner = scorePartOwner(score, part);
+  const parts = copied.some((note) => note.copiedDrumVoice)
+    ? [owner, score.drumVoices?.[owner]]
+    : [part];
+  const position = scoreMeasureAtBeat(score, part, beat);
+  return parts.some((staff) => {
+    if (!staff) return false;
+    const startBeat = copied.some(note => note.copiedDrumVoice)
+      ? scoreBeat(scoreMeasureStart(score, staff, position.bar) + position.offset) : beat;
+    const end = scoreBeat(startBeat + scoreClipboardDuration(copied));
+    let at = 0;
+    return score.notes
+      .filter((note) => note.part === staff)
+      .some((note) => {
+        const start = at;
+        at = scoreBeat(at + note.beats);
+        return (
+          !note.rest &&
+          !note.blank &&
+          start < end &&
+          (at > startBeat || (note.beats === 0 && start >= startBeat))
+        );
+      });
+  });
 }
