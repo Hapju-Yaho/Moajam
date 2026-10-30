@@ -10,6 +10,54 @@ import { isBandScore } from './score-policy.js';
 import { canWriteDocument, isWorkspaceDocumentKey } from './document-policy.js';
 
 describe('song lyrics', () => {
+  it('stores source-specific eighth-note cues and rejects invalid or unordered timelines', () => {
+    const key = 'song/song-1/lyrics-timing';
+    const value = {
+      version: 1,
+      lyrics: 'Verse\n\nChorus',
+      selectedSource: 'score:project-1',
+      tracks: {
+        'score:project-1': {
+          bpm: 120,
+          meter: [4, 4],
+          cues: [
+            { section: 0, beat: 0.5 },
+            { section: 1, beat: 8 },
+          ],
+        },
+      },
+    };
+    assert.ok(isWorkspaceDocumentKey(key));
+    assert.ok(canWriteDocument(key, null, value, 'member', false));
+    for (const cues of [
+      [{ section: 0, beat: 0.25 }],
+      [{ section: 1, beat: 0 }],
+      [
+        { section: 0, beat: 2 },
+        { section: 1, beat: 1 },
+      ],
+      [{ section: 0, beat: -1 }],
+    ]) {
+      assert.equal(
+        canWriteDocument(
+          key,
+          null,
+          { ...value, tracks: { 'score:project-1': { ...value.tracks['score:project-1'], cues } } },
+          'member',
+          false,
+        ),
+        false,
+      );
+    }
+    assert.equal(
+      canWriteDocument(key, null, { ...value, selectedSource: 'youtube:missing' }, 'member', true),
+      false,
+    );
+    assert.equal(
+      canWriteDocument(key, null, { ...value, lyrics: 'a'.repeat(50001) }, 'member', true),
+      false,
+    );
+  });
   it('accepts shared lyrics text and rejects oversized or malformed values', () => {
     const key = 'song/song-1/lyrics';
     assert.ok(isWorkspaceDocumentKey(key));

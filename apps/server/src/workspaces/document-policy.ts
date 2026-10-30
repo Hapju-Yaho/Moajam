@@ -1,6 +1,6 @@
 type Row = Record<string, unknown>;
 export const isWorkspaceDocumentKey = (key: string) =>
-  /^(recommendations|songs|rehearsals|practice\/order|song\/[\w-]+\/(discussion|feedback|clip-notes|checks|arrangement|links|pdf-parts|lyrics|session\/[\w-]+\/memo)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
+  /^(recommendations|songs|rehearsals|practice\/order|song\/[\w-]+\/(discussion|feedback|clip-notes|checks|arrangement|links|pdf-parts|lyrics|lyrics-timing|session\/[\w-]+\/memo)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
     key,
   );
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -223,6 +223,7 @@ export function canWriteDocument(
           ['UNASSIGNED', 'VOCAL', 'GUITAR', 'BASS', 'DRUMS', 'KEYBOARD', 'OTHER'].includes(part),
       )
     );
+  if (key.endsWith('/lyrics-timing')) return validLyricsTiming(after);
   if (key.endsWith('/memo') || key.endsWith('/lyrics'))
     return typeof after === 'string' && after.length <= 50000;
   if (key.endsWith('/checks') || key.endsWith('/tasks'))
@@ -270,4 +271,63 @@ export function canWriteDocument(
     });
   }
   return false;
+}
+
+function validLyricsTiming(value: unknown): boolean {
+  if (
+    !object(value) ||
+    value.version !== 1 ||
+    typeof value.lyrics !== 'string' ||
+    value.lyrics.length > 50000 ||
+    !object(value.tracks) ||
+    Object.keys(value.tracks).length > 50
+  )
+    return false;
+  const count = value.lyrics
+    .replace(/\r\n?/g, '\n')
+    .trim()
+    .split(/\n[\t ]*\n(?:[\t ]*\n)*/)
+    .filter((v) => v.trim()).length;
+  if (JSON.stringify(value).length > 1000000) return false;
+  if (
+    value.selectedSource !== undefined &&
+    (typeof value.selectedSource !== 'string' || !Object.hasOwn(value.tracks, value.selectedSource))
+  )
+    return false;
+  return Object.entries(value.tracks).every(([key, track]) => {
+    if (
+      !/^(metronome|score:[\w-]{1,128}|youtube:[\w-]{11})$/.test(key) ||
+      !object(track) ||
+      typeof track.bpm !== 'number' ||
+      !Number.isFinite(track.bpm) ||
+      track.bpm < 20 ||
+      track.bpm > 300 ||
+      !Array.isArray(track.meter) ||
+      track.meter.length !== 2 ||
+      !Number.isInteger(track.meter[0]) ||
+      track.meter[0] < 1 ||
+      track.meter[0] > 16 ||
+      ![2, 4, 8, 16].includes(track.meter[1]) ||
+      !Array.isArray(track.cues) ||
+      track.cues.length > 3000
+    )
+      return false;
+    let previous = -1;
+    return track.cues.every((cue, index) => {
+      if (
+        !object(cue) ||
+        cue.section !== index ||
+        index >= count ||
+        typeof cue.beat !== 'number' ||
+        !Number.isFinite(cue.beat) ||
+        cue.beat < 0 ||
+        cue.beat > 128000 ||
+        !Number.isInteger(cue.beat * 2) ||
+        cue.beat <= previous
+      )
+        return false;
+      previous = cue.beat;
+      return true;
+    });
+  });
 }

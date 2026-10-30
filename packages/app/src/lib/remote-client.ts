@@ -368,9 +368,18 @@ export async function api<T>(
     method,
     headers: {
       Authorization: 'Bearer ' + current.token,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...(body === undefined || (typeof FormData !== 'undefined' && body instanceof FormData)
+        ? {}
+        : { 'Content-Type': 'application/json' }),
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    ...(body === undefined
+      ? {}
+      : {
+          body:
+            typeof FormData !== 'undefined' && body instanceof FormData
+              ? body
+              : JSON.stringify(body),
+        }),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));

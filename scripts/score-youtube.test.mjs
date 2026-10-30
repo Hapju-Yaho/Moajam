@@ -91,6 +91,10 @@ test('drift correction is throttled and a deliberate pause stops following only 
   assert.equal(follow.active, false);
   assert.match(youtubePlayerError(150), /외부 사이트 재생/);
   assert.match(youtubePlayerError(100), /비공개/);
+  for (const code of [2, 5, 100, 101, 150, 152, 153, 999]) {
+    assert.ok(youtubePlayerError(code).includes(`YouTube 오류 ${code}`));
+  }
+  assert.match(youtubePlayerError(153), /사이트 정보/);
 });
 test('band score API accepts the video reference and rejects arbitrary embeds and unknown source types', () => {
   const score = {

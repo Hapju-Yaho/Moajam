@@ -835,6 +835,7 @@ export function setScoreConnection(
 }
 
 export type ScoreClipboardNote = ScoreNote & {
+  copiedDrumVoice?: 'upper' | 'lower';
   copiedConnection?: ScoreConnectionType;
   copiedChords?: { offset: number; chord: string }[];
   copiedGuitarTones?: { offset: number; tone: GuitarTone }[];
@@ -2939,6 +2940,56 @@ export function moveScoreNote(score: Score, id: string, direction: -1 | 1): Scor
   return retimeScore(score, notes, [current.part]);
 }
 
+// Deleted notation keeps time as editor-only blanks. Coalesce only unannotated
+// adjacent blanks; written rests, attacks, links and audio anchors stay intact.
+export function compactScoreBlanks(score: Score): Score {
+  const referenced = new Set(
+    score.notes.flatMap((n) => [n.connection?.targetId, n.slurTo].filter(Boolean)),
+  );
+  const plainKeys = new Set([
+    'id',
+    'part',
+    'pitch',
+    'beats',
+    'rest',
+    'blank',
+    'accent',
+    'chord',
+    'lyric',
+    'tones',
+  ]);
+  const eligible = (note: ScoreNote) =>
+    note.blank &&
+    note.rest &&
+    !note.accent &&
+    !note.chord &&
+    !note.lyric &&
+    !note.tones?.length &&
+    score.sync[note.id] === undefined &&
+    !referenced.has(note.id) &&
+    Object.entries(note).every(([key, value]) => plainKeys.has(key) || value === undefined);
+  const notes: ScoreNote[] = [],
+    last = new Map<string, number>();
+  let changed = false;
+  for (const note of score.notes) {
+    const index = last.get(note.part),
+      previous = index === undefined ? undefined : notes[index];
+    if (
+      previous &&
+      eligible(previous) &&
+      eligible(note) &&
+      scoreBeat(previous.beats + note.beats) <= 64
+    ) {
+      notes[index!] = { ...previous, beats: scoreBeat(previous.beats + note.beats) };
+      changed = true;
+    } else {
+      last.set(note.part, notes.length);
+      notes.push(note);
+    }
+  }
+  return changed ? { ...score, notes } : score;
+}
+
 // Insert a copied passage without overwriting notes or reusing their audio anchors.
 export function readScoreClipboard(text: string): ScoreClipboardNote[] | null {
   if (text.length > 2_000_000) return null;
@@ -2955,6 +3006,12 @@ export function readScoreClipboard(text: string): ScoreClipboardNote[] | null {
     const integer = (n: unknown, min: number, max: number) =>
       typeof n === 'number' && Number.isInteger(n) && n >= min && n <= max;
     for (const note of value.notes) {
+      if (
+        note?.copiedDrumVoice !== undefined &&
+        note.copiedDrumVoice !== 'upper' &&
+        note.copiedDrumVoice !== 'lower'
+      )
+        return null;
       if (
         note?.copiedGuitarTones !== undefined &&
         (!Array.isArray(note.copiedGuitarTones) ||
@@ -3037,6 +3094,7 @@ export function readScoreClipboard(text: string): ScoreClipboardNote[] | null {
         return null;
     }
     return value.notes.map((note: ScoreClipboardNote) => ({
+      copiedDrumVoice: note.copiedDrumVoice,
       id: typeof note.id === 'string' ? note.id.slice(0, 200) : '',
       tuplet: note.tuplet === 3 ? 3 : undefined,
       slurTo: typeof note.slurTo === 'string' ? note.slurTo.slice(0, 200) : undefined,
@@ -3117,6 +3175,7 @@ export function pasteScoreNotes(
   )
     throw new Error('붙여넣을 위치와 음표 길이를 확인해주세요.');
   beat = scoreBeat(beat);
+  score = compactScoreBlanks(score);
   const insertedChords: Record<number, string> = {};
   const insertedGuitarTones: Record<number, GuitarTone> = {};
   let copiedAt = beat;
@@ -3172,7 +3231,11 @@ export function pasteScoreNotes(
     next = appendScoreNoteAt(next, additions[0], beat, makeId);
     next = { ...next, notes: [...next.notes, ...additions.slice(1)] };
   }
-  if (next.notes.length > 2000) throw new Error('음표는 최대 2,000개까지 입력할 수 있어요.');
+  next = compactScoreBlanks(next);
+  if (next.notes.length > 2000)
+    throw new Error(
+      `붙여넣으면 프로젝트 전체의 음표·쉼표·빈 박 데이터가 ${next.notes.length.toLocaleString()}개가 되어 2,000개 제한을 넘어요. 삭제한 구간의 연속된 빈 박은 정리한 상태입니다.`,
+    );
   const retimed = retimeScore(score, next.notes, [part], (position) =>
     position >= beat ? position + copiedAt - beat : position,
   );

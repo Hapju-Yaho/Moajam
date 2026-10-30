@@ -33,6 +33,7 @@ import {
   scorePlaybackFrom,
   scorePlaybackPosition,
   scoreMeasureAtBeat,
+  scoreMeasureStart,
   noteTones,
   type Score,
   type ScoreClipboardNote,
@@ -139,6 +140,7 @@ export function ScoreEditorScreen({
   onProjectSaved,
   projectNameDirty = false,
   onRequestEditClose,
+  onEditViewChange,
   projectWorkspaceId,
 }: ScreenProps & {
   bandScore?: boolean;
@@ -152,6 +154,7 @@ export function ScoreEditorScreen({
   onProjectSaved?: (name: string) => void;
   projectNameDirty?: boolean;
   onRequestEditClose?: (close: () => void) => void;
+  onEditViewChange?: (expanded: boolean) => void;
 }) {
   const userId = useIdentity();
   const { workspaceId, workspace, adoptedSongs } = useMockAppState();
@@ -218,7 +221,13 @@ export function ScoreEditorScreen({
   const loadedKey = useRef('');
   const [status, setStatus] = useState('악보 불러오는 중…');
   const [part, setPart] = useState('Guitar');
-  const [mixerFocus, setMixerFocus] = useState<{ part: string; bar: number } | null>(null);
+  const [mixerFocus, setMixerFocus] = useState<{
+    part: string;
+    bar: number;
+    offset?: number;
+  } | null>(null);
+  const playbackView = useRef({ score, part });
+  playbackView.current = { score, part };
   const [selected, setSelected] = useState<string | null>(null);
   const [clipboard, setClipboard] = useState<ScoreClipboardNote[]>([]);
   const [playing, setPlaying] = useState(false);
@@ -634,6 +643,10 @@ export function ScoreEditorScreen({
     }
   };
   const stop = () => {
+    const stopped = playbackPosition.measure?.();
+    if (stopped) {
+      setMixerFocus({ part: playbackView.current.part, bar: stopped.bar, offset: stopped.offset });
+    }
     if (context.current && hasReference) setAudioPosition(referenceTime.current);
     if (playbackTimer.current !== null) clearInterval(playbackTimer.current);
     playbackTimer.current = null;
@@ -839,9 +852,11 @@ export function ScoreEditorScreen({
         const written = writtenPosition();
         return written === null
           ? null
-          : ensemblePlayback
-            ? ensemblePlayback.toSelected(written)
-            : written;
+          : (() => {
+              const location = scoreMeasureAtBeat(playbackScore, part, written);
+              const view = playbackView.current;
+              return scoreMeasureStart(view.score, view.part, location.bar) + location.offset;
+            })();
       };
       playbackPosition.measure = () => {
         const written = writtenPosition();
@@ -1050,6 +1065,11 @@ export function ScoreEditorScreen({
     openVersion(libraryRef.current, id, targetPart);
   };
   const requestPart = (name: string) => {
+    if (playing && score.parts.includes(name)) {
+      setPart(name);
+      setSelected(null);
+      return;
+    }
     if (scoreProjectId) {
       setPart(name);
       setSelected(null);
@@ -1142,6 +1162,7 @@ export function ScoreEditorScreen({
         viewStateKey={`${userId}/${key}`}
         projectBar={projectControls}
         onRequestClose={onRequestEditClose}
+        onExpandedChange={onEditViewChange}
         initiallyExpanded={scoreView === 'expanded'}
         title={
           scoreProjectId

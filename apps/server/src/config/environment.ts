@@ -11,6 +11,9 @@ export function validateEnvironment(config: Record<string, unknown>) {
   }
 
   const port = Number(config.PORT ?? 3000);
+  const scoreTokens = Number(config.OPENAI_SCORE_MAX_OUTPUT_TOKENS ?? 12000);
+  if (!Number.isInteger(scoreTokens) || scoreTokens < 1024 || scoreTokens > 64000)
+    throw new Error('OPENAI_SCORE_MAX_OUTPUT_TOKENS must be between 1024 and 64000');
 
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error('PORT must be an integer between 1 and 65535');
@@ -97,6 +100,9 @@ export function validateEnvironment(config: Record<string, unknown>) {
     STORAGE_PROVIDER: storageProvider,
     NODE_ENV: nodeEnvironment,
     PORT: port,
+    OPENAI_API_KEY: String(config.OPENAI_API_KEY ?? '').trim(),
+    OPENAI_SCORE_MODEL: String(config.OPENAI_SCORE_MODEL ?? '').trim() || 'gpt-5-mini',
+    OPENAI_SCORE_MAX_OUTPUT_TOKENS: scoreTokens,
     AUTH_MODE: authMode,
     KAKAO_REST_API_KEY: kakaoKey,
     KAKAO_CLIENT_SECRET: kakaoSecret,

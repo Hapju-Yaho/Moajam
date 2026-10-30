@@ -67,6 +67,10 @@ export function BandScoreProjects(
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [entryView, setEntryView] = useState(props.scoreView);
+  const onEditViewChange = useCallback(
+    (expanded: boolean) => setEntryView(expanded ? 'expanded' : undefined),
+    [],
+  );
   const [mode, setMode] = useState<'new' | 'select' | 'saveas' | null>(null);
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<null | (() => Promise<void>)>(null);
@@ -401,6 +405,7 @@ export function BandScoreProjects(
           {...props}
           entityId={props.personal ? undefined : props.songId}
           scoreView={entryView === 'expanded' ? 'expanded' : undefined}
+          onEditViewChange={onEditViewChange}
           bandScore={!props.personal}
           projectWorkspaceId={workspaceId}
           embedded

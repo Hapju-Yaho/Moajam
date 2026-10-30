@@ -12,6 +12,8 @@ export type ScoreYouTubeHandle = {
   pause(): void;
   sync(seconds: number, now: number, force?: boolean): void;
   currentTime(): number;
+  state(): number;
+  duration(): number;
 };
 
 export const ScoreYouTubeBacking = forwardRef<
@@ -48,6 +50,8 @@ export const ScoreYouTubeBacking = forwardRef<
       pause: () => follower.current?.pause(),
       sync: (seconds, now, force) => follower.current?.sync(seconds, now, force),
       currentTime: () => player.current?.getCurrentTime() ?? 0,
+      state: () => player.current?.getPlayerState() ?? -1,
+      duration: () => player.current?.getDuration() ?? 0,
     }),
     [],
   );

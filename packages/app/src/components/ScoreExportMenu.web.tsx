@@ -21,6 +21,7 @@ export function ScoreExportMenu({
   onImport,
   onXmlImport,
   onMidiImport,
+  onPdfImport,
   onPdf,
   onMidi,
   xmlExport,
@@ -34,6 +35,7 @@ export function ScoreExportMenu({
   onImport: () => void;
   onXmlImport?: () => void;
   onMidiImport?: () => void;
+  onPdfImport?: () => void;
   onPdf: (options: ScoreExportOptions) => void;
   onMidi: (options: ScoreExportOptions) => void;
   xmlExport?: ReactNode;
@@ -158,8 +160,11 @@ export function ScoreExportMenu({
                   <button
                     type="button"
                     role="menuitem"
-                    disabled
-                    title="PDF 가져오기는 지원하지 않아요."
+                    disabled={disabled || !onPdfImport}
+                    onClick={() => {
+                      setOpen(null);
+                      onPdfImport?.();
+                    }}
                   >
                     PDF
                   </button>

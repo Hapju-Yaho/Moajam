@@ -77,6 +77,7 @@ export function ScoreEditorViewport({
   viewStateKey,
   projectBar,
   onRequestClose,
+  onExpandedChange,
 }: PropsWithChildren<{
   heading?: ReactNode;
   title?: string;
@@ -86,6 +87,7 @@ export function ScoreEditorViewport({
   viewStateKey?: string;
   projectBar?: ReactNode | ((status?: string, actions?: ScoreViewActions) => ReactNode);
   onRequestClose?: (close: () => void) => void;
+  onExpandedChange?: (expanded: boolean) => void;
 }>) {
   const root = useRef<HTMLDivElement>(null);
   const fullscreenButton = useRef<HTMLButtonElement>(null);
@@ -115,6 +117,9 @@ export function ScoreEditorViewport({
       // Editing still works if browser storage is unavailable.
     }
   }, [expanded, viewStateKey]);
+  useEffect(() => {
+    onExpandedChange?.(expanded);
+  }, [expanded, onExpandedChange]);
   const titleId = useId();
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspector, setInspector] = useState<ScoreInspectorTab>('notes');

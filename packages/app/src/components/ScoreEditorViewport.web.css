@@ -213,6 +213,18 @@
 .guitar-editor > .score-message {
   order: 12;
 }
+.score-detail-inspector > .score-message {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 10px;
+  margin: 0 0 8px;
+  border: 1px solid #c89777;
+  border-radius: 6px;
+  background: #fff3e7;
+  color: #743a22;
+  white-space: normal;
+}
 .score-editor-viewport[data-expanded='true'] {
   --score-left: 218px;
   --score-right: 318px;
@@ -738,15 +750,17 @@
   border: 1px solid #d3ddec;
   border-radius: 5px;
 }
-.score-editor-viewport[data-expanded='true'] .score-message {
-  position: fixed;
-  bottom: calc(var(--score-bottom) + 5px);
-  left: calc(var(--score-left) + 20px);
-  right: calc(var(--score-right) + 20px);
-  z-index: 22;
-  background: #fff4dc;
-  padding: 12px;
-  border-radius: 7px;
+.score-editor-viewport[data-expanded='true'] .score-detail-inspector > .score-message {
+  display: block;
+  position: sticky;
+  top: 0;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  z-index: 2;
+  background: #fff3e7;
+  padding: 8px 10px;
+  border-radius: 6px;
 }
 .score-editor-viewport[data-expanded='true'] .score-backing--compact {
   display: flex;

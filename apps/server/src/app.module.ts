@@ -1,6 +1,9 @@
 import { BandPhotoService } from './workspaces/band-photo.service.js';
 import { BandPhotoController } from './workspaces/band-photo.controller.js';
 import { Module } from '@nestjs/common';
+import { ScorePdfController } from './score-pdf/score-pdf.controller.js';
+import { ScorePdfService } from './score-pdf/score-pdf.service.js';
+import { PdfRecognitionClient } from './score-pdf/pdf-recognition.client.js';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './common/auth/auth.module.js';
 import { DatabaseModule } from './common/database/database.module.js';
@@ -34,6 +37,7 @@ import { ScoreProjectsController } from './workspaces/score-projects.controller.
     DatabaseModule,
   ],
   controllers: [
+    ScorePdfController,
     ScoreProjectsController,
     DawProjectsController,
     HealthController,
@@ -48,6 +52,8 @@ import { ScoreProjectsController } from './workspaces/score-projects.controller.
     YouTubeController,
   ],
   providers: [
+    ScorePdfService,
+    PdfRecognitionClient,
     ScoreProjectsService,
     StorageService,
     SeparationService,
