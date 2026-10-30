@@ -795,3 +795,27 @@
     font-size: 12px;
   }
 }
+.score-pdf-page-selection {
+  min-width: 0;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid #aabac7;
+  border-radius: 8px;
+  background: #f1f5f8;
+  color: #304652;
+}
+.score-pdf-page-selection > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 6px 0;
+}
+.score-pdf-page-selection > div > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.score-pdf-page-selection small {
+  display: block;
+  font-size: 11px;
+}

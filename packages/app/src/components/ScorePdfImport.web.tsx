@@ -70,6 +70,11 @@ export function ScorePdfImport({
   const [scoreType, setScoreType] = useState('guitar-tab');
   const [name, setName] = useState('');
   const [pages, setPages] = useState<number | null>(null);
+  const [selectedPages, setSelectedPages] = useState<number[]>([]);
+  const [analysisFile, setAnalysisFile] = useState<File | null>(null);
+  useEffect(() => {
+    setSelectedPages(Array.from({ length: pages ?? 0 }, (_, index) => index + 1));
+  }, [pages, file]);
   const [reading, setReading] = useState(false);
   const [bandOpen, setBandOpen] = useState(false);
   const [bandFiles, setBandFiles] = useState<BandPdf[]>([]);
@@ -178,6 +183,7 @@ export function ScorePdfImport({
     else if (!open) dialog.current?.close();
   }, [open]);
   const clearJob = () => {
+    setAnalysisFile(null);
     setShowIssueReview(true);
     setSelectedIssues([]);
     if (job) void api(`/score-pdf/jobs/${job.id}`, 'DELETE').catch(() => {});
@@ -268,12 +274,22 @@ export function ScorePdfImport({
     }
   };
   const prepare = async () => {
-    if (!file || busy || reading || !pages) return;
+    if (!file || busy || reading || !pages || !selectedPages.length) return;
     setBusy(true);
     setError('');
     try {
       const data = new FormData();
-      data.append('file', file);
+      let extracted = file;
+      if (selectedPages.length !== pages) {
+        const { selectScorePdfPages } = await import('../lib/scorePdfPages');
+        extracted = new File(
+          [await selectScorePdfPages(await file.arrayBuffer(), selectedPages)],
+          file.name,
+          { type: 'application/pdf' },
+        );
+      }
+      setAnalysisFile(extracted);
+      data.append('file', extracted);
       const next = await api<Prepared>(`/score-pdf/jobs?scoreType=${scoreType}`, 'POST', data);
       const previous = job;
       setJob(next);
@@ -447,12 +463,12 @@ export function ScorePdfImport({
             ×
           </button>
         </header>
-        <p>PDF 전체를 읽어 편집 가능한 악보로 변환합니다.</p>
+        <p>선택한 PDF 페이지를 읽어 편집 가능한 악보로 변환합니다.</p>
         {job?.status === 'structure_review' && job.structure && (
           <>
             <ScorePdfStructureReview
               key={`${job.id}:${job.revision}`}
-              file={file}
+              file={analysisFile ?? file}
               structure={job.structure}
               pages={job.pages}
               busy={busy}
@@ -471,6 +487,9 @@ export function ScorePdfImport({
             >
               구조 다시 분석 (API 1회)
             </button>
+            <button type="button" disabled={busy} onClick={clearJob}>
+              취소
+            </button>
           </>
         )}
         {viewingIssues && job?.structure && job.issues && (
@@ -482,7 +501,7 @@ export function ScorePdfImport({
             )}
             <ScorePdfIssueReview
               key={job.id}
-              file={file}
+              file={analysisFile ?? file}
               structure={job.structure}
               issues={job.issues ?? []}
               recognizedHits={job.recognizedHits}
@@ -690,6 +709,50 @@ export function ScorePdfImport({
               </select>
               <small>선택한 종류의 악보만 인식해요.</small>
             </label>
+            {pages !== null && pages > 1 && (
+              <fieldset
+                className="score-pdf-page-selection"
+                disabled={busy || reading || bandPicking}
+              >
+                <legend>추출 페이지</legend>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearJob();
+                    setSelectedPages(
+                      selectedPages.length === pages
+                        ? []
+                        : Array.from({ length: pages }, (_, index) => index + 1),
+                    );
+                  }}
+                >
+                  {selectedPages.length === pages ? '전체 해제' : '전체 선택'}
+                </button>
+                <div>
+                  {Array.from({ length: pages }, (_, index) => index + 1).map((page) => (
+                    <label key={page}>
+                      <input
+                        type="checkbox"
+                        checked={selectedPages.includes(page)}
+                        onChange={(event) => {
+                          clearJob();
+                          setSelectedPages((previous) =>
+                            event.target.checked
+                              ? [...previous, page].sort((a, b) => a - b)
+                              : previous.filter((value) => value !== page),
+                          );
+                        }}
+                      />
+                      {page}
+                    </label>
+                  ))}
+                </div>
+                <small>
+                  {selectedPages.length} / {pages}페이지 선택 · 분석 화면에서는 선택한 순서대로
+                  페이지 번호를 표시합니다.
+                </small>
+              </fieldset>
+            )}
             {bandOpen && (
               <section className="score-pdf-bands" aria-label="내 밴드 PDF 목록">
                 <header>
@@ -738,7 +801,7 @@ export function ScorePdfImport({
             <button
               className="score-pdf-extract"
               type="button"
-              disabled={!file || busy || reading || !pages || bandPicking}
+              disabled={!file || busy || reading || !pages || !selectedPages.length || bandPicking}
               onClick={() => void prepare()}
             >
               {busy
