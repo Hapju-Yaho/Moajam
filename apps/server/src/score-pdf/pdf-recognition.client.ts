@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { recognitionDiagnostics, type RecognitionDiagnostics } from './recognition-diagnostics.js';
+import { backgroundResponse, type AnalysisProgress } from './background-response.js';
 
 export type RecognitionUsage = { inputTokens: number; outputTokens: number; totalTokens: number };
 export type RecognitionReply = {
@@ -27,23 +28,28 @@ export async function requestRecognition(
     maxTokens: number;
     signal?: AbortSignal;
     fetcher?: typeof fetch;
+    onProgress?: (progress: AnalysisProgress) => void;
+    pollIntervalMs?: number;
   },
 ): Promise<RecognitionReply> {
   const began = Date.now();
   let response: Response;
   try {
-    response = await (options.fetcher ?? fetch)('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      redirect: 'error',
-      signal: options.signal ?? AbortSignal.timeout(180000),
-      headers: { Authorization: `Bearer ${options.key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    response = await backgroundResponse(
+      {
         ...payload,
         model: options.model,
         store: false,
         max_output_tokens: options.maxTokens,
-      }),
-    });
+      },
+      {
+        key: options.key,
+        signal: options.signal ?? AbortSignal.timeout(1800000),
+        fetcher: options.fetcher,
+        onProgress: options.onProgress,
+        pollIntervalMs: options.pollIntervalMs,
+      },
+    );
   } catch (error) {
     const e =
       error && typeof error === 'object'
@@ -203,7 +209,11 @@ export class PdfRecognitionClient {
   get enabled() {
     return !!this.config.get<string>('OPENAI_API_KEY')?.trim();
   }
-  recognize(payload: object, signal?: AbortSignal) {
+  recognize(
+    payload: object,
+    signal?: AbortSignal,
+    onProgress?: (progress: AnalysisProgress) => void,
+  ) {
     const key = this.config.get<string>('OPENAI_API_KEY')?.trim();
     if (!key)
       throw new RecognitionError('KEY_NOT_CONFIGURED', '서버에 OPENAI_API_KEY를 설정해주세요.');
@@ -212,6 +222,7 @@ export class PdfRecognitionClient {
       model: this.config.get<string>('OPENAI_SCORE_MODEL') || 'gpt-5-mini',
       maxTokens: this.config.get<number>('OPENAI_SCORE_MAX_OUTPUT_TOKENS') ?? 12000,
       signal,
+      onProgress,
     });
   }
 }
