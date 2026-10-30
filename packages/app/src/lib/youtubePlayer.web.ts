@@ -118,10 +118,22 @@ export function createYouTubeFollower(player: YouTubePlayer) {
 }
 
 export function youtubePlayerError(code: number) {
-  if (code === 100) return '영상이 삭제됐거나 비공개 상태예요. 다른 영상을 연결해주세요.';
+  const prefix = `YouTube 오류 ${code} · `;
+  if (code === 2)
+    return prefix + '영상 주소나 재생 요청 값이 올바르지 않아요. 영상 링크를 다시 확인해주세요.';
+  if (code === 5)
+    return prefix + '브라우저에서 영상을 재생하지 못했어요. 다른 브라우저에서도 확인해주세요.';
+  if (code === 100) return prefix + '영상이 삭제됐거나 비공개 상태예요. 다른 영상을 연결해주세요.';
   if (code === 101 || code === 150)
-    return '이 영상은 외부 사이트 재생이 제한돼 있어요. 다른 영상을 연결해주세요.';
+    return prefix + '이 영상은 외부 사이트 재생이 제한돼 있어요. 다른 영상을 연결해주세요.';
   if (code === 153)
-    return '유튜브가 사이트 정보를 확인하지 못했어요. 브라우저의 차단 설정을 확인해주세요.';
-  return '유튜브 영상을 재생하지 못했어요. 다른 영상이나 브라우저로 다시 시도해주세요.';
+    return (
+      prefix + '유튜브가 사이트 정보를 확인하지 못했어요. 브라우저의 차단 설정을 확인해주세요.'
+    );
+  if (code === 152)
+    return (
+      prefix +
+      '유튜브가 현재 환경의 영상 재생 요청을 거부했어요. 영상 안에 표시되는 상세 오류 번호도 확인해주세요.'
+    );
+  return prefix + '유튜브 영상을 재생하지 못했어요. 다른 영상이나 브라우저로 다시 시도해주세요.';
 }
