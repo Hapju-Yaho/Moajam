@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { PDFDocument } from 'pdf-lib';
+import type { AnalysisProgress } from './background-response.js';
 import {
   applyTabProfile,
   type TabScoreType,
@@ -66,6 +67,8 @@ type Job = {
   forcedMeasures?: { part: string; page: number; measure: number }[];
   issues?: ReviewIssue[];
   phase?: 'structure' | 'events' | 'validation';
+  progress?: AnalysisProgress;
+  analysisStartedAt?: number;
 };
 
 @Injectable()
@@ -170,6 +173,8 @@ export class ScorePdfService implements OnModuleDestroy {
       scoreType: j.scoreType,
       status: j.state,
       phase: j.phase,
+      progress: j.progress,
+      analysisStartedAt: j.analysisStartedAt,
       revision: j.revision ?? 0,
       canReanalyze: !!j.structure && !!j.draft,
       analysisEnabled: this.recognition?.enabled ?? false,
@@ -338,6 +343,8 @@ export class ScorePdfService implements OnModuleDestroy {
     )
       throw new HttpException('다른 악보를 분석 중입니다. 완료 후 다시 시도해주세요.', 429);
     job.state = 'analyzing';
+    job.analysisStartedAt = Date.now();
+    job.progress = { status: 'starting', startedAt: job.analysisStartedAt };
     job.error = undefined;
     job.diagnostics = undefined;
     job.issues = undefined;
@@ -353,7 +360,13 @@ export class ScorePdfService implements OnModuleDestroy {
     eventsOnly = false,
     forceInference = false,
   ) {
-    const timer = setTimeout(() => controller.abort(), 360000).unref();
+    const timer = setTimeout(
+      () => controller.abort(new Error('ANALYSIS_TIMEOUT')),
+      1800000,
+    ).unref();
+    const onProgress = (progress: AnalysisProgress) => {
+      job.progress = progress;
+    };
     let usage: RecognitionUsage | undefined;
     let diagnostic: RecognitionDiagnostics | undefined;
     let cropInfo: MeasureCropInfo[] | undefined;
@@ -377,6 +390,7 @@ export class ScorePdfService implements OnModuleDestroy {
         const structural = await this.recognition!.recognize(
           applyTabProfile(prepareStructureRequest(job.name, job.pdf), job.scoreType),
           controller.signal,
+          onProgress,
         );
         addUsage(structural.usage);
         job.model = structural.model;
@@ -448,6 +462,7 @@ export class ScorePdfService implements OnModuleDestroy {
           { structure: fixed, target, forceInference },
         ),
         controller.signal,
+        onProgress,
       );
       addUsage(reply.usage);
       job.model = reply.model;
@@ -583,11 +598,18 @@ export class ScorePdfService implements OnModuleDestroy {
     } catch (e) {
       job.state = 'failed';
       job.error = {
-        code: e instanceof RecognitionError ? e.code : 'CONVERSION_FAILED',
+        code:
+          controller.signal.reason?.message === 'ANALYSIS_TIMEOUT'
+            ? 'ANALYSIS_TIMEOUT'
+            : e instanceof RecognitionError
+              ? e.code
+              : 'CONVERSION_FAILED',
         message:
-          e instanceof RecognitionError
-            ? e.message
-            : '악보를 변환하지 못했어요. PDF를 확인해주세요.',
+          controller.signal.reason?.message === 'ANALYSIS_TIMEOUT'
+            ? '분석 대기 시간이 30분을 초과했어요. 페이지를 나누어 다시 시도해주세요.'
+            : e instanceof RecognitionError
+              ? e.message
+              : '악보를 변환하지 못했어요. PDF를 확인해주세요.',
       };
       addUsage(e instanceof RecognitionError ? e.usage : undefined);
       job.diagnostics = (e instanceof RecognitionError ? e.diagnostics : undefined) ?? diagnostic;

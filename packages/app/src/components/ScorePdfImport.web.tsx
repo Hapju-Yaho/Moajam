@@ -13,6 +13,7 @@ import { scorePdfExportFiles, isolateScorePdfPart } from '../lib/scorePdfExport'
 import { ScorePdfDiagnostics, type PdfDiagnostics } from './ScorePdfDiagnostics.web';
 import { ScorePdfStructureReview, type PdfStructure } from './ScorePdfStructureReview.web';
 import { ScorePdfIssueReview, type PdfReviewIssue } from './ScorePdfIssueReview.web';
+import { PdfAnalysisLoading } from './PdfAnalysisLoading.web';
 
 type Prepared = {
   id: string;
@@ -26,6 +27,13 @@ type Prepared = {
   error?: { code: string; message: string };
   usage?: { inputTokens: number; outputTokens: number; totalTokens: number };
   model?: string;
+  analysisStartedAt?: number;
+  phase?: 'structure' | 'events' | 'validation';
+  progress?: {
+    status: 'starting' | 'queued' | 'in_progress' | 'checking' | 'delayed' | 'received';
+    startedAt: number;
+    checkedAt?: number;
+  };
   diagnostics?: PdfDiagnostics;
   canReanalyze?: boolean;
   structure?: PdfStructure;
@@ -65,6 +73,8 @@ export function ScorePdfImport({
   const [working, setBusy] = useState(false);
   const busy = working || job?.status === 'analyzing';
   const [error, setError] = useState('');
+  const [statusCheckDelayed, setStatusCheckDelayed] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [format, setFormat] = useState('moajam');
   const [scoreType, setScoreType] = useState('guitar-tab');
@@ -127,6 +137,7 @@ export function ScorePdfImport({
       try {
         const next = await api<Result>(`/score-pdf/jobs/${jobId}/result`);
         if (!active) return;
+        setStatusCheckDelayed(false);
         setJob(next);
         if (next.status === 'completed')
           setShowIssueReview(
@@ -152,7 +163,7 @@ export function ScorePdfImport({
         if (next.status === 'analyzing') timer = setTimeout(() => void read(), 1200);
       } catch (e) {
         if (active) {
-          setError(e instanceof Error ? e.message : '결과를 불러오지 못했어요.');
+          setStatusCheckDelayed(true);
           if (e instanceof ApiError && e.status === 404) setJob(null);
           else timer = setTimeout(() => void read(), 5000);
         }
@@ -183,6 +194,7 @@ export function ScorePdfImport({
     else if (!open) dialog.current?.close();
   }, [open]);
   const clearJob = () => {
+    setStatusCheckDelayed(false);
     setAnalysisFile(null);
     setShowIssueReview(true);
     setSelectedIssues([]);
@@ -194,6 +206,19 @@ export function ScorePdfImport({
     setApplied(false);
     setConfirm(false);
     setPreviewBar(1);
+  };
+  const cancelAnalysis = async () => {
+    if (!job || cancelling) return;
+    setCancelling(true);
+    try {
+      await api(`/score-pdf/jobs/${job.id}`, 'DELETE');
+      clearJob();
+      setError('');
+    } catch {
+      setError('취소 요청을 전달하지 못했어요. 다시 시도해주세요.');
+    } finally {
+      setCancelling(false);
+    }
   };
   const choose = async (value?: File) => {
     if (!value || busy) return;
@@ -821,6 +846,14 @@ export function ScorePdfImport({
               aria-live="polite"
             >
               <h3>결과·경고 미리보기</h3>
+              {job?.status === 'analyzing' && (
+                <PdfAnalysisLoading
+                  job={job}
+                  delayed={statusCheckDelayed}
+                  cancelling={cancelling}
+                  onCancel={() => void cancelAnalysis()}
+                />
+              )}
               {job ? (
                 <>
                   <strong>{job.message}</strong>

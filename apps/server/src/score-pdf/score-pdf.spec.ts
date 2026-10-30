@@ -22,7 +22,10 @@ test('PDF preparation: entire Base64, deduplication, ownership and no fabricated
     assert.throws(() => service.status('bob', job.id));
     const request = service.prepareRequest('alice', job.id);
     const file = request.input[0].content.find((c) => c.type === 'input_file');
-    assert.equal(file?.file_data, `data:application/pdf;base64,${bytes.toString('base64')}`);
+    assert.equal(
+      file && 'file_data' in file ? file.file_data : undefined,
+      `data:application/pdf;base64,${bytes.toString('base64')}`,
+    );
     assert.equal('model' in request, false);
     assert.equal(service.result('alice', job.id).result, null);
     assert.equal(service.reanalyze('alice', job.id, 2, 3).accepted, false);

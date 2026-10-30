@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "mcp:score-pdf": "node scripts/score-pdf-mcp.mjs",
-    "test:score-pdf": "npm run build && node --import tsx --test src/score-pdf/score-pdf.spec.ts test/score-pdf-mcp.test.mjs test/score-pdf-http.test.mjs test/score-pdf-conversion.test.mjs",
+    "test:score-pdf": "npm run build && node --import tsx --test src/score-pdf/score-pdf.spec.ts src/score-pdf/background-response.spec.ts test/score-pdf-mcp.test.mjs test/score-pdf-http.test.mjs test/score-pdf-conversion.test.mjs",
     "dev": "node scripts/database.mjs --generate && node scripts/database.mjs && node scripts/dev.mjs",
     "build": "node scripts/database.mjs --generate && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json -f -fe .js",
     "postinstall": "node scripts/database.mjs --generate",
