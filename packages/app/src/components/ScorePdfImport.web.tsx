@@ -14,6 +14,7 @@ import { ScorePdfDiagnostics, type PdfDiagnostics } from './ScorePdfDiagnostics.
 import { ScorePdfStructureReview, type PdfStructure } from './ScorePdfStructureReview.web';
 import { ScorePdfIssueReview, type PdfReviewIssue } from './ScorePdfIssueReview.web';
 import { PdfAnalysisLoading } from './PdfAnalysisLoading.web';
+import { parseScorePdfPages } from '../lib/scorePdfPageSelection';
 
 type Prepared = {
   id: string;
@@ -69,6 +70,20 @@ export function ScorePdfImport({
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [showPdfContent, setShowPdfContent] = useState(false);
+  const [pdfContentUrl, setPdfContentUrl] = useState('');
+  useEffect(() => {
+    setShowPdfContent(false);
+  }, [file]);
+  useEffect(() => {
+    if (!file || !showPdfContent) return;
+    const url = URL.createObjectURL(file);
+    setPdfContentUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+      setPdfContentUrl('');
+    };
+  }, [file, showPdfContent]);
   const [job, setJob] = useState<Prepared | null>(null);
   const [working, setBusy] = useState(false);
   const busy = working || job?.status === 'analyzing';
@@ -80,10 +95,17 @@ export function ScorePdfImport({
   const [scoreType, setScoreType] = useState('guitar-tab');
   const [name, setName] = useState('');
   const [pages, setPages] = useState<number | null>(null);
-  const [selectedPages, setSelectedPages] = useState<number[]>([]);
+  const [pageMode, setPageMode] = useState<'all' | 'specific'>('all');
+  const [pageText, setPageText] = useState('');
+  const pageSelection =
+    pageMode === 'all'
+      ? { pages: Array.from({ length: pages ?? 0 }, (_, index) => index + 1), error: '' }
+      : parseScorePdfPages(pageText, pages ?? 0);
+  const selectedPages = pageSelection.pages;
   const [analysisFile, setAnalysisFile] = useState<File | null>(null);
   useEffect(() => {
-    setSelectedPages(Array.from({ length: pages ?? 0 }, (_, index) => index + 1));
+    setPageMode('all');
+    setPageText('');
   }, [pages, file]);
   const [reading, setReading] = useState(false);
   const [bandOpen, setBandOpen] = useState(false);
@@ -632,6 +654,7 @@ export function ScorePdfImport({
               className="score-pdf-drop"
               data-dragging={dragging}
               data-has-file={!!file}
+              data-preview={showPdfContent}
               aria-busy={busy}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -645,41 +668,74 @@ export function ScorePdfImport({
                 else void choose(e.dataTransfer.files[0]);
               }}
             >
-              {file ? (
-                <div className="score-pdf-file-card">
-                  <svg aria-hidden="true" viewBox="0 0 220 190" preserveAspectRatio="none">
-                    <path
-                      d="M2 2H182L218 38V188H2Z"
-                      fill="#ffffff"
-                      stroke="#d78484"
-                      strokeWidth="2"
-                    />
-                    <path d="M182 2V38H218" fill="#f8dada" stroke="#d78484" strokeWidth="2" />
-                  </svg>
-                  <div className="score-pdf-file-info">
-                    <span className="score-pdf-file-type">PDF</span>
+              {file && showPdfContent && (
+                <div className="score-pdf-upload-preview">
+                  <div className="score-pdf-upload-preview-heading">
                     <strong>{file.name}</strong>
-                    <span>{(file.size / 1024 / 1024).toFixed(2)}MB</span>
-                    <span>
-                      {reading ? '페이지 확인 중…' : pages ? `${pages}페이지` : '페이지 확인 불가'}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowPdfContent(false)}
+                      aria-label="PDF 내용 보기 닫기"
+                    >
+                      닫기 ×
+                    </button>
+                  </div>
+                  {pdfContentUrl && (
+                    <iframe
+                      title="업로드한 PDF 내용"
+                      src={`${pdfContentUrl}#toolbar=0&navpanes=0&view=FitH`}
+                    />
+                  )}
+                </div>
+              )}
+              {file ? (
+                <div className="score-pdf-file-column">
+                  <div className="score-pdf-file-card">
+                    <svg aria-hidden="true" viewBox="0 0 220 190" preserveAspectRatio="none">
+                      <path
+                        d="M2 2H182L218 38V188H2Z"
+                        fill="#ffffff"
+                        stroke="#d78484"
+                        strokeWidth="2"
+                      />
+                      <path d="M182 2V38H218" fill="#f8dada" stroke="#d78484" strokeWidth="2" />
+                    </svg>
+                    <div className="score-pdf-file-info">
+                      <span className="score-pdf-file-type">PDF</span>
+                      <strong>{file.name}</strong>
+                      <span>{(file.size / 1024 / 1024).toFixed(2)}MB</span>
+                      <span>
+                        {reading
+                          ? '페이지 확인 중…'
+                          : pages
+                            ? `${pages}페이지`
+                            : '페이지 확인 불가'}
+                      </span>
+                    </div>
+                    <button
+                      className="score-pdf-remove"
+                      type="button"
+                      aria-label="PDF 파일 제거"
+                      title="파일 제거"
+                      disabled={busy}
+                      onClick={() => {
+                        clearJob();
+                        selection.current++;
+                        setFile(null);
+                        setPages(null);
+                        setReading(false);
+                        setError('');
+                      }}
+                    >
+                      ×
+                    </button>
                   </div>
                   <button
-                    className="score-pdf-remove"
                     type="button"
-                    aria-label="PDF 파일 제거"
-                    title="파일 제거"
-                    disabled={busy}
-                    onClick={() => {
-                      clearJob();
-                      selection.current++;
-                      setFile(null);
-                      setPages(null);
-                      setReading(false);
-                      setError('');
-                    }}
+                    className="score-pdf-view-content"
+                    onClick={() => setShowPdfContent(true)}
                   >
-                    ×
+                    내용 보기
                   </button>
                 </div>
               ) : (
@@ -740,38 +796,44 @@ export function ScorePdfImport({
                 disabled={busy || reading || bandPicking}
               >
                 <legend>추출 페이지</legend>
-                <button
-                  type="button"
-                  onClick={() => {
-                    clearJob();
-                    setSelectedPages(
-                      selectedPages.length === pages
-                        ? []
-                        : Array.from({ length: pages }, (_, index) => index + 1),
-                    );
-                  }}
-                >
-                  {selectedPages.length === pages ? '전체 해제' : '전체 선택'}
-                </button>
                 <div>
-                  {Array.from({ length: pages }, (_, index) => index + 1).map((page) => (
-                    <label key={page}>
-                      <input
-                        type="checkbox"
-                        checked={selectedPages.includes(page)}
-                        onChange={(event) => {
-                          clearJob();
-                          setSelectedPages((previous) =>
-                            event.target.checked
-                              ? [...previous, page].sort((a, b) => a - b)
-                              : previous.filter((value) => value !== page),
-                          );
-                        }}
-                      />
-                      {page}
-                    </label>
-                  ))}
+                  <button
+                    type="button"
+                    aria-pressed={pageMode === 'all'}
+                    onClick={() => {
+                      clearJob();
+                      setPageMode('all');
+                    }}
+                  >
+                    전체 페이지
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={pageMode === 'specific'}
+                    onClick={() => {
+                      clearJob();
+                      setPageMode('specific');
+                    }}
+                  >
+                    특정 페이지
+                  </button>
+                  <input
+                    type="text"
+                    aria-label="추출할 특정 페이지"
+                    placeholder="예: 1,3,4 또는 1-3"
+                    value={pageText}
+                    disabled={pageMode !== 'specific'}
+                    aria-invalid={pageMode === 'specific' && Boolean(pageSelection.error)}
+                    onChange={(event) => {
+                      clearJob();
+                      setPageMode('specific');
+                      setPageText(event.target.value);
+                    }}
+                  />
                 </div>
+                {pageMode === 'specific' && pageSelection.error && (
+                  <small role="alert">{pageSelection.error}</small>
+                )}
                 <small>
                   {selectedPages.length} / {pages}페이지 선택 · 분석 화면에서는 선택한 순서대로
                   페이지 번호를 표시합니다.
