@@ -119,6 +119,26 @@ export class MediaController {
       throw new BadRequestException('업로드 파일 형식이 다릅니다.');
     return this.db.mediaAsset.update({ where: { id }, data: { ready: true } });
   }
+  @Get('assets/band-pdfs') async bandPdfs(@CurrentUser() user: AuthenticatedUser) {
+    const memberships = await this.db.workspaceMember.findMany({
+      where: { userId: user.id },
+      select: { workspace: { select: { id: true, name: true } } },
+    });
+    const bands = new Map(memberships.map((m) => [m.workspace.id, m.workspace.name]));
+    if (!bands.size) return [];
+    const files = await this.db.mediaAsset.findMany({
+      where: {
+        workspaceId: { in: [...bands.keys()] },
+        mime: 'application/pdf',
+        ready: true,
+        deletedAt: null,
+        OR: [{ ownerId: user.id }, { visibility: 'WORKSPACE' }],
+      },
+      select: { id: true, name: true, size: true, workspaceId: true, scope: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return files.map((file) => ({ ...file, bandName: bands.get(file.workspaceId!) }));
+  }
   @Get('assets') async list(
     @CurrentUser() user: AuthenticatedUser,
     @Query('scope') scope: string,

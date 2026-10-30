@@ -12,7 +12,7 @@ import {
   type Score,
   type ScoreNote,
 } from './score';
-import { scorePartStaves } from './scoreParts';
+import { enableDrumVoices, scorePartOwner, scorePartStaves } from './scoreParts';
 import { midiInsertionRange } from './scoreMidiImport';
 import { clientId } from './clientId';
 
@@ -25,6 +25,14 @@ export function xmlInsertionRange(
 ) {
   if (!source.parts.includes(sourcePart)) throw new Error('가져올 파트를 선택해주세요.');
   const linked = scorePartStaves(source, sourcePart);
+  // Legacy single-voice drum targets must not silently discard the imported foot voice.
+  const pairedDrums = source.drumVoices?.[sourcePart] && linked.length === 2;
+  if (pairedDrums) {
+    const owner = scorePartOwner(score, target);
+    if (scoreInstrument(score, owner).id !== 'drums')
+      throw new Error('드럼의 위·아래 성부를 함께 가져오려면 대상 파트를 드럼으로 선택해주세요.');
+    score = enableDrumVoices(score, owner);
+  }
   const fromParts = linked[0] === sourcePart ? linked : [sourcePart],
     toParts = scorePartStaves(score, target).slice(0, fromParts.length);
   const beats = Math.max(
@@ -33,7 +41,7 @@ export function xmlInsertionRange(
   const range = midiInsertionRange(score, { beats }, target, bar, toParts);
   if (range.bars > 2000)
     throw new Error('더 짧은 악보를 선택해주세요. 최대 2,000마디까지 가져올 수 있어요.');
-  return { ...range, fromParts: fromParts.slice(0, toParts.length), beats };
+  return { ...range, fromParts: fromParts.slice(0, toParts.length), beats, targetScore: score };
 }
 export function insertScoreXml(
   score: Score,
@@ -44,6 +52,7 @@ export function insertScoreXml(
   makeId = () => clientId(),
 ) {
   const range = xmlInsertionRange(score, source, sourcePart, target, bar);
+  score = range.targetScore;
   let next = score;
   for (let i = 0; i < range.parts.length; i++) {
     const part = range.parts[i],

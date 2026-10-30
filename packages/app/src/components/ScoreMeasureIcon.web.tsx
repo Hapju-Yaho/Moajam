@@ -44,11 +44,17 @@ export function ScoreMeasureIcon({
           <path d="M9 11h6" strokeWidth="4" />
         </>
       )}
-      {['append', 'insert', 'delete'].includes(name) && (
+      {['append', 'insert'].includes(name) && (
         <>
           <path d="M3 5v14M15 5v14M3 7h12M3 12h8M3 17h12M14 12h8" />
-          {name !== 'delete' && <path d="M18 8v8" />}
+          <path d="M18 8v8" />
           {name === 'insert' && <path d="M8 4v16" strokeDasharray="2 3" />}
+        </>
+      )}
+      {name === 'delete' && (
+        <>
+          <path d="M2 4v16M18 4v7M2 5h16M2 8h16M2 11h16M2 14h9M2 17h9" />
+          <path d="m14 14 7 7m0-7-7 7" strokeWidth="2.4" />
         </>
       )}
       {name === 'end' && (

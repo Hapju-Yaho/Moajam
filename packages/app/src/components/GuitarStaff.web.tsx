@@ -1074,6 +1074,16 @@ export function GuitarStaff({
                     </g>
                   </>
                 )}
+                {hasTab && (
+                  <g aria-label="타브 줄 시작 세로선" pointerEvents="none" stroke="#293e34" fill="none">
+                    <line x1="45" x2="45" y1={tabTop} y2={tabBottom} strokeWidth="1" />
+                    <path
+                      d={`M 45 ${tabTop - 3} L 41 ${tabTop + 1} L 41 ${tabBottom - 1} L 45 ${tabBottom + 3}`}
+                      strokeWidth="2"
+                      strokeLinejoin="round"
+                    />
+                  </g>
+                )}
                 {hasTab &&
                   tuning.map((open, i) => (
                     <g key={i}>

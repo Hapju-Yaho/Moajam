@@ -117,7 +117,7 @@ export function ScoreXmlImport({
                   value={from}
                   onChange={(e) => setFrom(e.target.value)}
                 >
-                  {source.parts.map((p) => (
+                  {scoreVisibleParts(source).map((p) => (
                     <option key={p} value={p}>
                       {p} · {scoreMeasureCount(source, p)}마디
                     </option>
@@ -157,11 +157,18 @@ export function ScoreXmlImport({
                   선택한 파트의 악보만 가져와요. 파일에 포함된 녹음과 참조 음원은 가져오지 않아요.
                 </p>
               )}
-              {scorePartStaves(source, from).length > scorePartStaves(score, target).length && (
+              {source.drumVoices?.[from] ? (
                 <p>
-                  대상 파트에는 첫 번째 보표만 삽입해요. 다른 보표는 가져올 파트에서 따로 선택할 수
-                  있어요.
+                  드럼의 위·아래 성부를 함께 가져와요. 대상 드럼에 아래 성부가 없으면 자동으로
+                  생성해요.
                 </p>
+              ) : (
+                scorePartStaves(source, from).length > scorePartStaves(score, target).length && (
+                  <p>
+                    대상 파트에는 첫 번째 보표만 삽입해요. 다른 보표는 가져올 파트에서 따로 선택할
+                    수 있어요.
+                  </p>
+                )
               )}
             </fieldset>
           </>

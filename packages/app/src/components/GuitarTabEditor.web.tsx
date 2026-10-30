@@ -1,3 +1,8 @@
+import {
+  copyScoreSelection,
+  pasteScoreSelection,
+  scoreClipboardDuration,
+} from '../lib/scoreDrumClipboard';
 import { setScoreVibrato } from '../lib/score';
 import { ScorePlaybackMeasure } from './ScorePlaybackReadout.web';
 import { ScoreGuitarTechniqueTools } from './ScoreGuitarTechniqueTools.web';
@@ -83,7 +88,6 @@ import {
   setScoreSlideOut,
   setScoreSlideIn,
   insertScoreNote,
-  pasteScoreNotes,
   readScoreClipboard,
   appendScoreNoteAt,
   noteTones,
@@ -109,7 +113,6 @@ import {
   scoreEntryDuration,
   setScoreBeatChord,
   scoreChordPositions,
-  copyScoreNotes,
   setScoreConnection,
   scoreConnectionLabels,
   type ScoreConnectionType,
@@ -328,7 +331,7 @@ function GuitarTabEditorContent({
   onSeek,
   onTempoChange,
 }: {
-  focusMeasure?: { part: string; bar: number } | null;
+  focusMeasure?: { part: string; bar: number; offset?: number } | null;
   toolTab: string;
   voiceToolsHost: HTMLDivElement | null;
   settingsHost: HTMLDivElement | null;
@@ -511,7 +514,7 @@ function GuitarTabEditorContent({
       return { plan: null, error: (error as Error).message };
     }
   })();
-  const copiedNotes = copyScoreNotes(
+  const copiedNotes = copyScoreSelection(
     score,
     part,
     copiedSelection.map((item) => item.id),
@@ -759,11 +762,22 @@ function GuitarTabEditorContent({
       !focusMeasure ||
       handledMixerFocus.current === focusMeasure ||
       focusMeasure.part !== part ||
+      playing ||
       !loaded
     )
       return;
     handledMixerFocus.current = focusMeasure;
-    selectChordPosition(scoreMeasureStart(score, part, focusMeasure.bar));
+    const at = scoreMeasureStart(score, part, focusMeasure.bar) + (focusMeasure.offset ?? 0);
+    if (focusMeasure.offset === undefined) selectChordPosition(at);
+    else {
+      let start = 0;
+      const target = rows.find((item) => {
+        const contains = start <= at && at < start + item.beats;
+        start += item.beats;
+        return contains;
+      });
+      select(target?.id ?? null, activeString, at, focusMeasure.bar);
+    }
   });
   const selectRange = (anchor: string, end: string) => {
     if (disabled) return;
@@ -773,8 +787,11 @@ function GuitarTabEditorContent({
     select(rows[Math.min(first, last)].id);
     setRange({ anchor, end });
   };
+  const clipboardRef = useRef(clipboard);
+  clipboardRef.current = clipboard;
   const copySelection = (writeToSystem = false) => {
     if (!copiedSelection.length) return;
+    clipboardRef.current = copiedNotes;
     onCopy(copiedNotes);
     setMessage(
       `${copiedSelection.length}개 박을 복사했어요. 붙여넣을 위치를 선택하고 Ctrl+V를 누르세요.`,
@@ -789,10 +806,29 @@ function GuitarTabEditorContent({
     }
     focus();
   };
-  const pasteSelection = (copied = clipboard) => {
-    if (disabled || !copied.length || !hasSelection) return;
+  const pasteSelection = (copied = clipboardRef.current) => {
+    if (disabled) {
+      setMessage(
+        playing
+          ? '\uC7AC\uC0DD\uC744 \uBA48\uCD98 \uB4A4 \uBD99\uC5EC\uB123\uC5B4\uC8FC\uC138\uC694.'
+          : '\uC545\uBCF4 \uD3B8\uC9D1 \uAC00\uB2A5 \uC0C1\uD0DC\uC5D0\uC11C \uBD99\uC5EC\uB123\uC5B4\uC8FC\uC138\uC694.',
+      );
+      return;
+    }
+    if (!copied.length) {
+      setMessage(
+        '\uBCF5\uC0AC\uD55C \uC545\uBCF4\uAC00 \uC5C6\uC5B4\uC694. \uAD6C\uAC04\uC744 \uC120\uD0DD\uD574 Ctrl+C\uB85C \uBA3C\uC800 \uBCF5\uC0AC\uD574\uC8FC\uC138\uC694.',
+      );
+      return;
+    }
+    if (!hasSelection) {
+      setMessage(
+        '\uBD99\uC5EC\uB123\uC744 \uC704\uCE58\uAC00 \uC120\uD0DD\uB418\uC9C0 \uC54A\uC558\uC5B4\uC694. \uC545\uBCF4\uC5D0\uC11C \uBD99\uC5EC\uB123\uC744 \uBC15\uC744 \uBA3C\uC800 \uB20C\uB7EC\uC8FC\uC138\uC694.',
+      );
+      return;
+    }
     try {
-      const result = pasteScoreNotes(
+      const result = pasteScoreSelection(
         score,
         part,
         copied,
@@ -801,21 +837,13 @@ function GuitarTabEditorContent({
       );
       commit(result.score);
       const end = scoreBeat(
-        (note && !note.blank ? noteStart : before) +
-          copied.reduce((sum, item) => sum + item.beats, 0),
+        (note && !note.blank ? noteStart : before) + scoreClipboardDuration(copied),
       );
-      let at = 0;
-      const following = result.score.notes
-        .filter((n) => n.part === part)
-        .find((n) => {
-          const contains = at <= end && end < at + n.beats;
-          at = scoreBeat(at + n.beats);
-          return contains;
-        });
-      onSelect(following?.id ?? null);
-      setSelectedAt(following ? { id: following.id, beat: end } : null);
-      setEmptyBeat(following ? null : end);
-      setEmptyMeasure(following ? undefined : scoreMeasureAtBeat(result.score, part, end).bar);
+      // Alignment may replace padding IDs. Keep the insertion cursor in absolute time.
+      onSelect(null);
+      setSelectedAt(null);
+      setEmptyBeat(end);
+      setEmptyMeasure(scoreMeasureAtBeat(result.score, part, end).bar);
       setRange(null);
       setMessage(`${result.ids.length}개 박을 붙여넣었어요. 뒤의 음표는 그만큼 뒤로 이동했어요.`);
       digits.current = null;
@@ -824,6 +852,47 @@ function GuitarTabEditorContent({
       setMessage((error as Error).message);
     }
   };
+  useEffect(() => {
+    const shortcut = (event: globalThis.KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.isComposing)
+        return;
+      const key = event.key.toLowerCase();
+      if (key !== 'c' && key !== 'v') return;
+      const target = event.target;
+      const viewport = editor.current?.closest('.score-editor-viewport') ?? editor.current;
+      if (
+        !(target instanceof Element) ||
+        !viewport ||
+        (!viewport.contains(target) &&
+          target !== document.body &&
+          target !== document.documentElement) ||
+        target.closest('input,textarea,select,[contenteditable="true"],dialog,[role="dialog"]')
+      )
+        return;
+      if (key === 'c' && !copiedSelection.length) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat) return;
+      if (key === 'c') copySelection(true);
+      else if (clipboardRef.current.length) pasteSelection();
+      else if (navigator.clipboard?.readText) {
+        void navigator.clipboard
+          .readText()
+          .then((text) => {
+            const copied = readScoreClipboard(text);
+            if (copied) {
+              clipboardRef.current = copied;
+              onCopy(copied);
+              pasteSelection(copied);
+            } else pasteSelection([]);
+          })
+          .catch(() => pasteSelection([]));
+      } else pasteSelection([]);
+    };
+    window.addEventListener('keydown', shortcut, true);
+    return () => window.removeEventListener('keydown', shortcut, true);
+  });
   const toggleArticulation = (key: 'staccato' | 'ghost' | 'accent') => {
     if (disabled) return;
     if (copiedSelection.some((item) => !item.blank))
@@ -2041,12 +2110,12 @@ function GuitarTabEditorContent({
         if ((event.target as HTMLElement).closest('input,textarea,[contenteditable="true"]'))
           return;
         event.preventDefault();
-        if (disabled) return;
         const copied = readScoreClipboard(event.clipboardData.getData('text/plain'));
         if (copied) {
           onCopy(copied);
           pasteSelection(copied);
-        } else setMessage('악보에서 복사한 구간을 붙여넣어주세요.');
+        } else if (clipboardRef.current.length) pasteSelection();
+        else setMessage('악보에서 복사한 구간을 붙여넣어주세요.');
       }}
       ref={editor}
       tabIndex={0}
@@ -2083,6 +2152,11 @@ function GuitarTabEditorContent({
         />
       )}
       <div className="score-detail-inspector">
+        {message && (
+          <p className="score-message" role="alert" aria-live="polite">
+            {message}
+          </p>
+        )}
         <div
           className="guitar-inputbar score-pitch-tools"
           data-fretted={instrument.tuning.length > 0 ? 'true' : undefined}
@@ -3561,11 +3635,6 @@ function GuitarTabEditorContent({
             </button>
           ))}
         </div>
-      )}
-      {message && (
-        <p className="score-message" role="alert">
-          {message}
-        </p>
       )}
     </div>
   );

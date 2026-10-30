@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "mcp:score-pdf": "node scripts/score-pdf-mcp.mjs",
+    "test:score-pdf": "npm run build && node --import tsx --test src/score-pdf/score-pdf.spec.ts test/score-pdf-mcp.test.mjs test/score-pdf-http.test.mjs test/score-pdf-conversion.test.mjs",
     "dev": "node scripts/database.mjs --generate && node scripts/database.mjs && node scripts/dev.mjs",
     "build": "node scripts/database.mjs --generate && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json -f -fe .js",
     "postinstall": "node scripts/database.mjs --generate",
@@ -28,6 +30,8 @@
     "@aws-sdk/s3-request-presigner": "^3.1146.0",
     "@fastify/multipart": "^9.4.0",
     "@fastify/static": "^10.1.3",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@napi-rs/canvas": "1.0.13",
     "@nestjs/common": "^12.0.3",
     "@nestjs/config": "^12.0.0",
     "@nestjs/core": "^12.0.3",
@@ -41,6 +45,8 @@
     "class-validator": "^0.15.1",
     "dotenv": "^16.4.7",
     "jose": "^6.2.12",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "6.4.299",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"

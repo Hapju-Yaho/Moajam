@@ -104,3 +104,53 @@ test('paired staff conflicts detect secondary notes and replace both staves', ()
   const next = insertScoreXml(score, imported, 'Melody', 'Keys', 1, makeId);
   assert.equal(next.notes.find((n) => n.part === 'Left').pitch, 45);
 });
+
+const drumSource = () => ({
+  title: 'Drums',
+  bpm: 120,
+  parts: ['Kit', 'Feet'],
+  instruments: { Kit: 'drums', Feet: 'drums' },
+  drumVoices: { Kit: 'Feet' },
+  sync: {},
+  notes: [note('hh', 'Kit', 42, 4), note('kick', 'Feet', 36, 4)],
+});
+test('paired drum import creates a missing lower voice and preserves kicks without mutating preview target', () => {
+  const score = {
+    title: 'Target',
+    bpm: 120,
+    parts: ['Drums'],
+    instruments: { Drums: 'drums' },
+    sync: {},
+    notes: [note('old', 'Drums', 38, 4)],
+  };
+  const before = structuredClone(score),
+    imported = drumSource();
+  const range = xmlInsertionRange(score, imported, 'Kit', 'Drums', 1);
+  assert.equal(range.parts.length, 2);
+  assert.deepEqual(range.fromParts, ['Kit', 'Feet']);
+  assert.deepEqual(score, before);
+  const next = insertScoreXml(score, imported, 'Kit', 'Drums', 1, makeId);
+  const lower = next.drumVoices.Drums;
+  assert.ok(lower && next.parts.includes(lower));
+  assert.equal(
+    next.notes.filter((n) => n.part === lower && !n.rest && n.tones.some((t) => t.pitch === 36))
+      .length,
+    1,
+  );
+  assert.equal(
+    next.notes.filter((n) => n.part === 'Drums' && !n.rest && n.tones.some((t) => t.pitch === 42))
+      .length,
+    1,
+  );
+  assert.deepEqual(score, before);
+});
+test('paired drum import detects lower-only conflicts and reuses the existing voice', () => {
+  const score = drumSource();
+  score.notes[0] = { ...score.notes[0], rest: true, tones: [] };
+  assert.equal(xmlInsertionRange(score, drumSource(), 'Kit', 'Kit', 1).conflicts, true);
+  const next = insertScoreXml(score, drumSource(), 'Kit', 'Kit', 1, makeId);
+  assert.deepEqual(next.parts, ['Kit', 'Feet']);
+  assert.equal(next.drumVoices.Kit, 'Feet');
+  assert.equal(next.notes.filter((n) => n.part === 'Feet' && !n.rest && n.pitch === 36).length, 1);
+  assert.throws(() => insertScoreXml(base(), drumSource(), 'Kit', 'Keys', 1, makeId));
+});

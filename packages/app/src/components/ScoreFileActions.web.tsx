@@ -1,4 +1,5 @@
 import { ScoreXmlImport } from './ScoreXmlImport.web';
+import { ScorePdfImport } from './ScorePdfImport.web';
 import { ScoreMidiImport } from './ScoreMidiImport.web';
 import type { Score } from '../lib/score';
 import { prepareScoreExport, scoreExportFiles, type ScoreExportOptions } from '../lib/scoreExport';
@@ -72,6 +73,7 @@ export function ScoreFileActions({
   const [moajamFile, setMoajamFile] = useState<File | null>(null);
   const midiInput = useRef<HTMLInputElement>(null);
   const [midiFile, setMidiFile] = useState<File | null>(null);
+  const [pdfImportOpen, setPdfImportOpen] = useState(false);
   const root = useRef<HTMLElement>(null);
   const generation = useRef(0);
   useEffect(
@@ -212,6 +214,16 @@ export function ScoreFileActions({
       aria-busy={busy}
       data-collapsed={!expanded && !layout.expanded}
     >
+      {createPortal(
+        <ScorePdfImport
+          open={pdfImportOpen}
+          onClose={() => setPdfImportOpen(false)}
+          score={document.score}
+          part={part}
+          onApply={onXmlApply ?? onMidiApply}
+        />,
+        window.document.body,
+      )}
       {layout.exportHost &&
         createPortal(
           <ScoreExportMenu
@@ -222,6 +234,7 @@ export function ScoreFileActions({
             part={scorePartOwner(document.score, part)}
             onSave={() => void save()}
             onImport={() => input.current?.click()}
+            onPdfImport={() => setPdfImportOpen(true)}
             onMidiImport={onMidiApply ? () => midiInput.current?.click() : undefined}
             onXmlImport={
               onXmlApply
@@ -325,6 +338,9 @@ export function ScoreFileActions({
             <ScoreFileIcon name="import" /> 가져오기
           </strong>
           <div className="score-file-row-actions">
+            <button type="button" disabled={locked} onClick={() => setPdfImportOpen(true)}>
+              PDF
+            </button>
             {personalImport}
             <button type="button" disabled={locked} onClick={() => input.current?.click()}>
               파일 불러오기

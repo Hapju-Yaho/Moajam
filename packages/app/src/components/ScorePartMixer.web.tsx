@@ -292,9 +292,10 @@ export function ScorePartMixer({
                         <button
                           className="score-mixer-name"
                           title={`${name} · ${partInstrumentLabel(score, name)}`}
-                          disabled={disabled || playing}
+                          disabled={disabled}
                           onClick={() => onSelect(name)}
                           onDoubleClick={() => {
+                            if (playing) return;
                             setRenamingPart(name);
                             setInstrumentDialog('rename');
                           }}
