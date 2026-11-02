@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { changeMeasureBounds } from '../lib/pdf-measure-bounds';
+import { createPortal } from 'react-dom';
+import { changeMeasureBounds, moveMeasureRow } from '../lib/pdf-measure-bounds';
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 
 export type PdfStructure = {
@@ -29,6 +30,9 @@ export function ScorePdfStructureReview({
   busy,
   onConfirm,
   confirmLabel = '확인 후 음표 분석',
+  confirmHost,
+  measureOnly = false,
+  onReanalyze,
 }: {
   file: File | null;
   structure: PdfStructure;
@@ -36,6 +40,9 @@ export function ScorePdfStructureReview({
   busy: boolean;
   onConfirm: (value: PdfStructure) => void;
   confirmLabel?: string;
+  confirmHost?: HTMLElement | null;
+  measureOnly?: boolean;
+  onReanalyze?: () => void;
 }) {
   const [draft, setDraft] = useState(structure);
   const [part, setPart] = useState(0);
@@ -205,6 +212,9 @@ export function ScorePdfStructureReview({
         <button type="button" aria-pressed={mode === 'add'} onClick={() => setMode('add')}>
           마디 그려서 추가
         </button>
+        {onReanalyze && <button type="button" className="score-pdf-structure-reanalyze" disabled={busy} onClick={onReanalyze}>
+          마디 다시 분석 (API 다시 호출)
+        </button>}
       </div>
       <div className="score-pdf-structure-layout">
         <div className="score-pdf-structure-pages">
@@ -328,56 +338,40 @@ export function ScorePdfStructureReview({
           )}
         </div>
         <div className="score-pdf-structure-fields">
-          <label>
-            마디
-            <select
-              aria-label="수정할 마디"
-              value={selected}
-              onChange={(e) => {
-                setSelected(Number(e.target.value));
-                setPage(current.measures[Number(e.target.value)].page);
-              }}
-            >
-              {current?.measures.map((m, i) => (
-                <option key={i} value={i}>
-                  {m.restCount
-                    ? `${m.number}~${m.number + m.restCount - 1}마디 · ${m.restCount}마디 쉼표`
-                    : `${m.number}마디`}{' '}
-                  · {m.page}페이지
-                </option>
-              ))}
-            </select>
-          </label>
           {bar && (
             <>
-              <label>
-                페이지
-                <input
-                  type="number"
-                  value={bar.page}
-                  onChange={(e) =>
-                    update((rows) =>
-                      rows.map((m, i) =>
-                        i === selected ? { ...m, page: Number(e.target.value) } : m,
-                      ),
-                    )
-                  }
-                />
-              </label>
-              <label>
-                악보 줄
-                <input
-                  type="number"
-                  value={bar.system}
-                  onChange={(e) =>
-                    update((rows) =>
-                      rows.map((m, i) =>
-                        i === selected ? { ...m, system: Number(e.target.value) } : m,
-                      ),
-                    )
-                  }
-                />
-              </label>
+              <div className="score-pdf-row-move-group">
+                <span className="score-pdf-boundary-title">영역 위치 이동</span>
+                <div className="score-pdf-row-move" role="group" aria-label="선택한 줄의 마디 영역 이동">
+                  <div className="score-pdf-row-move-box">영역</div>
+                  {([
+                    { direction: 'up', label: '위로', dx: 0, dy: -1 },
+                    { direction: 'left', label: '왼쪽으로', dx: -1, dy: 0 },
+                    { direction: 'right', label: '오른쪽으로', dx: 1, dy: 0 },
+                    { direction: 'down', label: '아래로', dx: 0, dy: 1 },
+                  ] as const).map(({ direction, label, dx, dy }) => {
+                    const move = () => update((rows) => moveMeasureRow(rows, selected, dx, dy));
+                    const peers = current.measures.filter((m) => m.page === bar.page && m.system === bar.system);
+                    const blocked = peers.some((m) => m.bounds[0] + dx < 0 || m.bounds[2] + dx > 1000 || m.bounds[1] + dy < 0 || m.bounds[3] + dy > 1000);
+                    return <button key={direction} type="button" data-direction={direction} title={`선택 줄 ${label} 이동`}
+                      aria-label={`선택 줄 ${label} 이동`} disabled={busy || blocked}
+                      onPointerDown={(e) => {
+                        if (e.button !== 0 || !e.isPrimary) return;
+                        stopRepeat(); pointerClick.current = true;
+                        e.currentTarget.setPointerCapture(e.pointerId); move();
+                        const repeat = () => { move(); repeatTimer.current = setTimeout(repeat, 60); };
+                        repeatTimer.current = setTimeout(repeat, 350);
+                      }}
+                      onPointerUp={stopRepeat} onPointerCancel={stopRepeat} onLostPointerCapture={stopRepeat}
+                      onClick={(e) => { if (e.detail === 0 || !pointerClick.current) move(); pointerClick.current = false; }}>
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"
+                        style={{ transform: `rotate(${direction === 'up' ? -90 : direction === 'down' ? 90 : direction === 'left' ? 180 : 0}deg)` }}>
+                        <path d="m6 3 5 5-5 5" />
+                      </svg>
+                    </button>;
+                  })}
+                </div>
+              </div>
               <div className="score-pdf-boundary-group">
                 <span className="score-pdf-boundary-title">영역 크기 조정</span>
                 <div
@@ -613,16 +607,22 @@ export function ScorePdfStructureReview({
       </div>
       {error && <p role="alert">{error}</p>}
       {!!errors.length && <p role="alert">{errors[0]}</p>}
+      <ConfirmationFooter host={confirmHost}>
       <button
+        className="score-pdf-structure-save"
         type="button"
         disabled={busy || !!errors.length || !file || !!error}
         onClick={() => onConfirm(draft)}
       >
         {confirmLabel}
       </button>
-      <small>확인하면 전체 PDF와 수정한 구조를 전송하며 API를 1회 호출합니다.</small>
+      </ConfirmationFooter>
+      {!measureOnly && <small>확인하면 전체 PDF와 수정한 구조를 전송하며 API를 1회 호출합니다.</small>}
     </section>
   );
+}
+function ConfirmationFooter({ host, children }: { host?: HTMLElement | null; children: ReactNode }) {
+  return host ? createPortal(children, host) : <>{children}</>;
 }
 function StructurePage({ pdf, page, children }: { pdf: PDFDocumentProxy | null; page: number; children: ReactNode }) {
   const container = useRef<HTMLDivElement>(null);

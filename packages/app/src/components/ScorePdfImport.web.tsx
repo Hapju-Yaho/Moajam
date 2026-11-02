@@ -64,6 +64,8 @@ export function ScorePdfImport({
   initialFile,
   mode = 'convert',
   forceStructureAnalysis = false,
+  loadSavedStructure = false,
+  initialScoreType = 'guitar-tab',
 }: {
   open: boolean;
   onClose: () => void;
@@ -73,8 +75,11 @@ export function ScorePdfImport({
   initialFile?: File;
   mode?: 'convert' | 'measures';
   forceStructureAnalysis?: boolean;
+  loadSavedStructure?: boolean;
+  initialScoreType?: string;
 }) {
   const measureOnly = mode === 'measures';
+  const [structureFooter, setStructureFooter] = useState<HTMLDivElement | null>(null);
   const [measurePreviewUrl, setMeasurePreviewUrl] = useState('');
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -134,7 +139,7 @@ export function ScorePdfImport({
   }, [open, job?.id, job?.status]);
   const [dragging, setDragging] = useState(false);
   const [format, setFormat] = useState('moajam');
-  const [scoreType, setScoreType] = useState('guitar-tab');
+  const [scoreType, setScoreType] = useState(initialScoreType);
   const [name, setName] = useState('');
   const [pages, setPages] = useState<number | null>(null);
   const [pageMode, setPageMode] = useState<'all' | 'specific'>('all');
@@ -367,7 +372,7 @@ export function ScorePdfImport({
       if (bandRequest.current === request) setBandPicking(false);
     }
   };
-  const prepare = async () => {
+  const prepare = async (onlySaved = false) => {
     if (!file || busy || reading || !pages || !selectedPages.length) return;
     setBusy(true);
     setError('');
@@ -398,6 +403,7 @@ export function ScorePdfImport({
           return;
         }
       }
+      if (onlySaved) return;
       const started = await api<Prepared>(`/score-pdf/jobs/${next.id}/analyze`, 'POST', {
         retry: forceStructureAnalysis || next.status === 'failed',
       });
@@ -411,6 +417,12 @@ export function ScorePdfImport({
       setBusy(false);
     }
   };
+  const restoredStructure = useRef(false);
+  useEffect(() => {
+    if (!loadSavedStructure || restoredStructure.current || !file || !pages || busy || reading) return;
+    restoredStructure.current = true;
+    void prepare(true);
+  }, [loadSavedStructure, file, pages, busy, reading]);
   const reanalyze = async () => {
     if (!job || busy) return;
     setBusy(true);
@@ -455,10 +467,6 @@ export function ScorePdfImport({
       setWarnings([]);
       setJob(next);
       setStructureSaved(measureOnly);
-      if (measureOnly) {
-        window.alert('저장되었습니다.');
-        onClose();
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : '구조를 확인하지 못했어요.');
     } finally {
@@ -648,7 +656,7 @@ export function ScorePdfImport({
   return (
     <dialog
       ref={dialog}
-      className={`score-pdf-import${measureOnly ? ' score-pdf-measure-mode' : ''}`}
+      className={`score-pdf-import${measureOnly || job?.status === 'structure_review' ? ' score-pdf-measure-mode' : ''}`}
       aria-labelledby="score-pdf-title"
       onCancel={(e) => {
         // React also forwards a file input's cancel event to its parent dialog.
@@ -665,13 +673,17 @@ export function ScorePdfImport({
       <section>
         <header>
           <h2 id="score-pdf-title">{measureOnly ? 'PDF 악보 마디 분석' : 'PDF 악보 변환'}</h2>
+          <div className="score-pdf-header-actions">
+          <div ref={setStructureFooter} className="score-pdf-header-confirm" />
           <button
+            className="score-pdf-close"
             type="button"
             onClick={onClose}
             aria-label={measureOnly ? 'PDF 악보 마디 분석 닫기' : 'PDF 악보 변환 닫기'}
           >
             ×
           </button>
+          </div>
         </header>
         <p>
           {measureOnly
@@ -688,27 +700,18 @@ export function ScorePdfImport({
                 pages={job.pages}
                 busy={busy}
                 confirmLabel={measureOnly ? '마디 정보 저장' : undefined}
+                confirmHost={structureFooter}
+                measureOnly={measureOnly}
+                onReanalyze={() => {
+                  if (busy) return;
+                  setBusy(true);
+                  void api<Prepared>(`/score-pdf/jobs/${job.id}/analyze`, 'POST', { retry: true })
+                    .then(setJob).catch((e) => setError(e.message)).finally(() => setBusy(false));
+                }}
                 onConfirm={(value) => void confirmStructure(value)}
               />
               {job.diagnostics && <ScorePdfDiagnostics value={job.diagnostics} />}
-              {measureOnly && structureSaved && (
-                <p role="status">마디 정보를 서버에 저장했어요.</p>
-              )}
               {error && <p role="alert">{error}</p>}
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  void api<Prepared>(`/score-pdf/jobs/${job.id}/analyze`, 'POST', { retry: true })
-                    .then(setJob)
-                    .catch((e) => setError(e.message));
-                }}
-              >
-                구조 다시 분석 (API 1회)
-              </button>
-              <button type="button" disabled={busy} onClick={clearJob}>
-                취소
-              </button>
             </>
           )}
         {viewingIssues && job?.structure && job.issues && (
@@ -1441,7 +1444,25 @@ export function ScorePdfImport({
             onConfirm={() => apply(true)}
           />
         )}
+        {measureOnly && structureSaved && <MeasureSavedNotice onClose={onClose} />}
       </section>
     </dialog>
   );
+}
+
+function MeasureSavedNotice({ onClose }: { onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const node = dialog.current;
+    node?.showModal();
+    return () => node?.close();
+  }, []);
+  return <dialog ref={dialog} className="score-pdf-saved-notice" role="alertdialog" aria-labelledby="pdf-saved-notice-title"
+    onKeyDown={(e) => e.stopPropagation()}
+    onCancel={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
+    onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}>
+    <header><h2 id="pdf-saved-notice-title">저장 완료</h2><button type="button" aria-label="저장 완료 알림 닫기" onClick={onClose}>×</button></header>
+    <p>저장되었습니다.</p>
+    <footer><button type="button" autoFocus onClick={onClose}>확인</button></footer>
+  </dialog>;
 }

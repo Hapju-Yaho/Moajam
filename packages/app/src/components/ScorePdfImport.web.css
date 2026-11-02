@@ -985,62 +985,62 @@
 }
 .score-pdf-import.score-pdf-measure-mode {
   width: min(1180px, calc(100vw - 24px));
-  background: #f3f7f3;
-  color: #293f31;
-  border-color: #bccdbf;
+  background: #eef0f2;
+  color: #39414a;
+  border-color: #bbc1c9;
 }
 .score-pdf-import.score-pdf-measure-mode > section > header {
-  background: #304438;
+  background: #34383e;
   border-radius: 8px;
   padding: 10px 12px;
 }
 .score-pdf-import.score-pdf-measure-mode > section > header h2 {
-  color: #f5fbf6;
+  color: #f2f3f5;
 }
 .score-pdf-import.score-pdf-measure-mode .score-pdf-score-type small,
 .score-pdf-import.score-pdf-measure-mode .score-pdf-page-selection small {
-  color: #637968;
+  color: #737c89;
 }
 .score-pdf-import.score-pdf-measure-mode .score-pdf-page-selection {
-  background: #e9f0e9;
-  border-color: #b4c7b8;
-  color: #293f31;
+  background: #e5e8ec;
+  border-color: #b7bec8;
+  color: #39414a;
 }
 .score-pdf-import.score-pdf-measure-mode button[aria-pressed='false'] {
-  background: #f8fbf8;
-  border-color: #aebfb2;
-  color: #526b59;
+  background: #f7f8fa;
+  border-color: #aeb7c4;
+  color: #596574;
 }
 .score-pdf-import.score-pdf-measure-mode button[aria-pressed='true'],
 .score-pdf-import.score-pdf-measure-mode button[aria-pressed='true']:not(:disabled):hover {
-  background: #476f53;
-  border-color: #91b49b;
+  background: #4b535f;
+  border-color: #8b97a8;
   color: #ffffff;
-  box-shadow: inset 0 0 0 1px #6e9578;
+  box-shadow: inset 0 0 0 1px #69788e;
 }
 .score-pdf-import.score-pdf-measure-mode .score-pdf-extract {
-  background: #476f53;
-  border-color: #80a58a;
+  background: #4b535f;
+  border-color: #77879c;
   color: #ffffff;
   font-weight: 600;
 }
 .score-pdf-import.score-pdf-measure-mode .score-pdf-extract:not(:disabled):hover {
-  background: #527f5f;
-  border-color: #a2c3ab;
+  background: #596574;
+  border-color: #9caabc;
 }
 .score-pdf-import.score-pdf-measure-mode .score-pdf-extract:disabled {
-  background: #dfe8e1;
-  border-color: #bdcec2;
-  color: #7b9081;
+  background: #dfe3e9;
+  border-color: #bdc5d0;
+  color: #7b8797;
 }
 .score-pdf-import.score-pdf-measure-mode .score-pdf-analysis-loading {
-  background: #e7f0e8;
-  border-color: #afc6b5;
-  color: #36503e;
+  background: #e7ebf0;
+  border-color: #aebdcc;
+  color: #3d4d63;
 }
 .score-pdf-import.score-pdf-measure-mode .score-pdf-loading-spinner {
-  border-color: #547160;
-  border-top-color: #b7d6bf;
+  border-color: #54677e;
+  border-top-color: #b7c9df;
 }
 .score-pdf-measure-mode .score-pdf-workspace {
   grid-template-columns: minmax(0, 1.7fr) minmax(270px, 1fr);
@@ -1095,3 +1095,34 @@
     height: 42dvh;
   }
 }
+.score-pdf-header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.score-pdf-import.score-pdf-measure-mode button { background: #505762; color: #f2f4f8; border: 1px solid #778291; border-radius: 6px; }
+.score-pdf-import.score-pdf-measure-mode button:not(:disabled):hover { background: #616c7a; border-color: #9ba8ba; }
+.score-pdf-import.score-pdf-measure-mode button:disabled { opacity: .45; cursor: default; }
+.score-pdf-import.score-pdf-measure-mode button[aria-pressed='true'] { background: #344b68; color: white; border-color: #8eaacc; box-shadow: inset 0 0 0 1px #728eae; }
+.score-pdf-import.score-pdf-measure-mode .score-pdf-header-actions .score-pdf-close { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; background: #484e58; color: #f5f7fa; border-color: #7c8798; font-size: 20px; }
+.score-pdf-header-confirm { display: flex; align-items: center; }
+.score-pdf-header-confirm:empty { display: none; }
+.score-pdf-import.score-pdf-measure-mode .score-pdf-header-confirm .score-pdf-structure-save { padding: 7px 14px; background: #484e58; color: #f5f7fa; border: 1px solid #7c8798; font-weight: 600; white-space: nowrap; }
+.score-pdf-import.score-pdf-measure-mode .score-pdf-header-confirm .score-pdf-structure-save:hover:not(:disabled) { background: #616c7a; border-color: #9ba8ba; }
+.score-pdf-structure-review .score-pdf-structure-tools { width: calc(100% - 190px); box-sizing: border-box; }
+.score-pdf-structure-tools .score-pdf-structure-reanalyze { margin-left: auto; }
+@media (max-width: 720px) {
+  .score-pdf-structure-review .score-pdf-structure-tools { width: 100%; }
+}
+.score-pdf-row-move-group { display: grid; gap: 8px; margin-bottom: 8px; }
+.score-pdf-row-move { display: grid; grid-template-columns: 20px 1fr 20px; grid-template-rows: 20px 64px 20px; gap: 4px; }
+.score-pdf-row-move-box { grid-column: 2; grid-row: 2; border: 1px solid #8d9aa9; background: #e0e6ed; color: #5b6878; display: grid; place-items: center; font-size: 12px; }
+.score-pdf-import .score-pdf-row-move button { display: flex; align-items: center; justify-content: center; padding: 0; min-width: 0; min-height: 0; touch-action: none; }
+.score-pdf-row-move button[data-direction='up'] { grid-column: 2; grid-row: 1; }
+.score-pdf-row-move button[data-direction='down'] { grid-column: 2; grid-row: 3; }
+.score-pdf-row-move button[data-direction='left'] { grid-column: 1; grid-row: 2; }
+.score-pdf-row-move button[data-direction='right'] { grid-column: 3; grid-row: 2; }
+.score-pdf-saved-notice { width: min(360px, calc(100vw - 40px)); padding: 0; border: 1px solid #a6b0bd; border-radius: 12px; background: #eef0f2; color: #39414a; box-shadow: 0 14px 48px #11182740; }
+.score-pdf-saved-notice::backdrop { background: #15203066; }
+.score-pdf-saved-notice > header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #34383e; color: #f2f3f5; }
+.score-pdf-saved-notice > header h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.score-pdf-saved-notice > p { margin: 0; padding: 26px 20px; font-size: 14px; }
+.score-pdf-saved-notice > footer { display: flex; justify-content: flex-end; padding: 0 16px 16px; }
+.score-pdf-import.score-pdf-measure-mode .score-pdf-saved-notice > header button { padding: 0; width: 26px; height: 26px; background: #484e58; border-color: #7c8798; color: #f5f7fa; font-size: 18px; }
+.score-pdf-import.score-pdf-measure-mode .score-pdf-saved-notice > footer button { padding: 7px 20px; background: #dce9f7; border-color: #a5bdd8; color: #244d78; font-weight: 600; }

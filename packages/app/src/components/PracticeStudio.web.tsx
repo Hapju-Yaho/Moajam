@@ -458,7 +458,7 @@ export function PracticeStudioSession({
     }
   };
   const projectBusy =
-    !loaded || refreshing || saving || recording || requesting || preparing || !!dialog;
+    (!loaded && !loadFailed) || refreshing || saving || recording || requesting || preparing || !!dialog;
   const onProjectBusy = projectControls?.onBusy;
   const onProjectDirty = projectControls?.onDirty;
   useEffect(() => {

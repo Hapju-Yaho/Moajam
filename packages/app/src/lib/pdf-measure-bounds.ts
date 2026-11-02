@@ -1,5 +1,16 @@
 type Measure = { page: number; system: number; bounds: number[] };
 
+/** Translate a whole staff system without resizing or leaving the PDF page. */
+export function moveMeasureRow<T extends Measure>(rows: T[], selected: number, dx: number, dy: number): T[] {
+  const selectedRow = rows[selected];
+  if (!selectedRow) return rows;
+  const peers = rows.filter((m) => m.page === selectedRow.page && m.system === selectedRow.system);
+  const x = Math.max(-Math.min(...peers.map((m) => m.bounds[0])), Math.min(dx, 1000 - Math.max(...peers.map((m) => m.bounds[2]))));
+  const y = Math.max(-Math.min(...peers.map((m) => m.bounds[1])), Math.min(dy, 1000 - Math.max(...peers.map((m) => m.bounds[3]))));
+  return rows.map((m) => m.page === selectedRow.page && m.system === selectedRow.system
+    ? { ...m, bounds: [m.bounds[0] + x, m.bounds[1] + y, m.bounds[2] + x, m.bounds[3] + y] } : m);
+}
+
 /** Each staff system has one shared vertical extent. */
 export function normalizeMeasureRows<T extends Measure>(rows: T[]): T[] {
   return rows.map((m) => {
