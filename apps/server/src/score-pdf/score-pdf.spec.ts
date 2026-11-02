@@ -11,14 +11,94 @@ async function pdf(pages = 1) {
   return Buffer.from(await doc.save());
 }
 
+test('saved boundary lookup uses PDF content and authenticated owner without recognition', async () => {
+  const bytes = await pdf();
+  let filter: any;
+  const record = { key: 'pdf-measures:hash:guitar-tab', updatedAt: new Date(),
+    value: { name: 'original.pdf', sourcePages: [3], structure: { parts: [{ id: 'g1', name: '기타 1', measures: [{ page: 1 }] }, { id: 'g2', name: '기타 2', measures: [{ page: 1 }] }] } } };
+  const service = new ScorePdfService(undefined, { personalDocument: {
+    findMany: async ({ where }: any) => { filter = where; return where.ownerId === 'alice' ? [record] : []; },
+  } } as never);
+  try {
+    const saved = await service.savedStructures('alice', bytes);
+    assert.equal(saved[0].structure.parts.length, 2);
+    assert.equal(saved[0].structure.parts[0].measures[0].page, 3);
+    assert.equal(filter.ownerId, 'alice');
+    assert.match(filter.key.startsWith, /^pdf-measures:[a-f0-9]{64}:$/);
+    assert.deepEqual(await service.savedStructures('bob', bytes), []);
+    await assert.rejects(() => service.savedStructures('alice', Buffer.from('invalid')));
+  } finally { service.onModuleDestroy(); }
+});
+
+test('measure-only confirmation saves boundaries without starting note recognition', async () => {
+  let calls = 0;
+  let stored: any;
+  const db = { personalDocument: { findUnique: async () => stored, upsert: async ({ create }: any) => { stored = create; return stored; } } };
+  const structure = {
+    bpm: 120,
+    key: null,
+    warnings: [],
+    parts: [
+      {
+        id: 'p1',
+        name: '기타 1',
+        instrument: 'guitar',
+        capo: 0,
+        tabLines: 6,
+        measures: [{ number: 1, page: 1, meter: [4, 4], system: 1, bounds: [20, 100, 980, 300] }],
+      },
+    ],
+  };
+  const service = new ScorePdfService({
+    enabled: true,
+    recognize: async () => {
+      calls++;
+      return {
+        data: structure,
+        model: 'fake',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      };
+    },
+  } as never, db as never);
+  try {
+    const job = await service.start('alice', 'measure.pdf', await pdf());
+    service.analyze('alice', job.id);
+    for (let i = 0; i < 100 && service.status('alice', job.id).status === 'analyzing'; i++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    const result = service.result('alice', job.id);
+    assert.equal(result.status, 'structure_review');
+    const revision = result.revision;
+    const saved = await service.saveStructure('alice', job.id, result.structure, revision);
+    assert.equal(saved.status, 'structure_review');
+    assert.equal(saved.revision, revision + 1);
+    assert.equal(calls, 1);
+    await assert.rejects(() => service.saveStructure('alice', job.id, result.structure, revision));
+    await assert.rejects(() => service.saveStructure('bob', job.id, result.structure, saved.revision));
+    const bytes = service.source('alice', job.id);
+    const restored = new ScorePdfService(undefined, db as never);
+    try {
+      const reopened = await restored.start('alice', 'renamed.pdf', Buffer.from(bytes.base64, 'base64'));
+      assert.deepEqual(restored.result('alice', reopened.id).structure, service.result('alice', job.id).structure);
+    } finally { restored.onModuleDestroy(); }
+  } finally {
+    service.onModuleDestroy();
+  }
+});
+
 test('temporary job list and PDF restoration are owner scoped and deletion updates the list', async () => {
   const service = new ScorePdfService();
   try {
     const bytes = await pdf(2);
     const alice = await service.start('alice', 'alice.pdf', bytes);
     const bob = await service.start('bob', 'bob.pdf', await pdf(1));
-    assert.deepEqual(service.list('alice').map(job => job.id), [alice.id]);
-    assert.deepEqual(service.list('bob').map(job => job.id), [bob.id]);
+    assert.deepEqual(
+      service.list('alice').map((job) => job.id),
+      [alice.id],
+    );
+    assert.deepEqual(
+      service.list('bob').map((job) => job.id),
+      [bob.id],
+    );
     assert.deepEqual(Buffer.from(service.source('alice', alice.id).base64, 'base64'), bytes);
     assert.throws(() => service.source('bob', alice.id));
     assert.throws(() => service.remove('bob', alice.id));
@@ -26,7 +106,9 @@ test('temporary job list and PDF restoration are owner scoped and deletion updat
     assert.deepEqual(service.list('alice'), []);
     assert.throws(() => service.source('alice', alice.id));
     assert.equal(service.list('bob').length, 1);
-  } finally { service.onModuleDestroy(); }
+  } finally {
+    service.onModuleDestroy();
+  }
 });
 
 test('cleanup removes only own inactive PDF preparations and keeps current and other users jobs', async () => {
@@ -39,8 +121,13 @@ test('cleanup removes only own inactive PDF preparations and keeps current and o
     assert.throws(() => service.status('alice', old.id));
     assert.equal(service.status('alice', kept.id).status, 'prepared');
     assert.equal(service.status('bob', other.id).status, 'prepared');
-    assert.equal((await service.start('alice', 'replacement.pdf', await pdf(4))).status, 'prepared');
-  } finally { service.onModuleDestroy(); }
+    assert.equal(
+      (await service.start('alice', 'replacement.pdf', await pdf(4))).status,
+      'prepared',
+    );
+  } finally {
+    service.onModuleDestroy();
+  }
 });
 test('PDF preparation: entire Base64, deduplication, ownership and no fabricated result', async () => {
   const service = new ScorePdfService();

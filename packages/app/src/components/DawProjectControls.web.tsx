@@ -1,7 +1,13 @@
 import { useDawProject } from '../lib/dawProjectContext';
+import { createContext, useContext } from 'react';
 import './DawProjectControls.web.css';
-export function DawProjectToolbar() {
-  return useDawProject()?.toolbar ?? null;
+const LibraryAction = createContext<(() => void) | undefined>(undefined);
+export function DawProjectToolbar({ onOpenLibrary }: { onOpenLibrary?: () => void }) {
+  return <LibraryAction.Provider value={onOpenLibrary}>{useDawProject()?.toolbar ?? null}</LibraryAction.Provider>;
+}
+export function DawLibraryButton() {
+  const open = useContext(LibraryAction);
+  return open ? <button type="button" onClick={open}>클립 보관함</button> : null;
 }
 export function DawProjectPanel() {
   return useDawProject()?.panel ?? null;

@@ -10,6 +10,7 @@ import { api, serverConfigured, uploadRemoteFile } from '../lib/remote';
 import { readMedia, writeMedia } from '../lib/mediaStore';
 import { trackParts, trackPartLabel } from '../lib/trackParts';
 import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
+import type { SongAudio } from '../lib/songAudio';
 type FileEntry = {
   id: string;
   name: string;
@@ -34,6 +35,7 @@ export function SongPdfLibrary({
   embedded?: boolean;
 }) {
   const { workspaceId, currentUserId } = useMockAppState();
+  const [songAudio] = useWorkspaceValue<SongAudio | null>(`song/${songId}/audio`, null);
   const [parts, setParts] = useWorkspaceValue<Record<string, string>>(
     'song/' + songId + '/pdf-parts',
     {},
@@ -459,6 +461,7 @@ export function SongPdfLibrary({
       {preview &&
         render(
           <PdfScoreReader
+            songAudio={songAudio}
             embedded={embedded}
             key={preview.url}
             name={preview.name}

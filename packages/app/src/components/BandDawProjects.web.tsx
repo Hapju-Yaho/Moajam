@@ -5,6 +5,7 @@ import { serverConfigured } from '../lib/remote';
 import { listBandProjects, manageBandProject, type BandDawProject } from '../lib/bandDawProjects';
 import {
   DawProjectToolbar,
+  DawLibraryButton,
   DawProjectPanel,
   ProjectRefreshIcon,
   ProjectPencilIcon,
@@ -277,6 +278,7 @@ export function BandDawProjects({
         </div>
       </div>
       <div className="daw-project-actions">
+        <DawLibraryButton />
         <button disabled={!loaded || working} onClick={() => open('create')}>
           새 프로젝트
         </button>
@@ -575,12 +577,9 @@ export function BandDawProjects({
             <div className="studio-heading-info">
               <PracticeSectionTitle title="녹음 프로젝트" />
             </div>
-            <div className="studio-heading-actions">
-              <button onClick={() => setLibraryOpen(true)}>클립 보관함</button>
-            </div>
           </header>
           <div className="studio-console daw-project-empty">
-            <DawProjectToolbar />
+            <DawProjectToolbar onOpenLibrary={() => setLibraryOpen(true)} />
             <div className="daw-project-empty-message">
               {loaded ? '새 프로젝트를 생성해 주세요.' : '프로젝트를 불러오는 중…'}
             </div>

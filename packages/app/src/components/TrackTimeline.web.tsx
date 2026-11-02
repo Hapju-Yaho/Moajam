@@ -727,7 +727,7 @@ export function TrackTimeline({
               </button>
             )}
           </div>
-          <p aria-live="polite">{saveLabel}</p>
+          {!!saveLabel && <p aria-live="polite">{saveLabel}</p>}
         </div>
         <input
           ref={fileInput}
@@ -750,7 +750,7 @@ export function TrackTimeline({
           className="studio-heading-actions"
           style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}
         >
-          {onOpenLibrary && (
+          {onOpenLibrary && !projectControls && (
             <button type="button" onClick={onOpenLibrary}>
               클립 보관함
             </button>
@@ -773,7 +773,7 @@ export function TrackTimeline({
         </div>
       </header>
       <div className="studio-console">
-        <DawProjectToolbar />
+        <DawProjectToolbar onOpenLibrary={onOpenLibrary} />
         <DawProjectPanel />
         <div className="studio-transport">
           <div className="studio-transport-buttons">

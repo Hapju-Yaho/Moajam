@@ -5,6 +5,7 @@ import { ActionButton, Meta, PageHeading } from '../components/ProductUI';
 import { SongPdfLibrary } from '../components/SongPdfLibrary.web';
 import { SongLyricsPanel } from '../components/SongLyrics.web';
 import { ReferenceVideo } from '../components/ReferenceVideo';
+import { SongAudioPlayer } from '../components/SongAudioPlayer';
 import { PracticeStudio } from '../components/PracticeStudio';
 import { AppIcon } from '../components/icons';
 import { BandScoreProjects } from './BandScoreEditorScreen.web';
@@ -556,6 +557,7 @@ function PersonalPracticeWorkspace({ navigate, user, entityId }: ScreenProps & {
                       <small>{selected.bandName}</small>
                       <h2>{selected.title}</h2>
                       <p>{selected.artist}</p>
+                      <SongAudioPlayer songId={selected.id} />
                     </div>
                     <div className="personal-practice-next">
                       <button

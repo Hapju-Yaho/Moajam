@@ -5,6 +5,7 @@ import { ReferenceVideo } from '../ReferenceVideo';
 import { useMockAppState, useWorkspaceValue } from '../../state/MockAppState';
 import type { WorkspaceSong } from '../../mocks/workspaces';
 import { PracticeStudio } from '../PracticeStudio';
+import { SongAudioPlayer } from '../SongAudioPlayer';
 import { ActionButton, Copy, PageHeading, Meta, Surface, FlexRow } from '../ProductUI';
 import type { Arrangement } from './SongOverview';
 export function SongPractice({
@@ -49,6 +50,7 @@ export function SongPractice({
             </Meta>
             <PageHeading style={{ fontSize: 28 }}>{song.title}</PageHeading>
             <Copy style={{ color: '#75847b' }}>{song.artist}</Copy>
+            <SongAudioPlayer songId={song.id} />
             <FlexRow nativeID="practice-score-actions" wrap>
               <SongPdfLibrary songId={song.id} title={song.title} />
               {navigate && (
