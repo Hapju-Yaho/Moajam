@@ -1,12 +1,47 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import { moduleUrl } from './load-typescript.mjs';
-const { lyricsSections, snapLyricsBeat, addLyricsCue, activeLyricsSection, lyricsCueLabel, moveLyricsCue } = await import(
-  moduleUrl(new URL('../packages/app/src/lib/lyricsTiming.ts', import.meta.url))
-);
+const {
+  lyricsSections,
+  snapLyricsBeat,
+  addLyricsCue,
+  activeLyricsSection,
+  lyricsCueLabel,
+  moveLyricsCue,
+  recordLyricsCue,
+} = await import(moduleUrl(new URL('../packages/app/src/lib/lyricsTiming.ts', import.meta.url)));
+
+test('redo clears only one cue, restores it before the next cue and rejects late recording', () => {
+  const original = [
+    { section: 0, beat: 0 },
+    { section: 1, beat: 4 },
+    { section: 2, beat: 8 },
+  ];
+  const remaining = original.filter((cue) => cue.section !== 1);
+  assert.deepEqual(remaining, [original[0], original[2]]);
+  assert.deepEqual(recordLyricsCue(remaining, 1, 5.2), [
+    original[0],
+    { section: 1, beat: 5 },
+    original[2],
+  ]);
+  assert.deepEqual(addLyricsCue(remaining, 5.2, 3), [
+    original[0],
+    { section: 1, beat: 5 },
+    original[2],
+  ]);
+  assert.throws(() => recordLyricsCue(remaining, 1, 8));
+  assert.throws(() => recordLyricsCue(remaining, 1, 9));
+  assert.throws(() => recordLyricsCue(remaining, 1, 7.9));
+  assert.throws(() => addLyricsCue(remaining, 9, 3));
+  assert.equal(remaining[1].beat, 8);
+});
 
 test('moving or re-recording one lyric preserves later cues and snaps within neighbours', () => {
-  const original = [{ section: 0, beat: 1 }, { section: 1, beat: 4 }, { section: 2, beat: 8 }];
+  const original = [
+    { section: 0, beat: 1 },
+    { section: 1, beat: 4 },
+    { section: 2, beat: 8 },
+  ];
   const moved = moveLyricsCue(original, 1, 5.26);
   assert.deepEqual(moved, [original[0], { section: 1, beat: 5.5 }, original[2]]);
   assert.equal(original[1].beat, 4);
@@ -45,9 +80,9 @@ test('following handles prelude, seek backwards and the last section without an 
   assert.equal(activeLyricsSection(cues, 5), 0);
 });
 
-test('recorded beats display bar and fractional beat labels for the chosen meter',()=>{
- assert.equal(lyricsCueLabel(.5,[4,4]),'1\uB9C8\uB514 \u00B7 1.5\uBC15');
- assert.equal(lyricsCueLabel(4,[4,4]),'2\uB9C8\uB514 \u00B7 1\uBC15');
- assert.equal(lyricsCueLabel(.5,[6,8]),'1\uB9C8\uB514 \u00B7 2\uBC15');
- assert.equal(lyricsCueLabel(3,[6,8]),'2\uB9C8\uB514 \u00B7 1\uBC15');
+test('recorded beats display bar and fractional beat labels for the chosen meter', () => {
+  assert.equal(lyricsCueLabel(0.5, [4, 4]), '1\uB9C8\uB514 \u00B7 1.5\uBC15');
+  assert.equal(lyricsCueLabel(4, [4, 4]), '2\uB9C8\uB514 \u00B7 1\uBC15');
+  assert.equal(lyricsCueLabel(0.5, [6, 8]), '1\uB9C8\uB514 \u00B7 2\uBC15');
+  assert.equal(lyricsCueLabel(3, [6, 8]), '2\uB9C8\uB514 \u00B7 1\uBC15');
 });

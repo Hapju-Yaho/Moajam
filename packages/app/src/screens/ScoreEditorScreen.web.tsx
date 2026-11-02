@@ -1,4 +1,6 @@
 import { ScoreReferencePosition } from '../components/ScoreReferencePosition.web';
+import { scoreTimedLyrics } from '../lib/scoreTimedLyrics';
+import type { LyricsTimingDocument } from '../lib/lyricsTiming';
 import { keyboardPlaybackScore } from '../lib/scoreTuning';
 import { clientId } from '../lib/clientId';
 import { ScoreTuningControl } from '../components/ScoreTuningControl.web';
@@ -159,6 +161,15 @@ export function ScoreEditorScreen({
   const userId = useIdentity();
   const { workspaceId, workspace, adoptedSongs } = useMockAppState();
   const song = adoptedSongs.find((item) => item.id === entityId);
+  const [songLyrics] = useWorkspaceValue<string>(`song/${entityId}/lyrics`, '');
+  const [songLyricsTiming] = useWorkspaceValue<LyricsTimingDocument>(
+    `song/${entityId}/lyrics-timing`,
+    { version: 1, lyrics: '', tracks: {} },
+  );
+  const timedLyrics = useMemo(
+    () => scoreTimedLyrics(songLyricsTiming, songLyrics),
+    [songLyricsTiming, songLyrics],
+  );
   const defaultTitle = useRef('나의 악보');
   defaultTitle.current = song?.title ?? '나의 악보';
   const [arrangement] = useWorkspaceValue(`song/${entityId}/arrangement`, {
@@ -1529,6 +1540,7 @@ export function ScoreEditorScreen({
           />
           <div className="score-transport-host" ref={setTransportHost} />
           <GuitarTabEditor
+            timedLyrics={timedLyrics}
             focusMeasure={mixerFocus}
             transportHost={transportHost}
             onSeek={(beat, end, repeat) => {

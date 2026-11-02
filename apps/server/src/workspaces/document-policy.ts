@@ -313,11 +313,13 @@ function validLyricsTiming(value: unknown): boolean {
     )
       return false;
     let previous = -1;
+    let previousSection = -1;
     return track.cues.every((cue, index) => {
       if (
         !object(cue) ||
-        cue.section !== index ||
-        index >= count ||
+        !Number.isInteger(cue.section) ||
+        (cue.section as number) <= previousSection ||
+        (cue.section as number) >= count ||
         typeof cue.beat !== 'number' ||
         !Number.isFinite(cue.beat) ||
         cue.beat < 0 ||
@@ -327,6 +329,7 @@ function validLyricsTiming(value: unknown): boolean {
       )
         return false;
       previous = cue.beat;
+      previousSection = cue.section as number;
       return true;
     });
   });

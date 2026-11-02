@@ -21,6 +21,7 @@ import { ScoreRepeatDialog } from './ScoreRepeatDialog.web';
 import { ScoreToolbarHelp } from './ScoreToolbarHelp.web';
 import { ScoreMeasureIcon } from './ScoreMeasureIcon.web';
 import { ScoreImportOverwrite } from './ScoreImportOverwrite.web';
+import type { TimedScoreLyric } from '../lib/scoreTimedLyrics';
 import { useScoreEditorLayout } from './ScoreEditorLayout.web';
 import {
   scoreNaturalPitch,
@@ -162,6 +163,8 @@ export function GuitarTabEditor({
   | 'onViewToolsHost'
   | 'onBackingHost'
   | 'onLeftToolsHost'
+  | 'showTimedLyrics'
+  | 'setShowTimedLyrics'
 > & {
   partControls?: ReactNode;
   onEnsembleChange?: (value: boolean) => void;
@@ -171,6 +174,7 @@ export function GuitarTabEditor({
 }) {
   // Keep shared media mounted while the part-specific editor resets.
   const [toolTab, setToolTab] = useState('notes');
+  const [showTimedLyrics, setShowTimedLyrics] = useState(false);
   const [settingsHost, setSettingsHost] = useState<HTMLDivElement | null>(null);
   const [voiceToolsHost, setVoiceToolsHost] = useState<HTMLDivElement | null>(null);
   const [viewToolsHost, setViewToolsHost] = useState<HTMLDivElement | null>(null);
@@ -285,6 +289,8 @@ export function GuitarTabEditor({
         key={resetKey}
         {...props}
         toolTab={toolTab}
+        showTimedLyrics={showTimedLyrics}
+        setShowTimedLyrics={setShowTimedLyrics}
         voiceToolsHost={voiceToolsHost}
         settingsHost={instrumentControlsHost ?? settingsHost}
         onViewToolsHost={setViewToolsHost}
@@ -332,6 +338,9 @@ function GuitarTabEditorContent({
   transportHost,
   onSeek,
   onTempoChange,
+  timedLyrics = [],
+  showTimedLyrics,
+  setShowTimedLyrics,
 }: {
   focusMeasure?: { part: string; bar: number; offset?: number } | null;
   toolTab: string;
@@ -347,6 +356,9 @@ function GuitarTabEditorContent({
   transportHost?: HTMLDivElement | null;
   onSeek?: (beat: number, end?: number, repeat?: boolean) => void;
   onTempoChange?: (bpm: number) => void;
+  timedLyrics?: TimedScoreLyric[];
+  showTimedLyrics: boolean;
+  setShowTimedLyrics: (value: boolean) => void;
   ensemble?: boolean;
   playAll?: boolean;
   onPartSelect?: (part: string, note?: string) => void;
@@ -374,6 +386,12 @@ function GuitarTabEditorContent({
   onCopy: (notes: ScoreClipboardNote[]) => void;
 }) {
   const layout = useScoreEditorLayout();
+  const [lyricsAlert, setLyricsAlert] = useState(false);
+  useEffect(() => {
+    if (!lyricsAlert) return;
+    const timer = setTimeout(() => setLyricsAlert(false), 4000);
+    return () => clearTimeout(timer);
+  }, [lyricsAlert]);
   const renderSettings = (children: ReactNode) =>
     layout.expanded && settingsHost ? createPortal(children, settingsHost) : children;
   const displayParts = ensemble ? score.parts : scorePartStaves(score, part);
@@ -381,7 +399,11 @@ function GuitarTabEditorContent({
     ensemble || (displayParts.length > 1 && scoreInstrument(score, part).id !== 'drums')
       ? ScoreEnsemble
       : GuitarStaff;
-  const [pendingPaste, setPendingPaste] = useState<{ copied: ScoreClipboardNote[]; beat: number; part: string } | null>(null);
+  const [pendingPaste, setPendingPaste] = useState<{
+    copied: ScoreClipboardNote[];
+    beat: number;
+    part: string;
+  } | null>(null);
   const [string, setString] = useState(1),
     [beats, setBeats] = useState(1);
   const [inputTriplet, setInputTriplet] = useState(false);
@@ -1919,6 +1941,42 @@ function GuitarTabEditorContent({
   );
   const zoomControl = (
     <div className="score-zoom">
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        <button
+          type="button"
+          aria-pressed={showTimedLyrics}
+          style={{ width: 'auto', padding: '4px 8px' }}
+          onClick={() => {
+            if (showTimedLyrics) setShowTimedLyrics(false);
+            else if (!timedLyrics.length) setLyricsAlert(true);
+            else {
+              setShowTimedLyrics(true);
+              setLyricsAlert(false);
+            }
+          }}
+        >
+          가사 출력
+        </button>
+        {lyricsAlert && (
+          <span
+            role="status"
+            style={{
+              position: 'absolute',
+              right: 0,
+              top: '100%',
+              zIndex: 30,
+              padding: '8px 10px',
+              borderRadius: 6,
+              background: '#263d32',
+              color: '#fff',
+              whiteSpace: 'nowrap',
+              fontSize: 12,
+            }}
+          >
+            박자가 입력된 가사가 없습니다.
+          </span>
+        )}
+      </div>
       <button aria-label="악보 축소" onClick={() => setZoom(Math.max(60, zoom - 10))}>
         −
       </button>
@@ -3376,6 +3434,7 @@ function GuitarTabEditorContent({
             )}
           </header>
           <StaffView
+            timedLyrics={showTimedLyrics ? timedLyrics : undefined}
             showBeatMarkers={showBeatMarkers}
             parts={displayParts}
             onPartSelect={selectStaffPart}
