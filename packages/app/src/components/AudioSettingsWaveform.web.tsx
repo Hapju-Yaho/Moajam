@@ -1,12 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { waveformPeaks } from '../lib/practiceTimeline';
 import { signatures } from '../lib/practiceTimeline';
 import { clampWaveformZoom, dragWaveformZoom, waveformBarTicks, waveformContentWidth } from '../lib/audioWaveformView';
 
-export function AudioSettingsWaveform({ file, duration, time, start, onSeek, bpm, onBpmChange, signature, onSignatureChange }: {
+export function AudioSettingsWaveform({ file, duration, time, start, onSeek, bpm, onBpmChange, signature, onSignatureChange, metronomeControls }: {
   file: File; duration: number; time: number; start: number; onSeek: (time: number) => void;
   bpm: number; onBpmChange: (bpm: number) => void;
   signature: string; onSignatureChange: (signature: string) => void;
+  metronomeControls?: ReactNode;
 }) {
   const [path, setPath] = useState('');
   const [error, setError] = useState('');
@@ -57,6 +58,7 @@ export function AudioSettingsWaveform({ file, duration, time, start, onSeek, bpm
         <label>박자 <select value={signature} onChange={(e) => onSignatureChange(e.target.value)}>
           {signatures.map((value) => <option key={value} value={value}>{value}</option>)}
         </select></label>
+        {metronomeControls}
       </div>
       <div role="group" aria-label="음원 파형 배율">
         <button type="button" aria-label="파형 축소" disabled={zoom <= 0.25} onClick={() => changeZoom(zoom / 1.25)}>−</button>

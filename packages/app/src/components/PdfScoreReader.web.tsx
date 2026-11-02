@@ -10,6 +10,7 @@ import { readPersonal, writePersonal } from '../lib/personal-store';
 import { useIdentity } from '../state/Identity';
 import { nearestPdfPartPosition } from '../lib/pdf-part-position';
 import { pdfMeasureProgress } from '../lib/pdf-measure-progress';
+import { pdfPlaybackTimeline, pdfTimelinePosition } from '../lib/pdf-playback-timeline';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import './PerformanceReader.web.css';
 
@@ -120,6 +121,7 @@ export function PdfScoreReader({
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioStart, setAudioStart] = useState(0);
   const [audioUrl, setAudioUrl] = useState('');
+  const [audioVolume, setAudioVolume] = useState(1);
   const [loadingSongAudio, setLoadingSongAudio] = useState(false);
   const linkedAudio = useRef<HTMLAudioElement>(null);
   const audioConfig = useRef({ enabled: listenAlong, start: audioStart });
@@ -183,19 +185,16 @@ export function PdfScoreReader({
     } finally { setPreparingAnalysis(false); }
   };
   const parts = (savedChoices ?? []).flatMap((choice) => choice.structure.parts.map((part) => ({ part, bpm: choice.structure.bpm ?? 120 })));
-  let totalBeats = 0;
-  const timeline = (selectedPart?.measures ?? []).map((measure) => {
-    const start = totalBeats;
-    const length = (measure.meter[0] * 4 / measure.meter[1]) * (measure.restCount ?? 1);
-    totalBeats += length;
-    return { measure, start, end: totalBeats };
-  });
-  const activeEntry = timeline.find((entry) => position >= entry.start && position < entry.end) ?? timeline.at(-1);
+  const timeline = pdfPlaybackTimeline(selectedPart?.measures ?? []);
+  const totalBeats = timeline.at(-1)?.end ?? 0;
+  const { active: activeEntry, waiting: waitingEntry, remainingBars } = pdfTimelinePosition(timeline, position);
   const activeMeasure = activeEntry?.measure;
+  const focusMeasure = activeMeasure ?? waitingEntry?.measure;
   const measureProgress = activeEntry ? pdfMeasureProgress(position, activeEntry.start,
     activeEntry.measure.meter, activeEntry.measure.restCount ?? 1) : null;
   const nextMeasure = activeEntry && measureProgress?.previewNext
-    ? timeline[timeline.indexOf(activeEntry) + 1]?.measure : undefined;
+    ? (timeline[timeline.indexOf(activeEntry) + 1]?.gapBars === 0 ? timeline[timeline.indexOf(activeEntry) + 1]?.measure : undefined)
+    : remainingBars === 1 ? waitingEntry?.measure : undefined;
   const seekMeasure = (measure: PdfStructure['parts'][number]['measures'][number]) => {
     const entry = timeline.find((entry) => entry.measure === measure);
     if (!entry) return;
@@ -244,12 +243,12 @@ export function PdfScoreReader({
     return () => { cancelAnimationFrame(frame); linkedAudio.current?.pause(); };
   }, [playing, bpm, countEnabled, countBeats, totalBeats, seekRevision]);
   useEffect(() => {
-    if (!following || !activeMeasure) return;
+    if (!following || !focusMeasure) return;
     const frame = requestAnimationFrame(() => activeRegion.current?.scrollIntoView({
       block: 'center', inline: 'nearest', behavior: 'smooth',
     }));
     return () => cancelAnimationFrame(frame);
-  }, [following, selectedPart, activeMeasure?.number, activeMeasure?.page, width, zoom, expanded, layoutRevision]);
+  }, [following, selectedPart, focusMeasure?.number, focusMeasure?.page, width, zoom, expanded, layoutRevision]);
   const inline = embedded && !expanded;
   useEffect(() => {
     if (!inline) dialog.current?.showModal();
@@ -342,7 +341,7 @@ export function PdfScoreReader({
               const entry = parts[Number(e.target.value)];
               setPlaying(false);
               if (!entry) { setSelectedPart(null); setPosition(0); return; }
-              setPosition(nearestPdfPartPosition(activeMeasure, entry.part.measures));
+              setPosition(nearestPdfPartPosition(focusMeasure, entry.part.measures));
               setSelectedPart(entry.part);
               setBpm(entry.bpm);
             }}><option value={-1}>선택 안함</option>{parts.map((entry, i) => <option key={i} value={i}>{entry.part.name}</option>)}</select>
@@ -412,6 +411,13 @@ export function PdfScoreReader({
             <span className="pdf-follow-audio-name" title={songAudio?.name}>
               {loadingSongAudio ? '음원 불러오는 중…' : songAudio?.name ?? '등록된 음원 없음'}
             </span>
+            <label className="pdf-follow-volume">음량
+              <input type="range" aria-label="함께 듣는 음원 음량" min={0} max={1} step={0.01} value={audioVolume}
+                disabled={!audioUrl || loadingSongAudio} onChange={(e) => {
+                  const value = Number(e.target.value); setAudioVolume(value);
+                  if (linkedAudio.current) linkedAudio.current.volume = value;
+                }} />
+            </label>
 
             </div>
           </> : <span>마디를 분석한 기록이 없습니다.</span>}
@@ -446,7 +452,7 @@ export function PdfScoreReader({
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {selectedPart.measures.filter((m) => m.page === page).map((m) => <g key={m.number}>
                 <rect x={m.bounds[0]} y={m.bounds[1]} width={m.bounds[2] - m.bounds[0]} height={m.bounds[3] - m.bounds[1]}
-                  ref={activeMeasure === m ? activeRegion : undefined}
+                  ref={focusMeasure === m ? activeRegion : undefined}
                   role="button" tabIndex={0} aria-label={`${m.number}마디 첫 박으로 이동`}
                   style={{ pointerEvents: 'all', cursor: 'pointer' }}
                   onClick={() => seekMeasure(m)}
@@ -470,7 +476,9 @@ export function PdfScoreReader({
                   fill="#737b79" fontSize={13}>
                   {measureProgress?.ordinal} / {m.restCount}마디 진행 중
                 </text>}
-                {activeMeasure === m && countdown > 0 && <g role="status" aria-label={`재생 시작까지 ${countdown}박`}>
+                {waitingEntry?.measure === m && <text x={m.bounds[0] + 4} y={Math.max(16, m.bounds[1] - 22)}
+                  fill="#697687" fontSize={15} fontWeight="600">{remainingBars}마디 다음</text>}
+                {focusMeasure === m && countdown > 0 && <g role="status" aria-label={`재생 시작까지 ${countdown}박`}>
                   <rect x={m.bounds[0]} y={Math.max(0, m.bounds[1] - 60)} width={56} height={54} rx={12} fill="rgba(52,56,62,.72)" />
                   <text x={m.bounds[0] + 28} y={Math.max(0, m.bounds[1] - 60) + 39} textAnchor="middle" fill="white" fontSize={42} fontWeight="bold">{countdown}</text>
                 </g>}

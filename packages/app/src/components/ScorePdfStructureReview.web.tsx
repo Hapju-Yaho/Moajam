@@ -55,6 +55,7 @@ export function ScorePdfStructureReview({
   const pageElements = useRef(new Map<number, HTMLDivElement>());
   const origin = useRef<number[] | null>(null);
   const drawingPage = useRef(1);
+  const edgeDrag = useRef<{ selected: number; edge: number } | null>(null);
   const repeatTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerClick = useRef(false);
   const stopRepeat = () => {
@@ -224,7 +225,7 @@ export function ScorePdfStructureReview({
             Array.from({ length: pages }, (_, i) => i + 1).map((pageNumber) => {
               const page = pageNumber;
               return <div key={page} ref={(node) => { if (node) pageElements.current.set(page, node); else pageElements.current.delete(page); }}>
-              <p className="score-pdf-page-label">{page}???</p>
+              <p className="score-pdf-page-label">{page}페이지</p>
               <StructurePage pdf={pdf} page={page}>
 
               <svg
@@ -316,6 +317,41 @@ export function ScorePdfStructureReview({
                             ? `${m.number}~${m.number + m.restCount - 1} · ${m.restCount}마디 쉼표`
                             : m.number}
                         </text>
+                        {mode === 'select' && [
+                          { edge: 0, x1: m.bounds[0], y1: m.bounds[1], x2: m.bounds[0], y2: m.bounds[3], label: '왼쪽' },
+                          { edge: 2, x1: m.bounds[2], y1: m.bounds[1], x2: m.bounds[2], y2: m.bounds[3], label: '오른쪽' },
+                          { edge: 1, x1: m.bounds[0], y1: m.bounds[1], x2: m.bounds[2], y2: m.bounds[1], label: '위쪽' },
+                          { edge: 3, x1: m.bounds[0], y1: m.bounds[3], x2: m.bounds[2], y2: m.bounds[3], label: '아래쪽' },
+                        ].map(({ edge, x1, y1, x2, y2, label }) => <line key={edge}
+                          x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={12}
+                          vectorEffect="non-scaling-stroke" aria-label={`${m.number}마디 ${label} 경계 드래그`}
+                          style={{ pointerEvents: busy ? 'none' : 'stroke', cursor: edge % 2 === 0 ? 'ew-resize' : 'ns-resize', touchAction: 'none' }}
+                          onPointerDown={(e) => {
+                            if (busy || e.button !== 0 || !e.isPrimary) return;
+                            e.preventDefault(); e.stopPropagation();
+                            setSelected(i); setPage(page);
+                            stopRepeat(); origin.current = null; setDrawing(null);
+                            edgeDrag.current = { selected: i, edge };
+                            e.currentTarget.setPointerCapture(e.pointerId);
+                          }}
+                          onPointerMove={(e) => {
+                            const dragging = edgeDrag.current;
+                            if (!dragging || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                            e.preventDefault(); e.stopPropagation();
+                            const rect = e.currentTarget.ownerSVGElement?.getBoundingClientRect();
+                            if (!rect || !rect.width || !rect.height) return;
+                            const coordinate = Math.round(dragging.edge % 2 === 0
+                              ? (e.clientX - rect.left) / rect.width * 1000
+                              : (e.clientY - rect.top) / rect.height * 1000);
+                            update((rows) => changeMeasureBounds(rows, dragging.selected,
+                              rows[dragging.selected].bounds.map((value, index) => index === dragging.edge ? coordinate : value)));
+                          }}
+                          onPointerUp={(e) => { e.stopPropagation(); edgeDrag.current = null; }}
+                          onPointerCancel={(e) => { e.stopPropagation(); edgeDrag.current = null; }}
+                          onLostPointerCapture={() => { edgeDrag.current = null; }}
+                          onClick={(e) => e.stopPropagation()}>
+                          <title>{label} 경계를 드래그해 조절하세요.</title>
+                        </line>)}
                       </g>
                     ),
                 )}
