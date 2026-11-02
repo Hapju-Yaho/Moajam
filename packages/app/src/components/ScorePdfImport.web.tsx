@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api, ApiError } from '../lib/remote-client';
 import './ScorePdfImport.web.css';
 import { validateScoreDocument, serializeScoreFile } from '../lib/scoreFile';
@@ -653,6 +654,7 @@ export function ScorePdfImport({
       {temporaryError && <small role="alert">{temporaryError}</small>}
     </div>
   );
+  if (measureOnly && structureSaved) return <MeasureSavedNotice onClose={onClose} />;
   return (
     <dialog
       ref={dialog}
@@ -1444,7 +1446,6 @@ export function ScorePdfImport({
             onConfirm={() => apply(true)}
           />
         )}
-        {measureOnly && structureSaved && <MeasureSavedNotice onClose={onClose} />}
       </section>
     </dialog>
   );
@@ -1457,12 +1458,12 @@ function MeasureSavedNotice({ onClose }: { onClose: () => void }) {
     node?.showModal();
     return () => node?.close();
   }, []);
-  return <dialog ref={dialog} className="score-pdf-saved-notice" role="alertdialog" aria-labelledby="pdf-saved-notice-title"
+  return createPortal(<dialog ref={dialog} className="score-pdf-saved-notice" role="alertdialog" aria-labelledby="pdf-saved-notice-title"
     onKeyDown={(e) => e.stopPropagation()}
     onCancel={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
     onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}>
     <header><h2 id="pdf-saved-notice-title">저장 완료</h2><button type="button" aria-label="저장 완료 알림 닫기" onClick={onClose}>×</button></header>
     <p>저장되었습니다.</p>
     <footer><button type="button" autoFocus onClick={onClose}>확인</button></footer>
-  </dialog>;
+  </dialog>, document.body);
 }

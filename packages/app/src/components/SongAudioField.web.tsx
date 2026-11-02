@@ -62,9 +62,9 @@ export function SongAudioField({ songId, value, onChange, onBusy }: {
     </>}
     <input ref={input} type="file" accept="audio/*,.webm" hidden onChange={(e) => { void choose(e.target.files?.[0]); e.target.value = ''; }} />
     {error && <p role="alert" style={{ color: '#b23e3e' }}>{error}</p>}
-    {settingsFile && <PdfAudioSettings fixedFile file={settingsFile} start={value?.start ?? 0}
-      onClose={() => setSettingsFile(null)} onApply={(_file, start) => {
-        if (value) onChange({ ...value, start });
+    {settingsFile && <PdfAudioSettings fixedFile file={settingsFile} start={value?.start ?? 0} bpm={value?.bpm ?? 120} signature={value?.signature ?? '4/4'}
+      onClose={() => setSettingsFile(null)} onApply={(_file, start, bpm, signature) => {
+        if (value) onChange({ ...value, start, bpm, signature });
         setSettingsFile(null);
       }} />}
   </div>;
