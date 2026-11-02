@@ -1,0 +1,7 @@
+.song-audio-player { width: 100%; padding: 6px 0; color: #526556; }
+.song-audio-player input[type="range"] { display: block; width: 100%; margin: 0; accent-color: #2563eb; cursor: pointer; }
+.song-audio-time { display: flex; justify-content: space-between; font-size: 11px; font-variant-numeric: tabular-nums; }
+.song-audio-controls { display: flex; justify-content: center; gap: 6px; margin-top: 4px; }
+.song-audio-controls button { border: 1px solid #bfd2f4; border-radius: 7px; background: #edf4ff; color: #2563eb; min-width: 34px; height: 29px; padding: 3px 8px; font-size: 12px; cursor: pointer; }
+.song-audio-controls button:hover:not(:disabled) { background: #dceaff; border-color: #8aaff0; }
+.song-audio-controls button:disabled { opacity: .4; cursor: default; }

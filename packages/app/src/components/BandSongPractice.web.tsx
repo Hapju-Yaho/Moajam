@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import type { BandSongPracticeProps } from './BandSongPractice';
 import { PracticeStudio } from './PracticeStudio';
 import { SongPdfLibrary } from './SongPdfLibrary.web';
 import { SongLyricsPanel } from './SongLyrics.web';
 import { BandScoreProjects } from '../screens/BandScoreEditorScreen.web';
 import './BandSongPractice.web.css';
-import { PracticeSectionHeading } from './PracticeSectionHeading.web';
+import { AppIcon } from './icons';
 import { useIdentity } from '../state/Identity';
 
 type PracticeView = 'recording' | 'score' | 'pdf' | 'lyrics';
@@ -34,8 +33,6 @@ export function BandSongPractice({
   const user = useIdentity();
   const viewKey = `moajam/song-practice-view/${user}/${workspaceId}/${songId}`;
   const [view, setView] = useState<PracticeView>(() => readPracticeView(viewKey, initialView));
-  const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
-  useEffect(() => setToolbarHost(document.getElementById('band-song-practice-toolbar')), []);
   useEffect(() => setView(readPracticeView(viewKey, initialView)), [initialView, viewKey]);
   const choose = (next: typeof view) => {
     if (next === view) return;
@@ -59,26 +56,24 @@ export function BandSongPractice({
       <button aria-pressed={view === 'recording'} onClick={() => choose('recording')}>
         녹음 프로젝트
       </button>
-      <button aria-pressed={view === 'score'} onClick={() => choose('score')}>
+      <button className="band-song-score-tab" aria-pressed={view === 'score'} onClick={() => choose('score')}>
         악보 프로젝트
       </button>
-      <button id="practice-pdf-open" aria-pressed={view === 'pdf'} onClick={() => choose('pdf')}>
+      <button className="band-song-pdf-tab" id="practice-pdf-open" aria-pressed={view === 'pdf'} onClick={() => choose('pdf')}>
         PDF 악보
       </button>
       <button aria-pressed={view === 'lyrics'} onClick={() => choose('lyrics')}>
         가사 보기
       </button>
+      <button className="band-song-help-tab" type="button" aria-label="곡 연습 도움말" title="도움말 준비 중" disabled>
+        <AppIcon name="help" size={19} color="#946b17" />
+      </button>
     </div>
   );
   return (
     <section className="band-song-practice" aria-label="곡 연습">
-      {toolbarHost ? createPortal(toolbar, toolbarHost) : toolbar}
+      {toolbar}
       <div className="band-song-practice-content">
-        {view !== 'recording' && (
-          <PracticeSectionHeading
-            title={view === 'score' ? '악보 프로젝트' : view === 'pdf' ? 'PDF 악보' : '가사 보기'}
-          />
-        )}
         {view === 'recording' ? (
           <PracticeStudio {...studioProps} />
         ) : view === 'score' ? (

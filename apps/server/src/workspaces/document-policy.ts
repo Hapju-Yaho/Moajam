@@ -1,6 +1,6 @@
 type Row = Record<string, unknown>;
 export const isWorkspaceDocumentKey = (key: string) =>
-  /^(recommendations|songs|rehearsals|practice\/order|song\/[\w-]+\/(discussion|feedback|clip-notes|checks|arrangement|links|pdf-parts|lyrics|lyrics-timing|session\/[\w-]+\/memo)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
+  /^(recommendations|songs|rehearsals|practice\/order|song\/[\w-]+\/(discussion|feedback|clip-notes|checks|arrangement|links|pdf-parts|audio|lyrics|lyrics-timing|session\/[\w-]+\/memo)|session\/[\w-]+\/(memo|members|checks|tasks)|recommendation\/[\w-]+\/comments)$/.test(
     key,
   );
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -223,6 +223,12 @@ export function canWriteDocument(
           ['UNASSIGNED', 'VOCAL', 'GUITAR', 'BASS', 'DRUMS', 'KEYBOARD', 'OTHER'].includes(part),
       )
     );
+  if (key.endsWith('/audio')) return owner && (after === null || (
+    object(after) && typeof after.id === 'string' && /^[\w-]{1,128}$/.test(after.id) &&
+    typeof after.name === 'string' && after.name.length > 0 && after.name.length <= 255 &&
+    (after.start === undefined || (typeof after.start === 'number' && Number.isFinite(after.start) && after.start >= 0 && after.start <= 604800)) &&
+    Object.keys(after).every((key) => key === 'id' || key === 'name' || key === 'start')
+  ));
   if (key.endsWith('/lyrics-timing')) return validLyricsTiming(after);
   if (key.endsWith('/memo') || key.endsWith('/lyrics'))
     return typeof after === 'string' && after.length <= 50000;

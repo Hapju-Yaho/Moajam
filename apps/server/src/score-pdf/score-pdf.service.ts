@@ -1,3 +1,5 @@
+import { PrismaService } from '../common/database/prisma.service.js';
+import { normalizeMeasureRows } from './measure-bounds.js';
 import {
   BadRequestException,
   HttpException,
@@ -51,6 +53,8 @@ type Job = {
   size: number;
   pages: number;
   hash: string;
+  sourceHash?: string;
+  sourcePages?: number[];
   createdAt: number;
   pdf: Buffer;
   state: 'prepared' | 'analyzing' | 'structure_review' | 'completed' | 'failed';
@@ -73,9 +77,39 @@ type Job = {
 
 @Injectable()
 export class ScorePdfService implements OnModuleDestroy {
-  constructor(@Optional() private readonly recognition?: PdfRecognitionClient) {}
+  constructor(@Optional() private readonly recognition?: PdfRecognitionClient, @Optional() private readonly db?: PrismaService) {}
   // Bounded preparation cache, not a conversion queue or persistent project storage.
   private readonly jobs = new Map<string, Job>();
+  async linkSource(owner: string, id: string, pdf: Buffer, pageNumbers: number[]) {
+    const job = this.get(owner, id);
+    if (!pdf.length || pdf.length > PDF_MAX_BYTES || !pdf.subarray(0, 1024).includes(Buffer.from('%PDF-')))
+      throw new BadRequestException('PDF 파일을 확인해주세요.');
+    const source = await PDFDocument.load(pdf);
+    if (pageNumbers.length !== job.pages || pageNumbers.some((p, i) =>
+      !Number.isInteger(p) || p < 1 || p > source.getPageCount() || (i > 0 && p <= pageNumbers[i - 1])))
+      throw new BadRequestException('원본 PDF 페이지 정보를 확인해주세요.');
+    job.sourceHash = createHash('sha256').update(pdf).digest('hex');
+    job.sourcePages = pageNumbers;
+    return { linked: true };
+  }
+  async savedStructures(owner: string, pdf: Buffer) {
+    if (!pdf.length || pdf.length > PDF_MAX_BYTES || !pdf.subarray(0, 1024).includes(Buffer.from('%PDF-')))
+      throw new BadRequestException('PDF 파일을 확인해주세요.');
+    const hash = createHash('sha256').update(pdf).digest('hex');
+    const records = await this.db?.personalDocument.findMany({
+      where: { ownerId: owner, key: { startsWith: `pdf-measures:${hash}:` } },
+      orderBy: { updatedAt: 'desc' },
+    });
+    return (records ?? []).map((record) => {
+      const value = record.value as unknown as { name: string; pages: number; structure: ScoreStructure; sourcePages?: number[] };
+      return { scoreType: record.key.split(':').at(-1), updatedAt: record.updatedAt,
+        name: value.name, structure: { ...value.structure, parts: value.structure.parts.map((part) => ({
+          ...part, measures: part.measures.map((measure) => ({ ...measure,
+            page: value.sourcePages?.[measure.page - 1] ?? measure.page,
+          })),
+        })) } };
+    });
+  }
   private readonly cleanup = setInterval(() => this.prune(), 60000).unref();
   onModuleDestroy() {
     clearInterval(this.cleanup);
@@ -153,6 +187,20 @@ export class ScorePdfService implements OnModuleDestroy {
     };
     // Exercise the complete preparation boundary; never send or log this payload.
     applyTabProfile(prepareRecognitionRequest(job.name, pdf), job.scoreType);
+    const saved = await this.db?.personalDocument.findUnique({
+      where: { ownerId_key: { ownerId: owner, key: `pdf-measures:${hash}:${scoreType}` } },
+    });
+    if (saved) {
+      const value = saved.value as unknown as { structure: ScoreStructure; sourcePages?: number[] };
+      const structure = { ...value.structure, parts: value.structure.parts.map((part) => ({
+        ...part, measures: part.measures.map((measure) => ({ ...measure,
+          page: value.sourcePages?.[measure.page - 1] ?? measure.page,
+        })),
+      })) };
+      job.structure = readStructure(structure, pages);
+      job.state = 'structure_review';
+      job.revision = 1;
+    }
     this.jobs.set(job.id, job);
     return this.status(owner, job.id);
   }
@@ -330,6 +378,35 @@ export class ScorePdfService implements OnModuleDestroy {
     this.begin(owner, id, true, undefined, true);
     return this.status(owner, id);
   }
+  async saveStructure(owner: string, id: string, structure: unknown, revision: number) {
+    const job = this.get(owner, id);
+    if (!job.structure || job.state === 'analyzing' || revision !== job.revision)
+      throw new BadRequestException('구조 결과가 변경됐어요. 최신 결과를 다시 확인해주세요.');
+    try {
+      const input = structure as ScoreStructure;
+      const checked = readStructure({ ...input, parts: input.parts.map((p) => ({ ...p, measures: normalizeMeasureRows(p.measures) })) }, job.pages);
+      job.structure = {
+        ...checked,
+        scoreContext: job.structure?.scoreContext ?? checked.scoreContext,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : '마디 경계를 확인해주세요.',
+      );
+    }
+    if (!this.db) throw new BadRequestException('Database unavailable');
+    const key = `pdf-measures:${job.sourceHash ?? job.hash}:${job.scoreType}`;
+    const value = JSON.parse(JSON.stringify({ version: 1, name: job.name, pages: job.pages,
+      sourcePages: job.sourcePages, structure: job.structure }));
+    await this.db.personalDocument.upsert({
+      where: { ownerId_key: { ownerId: owner, key } },
+      create: { ownerId: owner, key, value },
+      update: { value, revision: { increment: 1 } },
+    });
+    job.revision = (job.revision ?? 0) + 1;
+    job.createdAt = Date.now();
+    return this.status(owner, id);
+  }
   private begin(
     owner: string,
     id: string,
@@ -422,7 +499,7 @@ export class ScorePdfService implements OnModuleDestroy {
           false,
         );
         const alignment = await alignStructureToPdfLines(job.pdf, job.structure, controller.signal);
-        job.structure = alignment.structure;
+        job.structure = { ...alignment.structure, parts: alignment.structure.parts.map((p) => ({ ...p, measures: normalizeMeasureRows(p.measures) })) };
         diagnostic = { ...diagnostic, boundaryAlignment: alignment.corrections };
         stages[stages.length - 1] = diagnostic;
         job.structureDiagnostic = diagnostic;

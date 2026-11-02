@@ -61,16 +61,33 @@ export function ScorePdfImport({
   score,
   part,
   onApply,
+  initialFile,
+  mode = 'convert',
+  forceStructureAnalysis = false,
 }: {
   open: boolean;
   onClose: () => void;
   score?: Score;
   part?: string;
   onApply?: (score: Score) => void;
+  initialFile?: File;
+  mode?: 'convert' | 'measures';
+  forceStructureAnalysis?: boolean;
 }) {
+  const measureOnly = mode === 'measures';
+  const [measurePreviewUrl, setMeasurePreviewUrl] = useState('');
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  useEffect(() => {
+    if (!measureOnly || !file) return;
+    const url = URL.createObjectURL(file);
+    setMeasurePreviewUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+      setMeasurePreviewUrl('');
+    };
+  }, [file, measureOnly]);
   const [showPdfContent, setShowPdfContent] = useState(false);
   const [pdfContentUrl, setPdfContentUrl] = useState('');
   useEffect(() => {
@@ -89,6 +106,7 @@ export function ScorePdfImport({
   const [working, setBusy] = useState(false);
   const busy = working || job?.status === 'analyzing';
   const [error, setError] = useState('');
+  const [structureSaved, setStructureSaved] = useState(false);
   const [statusCheckDelayed, setStatusCheckDelayed] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [temporaryJobs, setTemporaryJobs] = useState<Prepared[]>([]);
@@ -164,7 +182,7 @@ export function ScorePdfImport({
     job.canReanalyze &&
     job.structure &&
     (!!job.issues?.length || !!job.recognizedHits?.length);
-  const viewingIssues = !!hasIssueReview && showIssueReview;
+  const viewingIssues = !measureOnly && !!hasIssueReview && showIssueReview;
   const issueKey = (issue: { part: string; page: number; measure: number }) =>
     JSON.stringify([issue.part, issue.page, issue.measure]);
   const problemMeasures = (job?.issues ?? []).filter(
@@ -241,6 +259,7 @@ export function ScorePdfImport({
     else if (!open) dialog.current?.close();
   }, [open]);
   const clearJob = () => {
+    setStructureSaved(false);
     setStatusCheckDelayed(false);
     setAnalysisFile(null);
     setShowIssueReview(true);
@@ -309,6 +328,9 @@ export function ScorePdfImport({
       if (selection.current === request) setReading(false);
     }
   };
+  useEffect(() => {
+    if (open && initialFile && initialFile !== file) void choose(initialFile);
+  }, [open, initialFile]);
   const loadBands = async () => {
     setBandOpen(true);
     setBandLoading(true);
@@ -365,9 +387,19 @@ export function ScorePdfImport({
       data.append('file', extracted);
       const previous = job;
       const next = await api<Prepared>(`/score-pdf/jobs?scoreType=${scoreType}`, 'POST', data);
+      const original = new FormData();
+      original.append('file', file);
+      await api(`/score-pdf/jobs/${next.id}/source-link?pages=${selectedPages.join(',')}`, 'POST', original);
       setJob(next);
+      {
+        const existing = await api<Result>(`/score-pdf/jobs/${next.id}/result`);
+        if (!forceStructureAnalysis && existing.structure && existing.status !== 'analyzing') {
+          setJob(existing);
+          return;
+        }
+      }
       const started = await api<Prepared>(`/score-pdf/jobs/${next.id}/analyze`, 'POST', {
-        retry: next.status === 'failed',
+        retry: forceStructureAnalysis || next.status === 'failed',
       });
       setJob(started);
       setApplied(false);
@@ -411,13 +443,22 @@ export function ScorePdfImport({
     setBusy(true);
     setError('');
     try {
-      const next = await api<Prepared>(`/score-pdf/jobs/${job.id}/structure/confirm`, 'POST', {
-        structure,
-        revision: job.revision,
-      });
+      const next = await api<Prepared>(
+        `/score-pdf/jobs/${job.id}/structure/${measureOnly ? 'save' : 'confirm'}`,
+        'POST',
+        {
+          structure,
+          revision: job.revision,
+        },
+      );
       setSource(null);
       setWarnings([]);
       setJob(next);
+      setStructureSaved(measureOnly);
+      if (measureOnly) {
+        window.alert('저장되었습니다.');
+        onClose();
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : '구조를 확인하지 못했어요.');
     } finally {
@@ -607,7 +648,7 @@ export function ScorePdfImport({
   return (
     <dialog
       ref={dialog}
-      className="score-pdf-import"
+      className={`score-pdf-import${measureOnly ? ' score-pdf-measure-mode' : ''}`}
       aria-labelledby="score-pdf-title"
       onCancel={(e) => {
         // React also forwards a file input's cancel event to its parent dialog.
@@ -623,40 +664,53 @@ export function ScorePdfImport({
     >
       <section>
         <header>
-          <h2 id="score-pdf-title">PDF 악보 변환</h2>
-          <button type="button" onClick={onClose} aria-label="PDF 악보 변환 닫기">
+          <h2 id="score-pdf-title">{measureOnly ? 'PDF 악보 마디 분석' : 'PDF 악보 변환'}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={measureOnly ? 'PDF 악보 마디 분석 닫기' : 'PDF 악보 변환 닫기'}
+          >
             ×
           </button>
         </header>
-        <p>선택한 PDF 페이지를 읽어 편집 가능한 악보로 변환합니다.</p>
-        {job?.status === 'structure_review' && job.structure && (
-          <>
-            <ScorePdfStructureReview
-              key={`${job.id}:${job.revision}`}
-              file={analysisFile ?? file}
-              structure={job.structure}
-              pages={job.pages}
-              busy={busy}
-              onConfirm={(value) => void confirmStructure(value)}
-            />
-            {job.diagnostics && <ScorePdfDiagnostics value={job.diagnostics} />}
-            {error && <p role="alert">{error}</p>}
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                void api<Prepared>(`/score-pdf/jobs/${job.id}/analyze`, 'POST', { retry: true })
-                  .then(setJob)
-                  .catch((e) => setError(e.message));
-              }}
-            >
-              구조 다시 분석 (API 1회)
-            </button>
-            <button type="button" disabled={busy} onClick={clearJob}>
-              취소
-            </button>
-          </>
-        )}
+        <p>
+          {measureOnly
+            ? '현재 PDF의 마디 경계를 분석합니다.'
+            : '선택한 PDF 페이지를 읽어 편집 가능한 악보로 변환합니다.'}
+        </p>
+        {(job?.status === 'structure_review' || (measureOnly && job?.status !== 'analyzing')) &&
+          job?.structure && (
+            <>
+              <ScorePdfStructureReview
+                key={`${job.id}:${job.revision}`}
+                file={analysisFile ?? file}
+                structure={job.structure}
+                pages={job.pages}
+                busy={busy}
+                confirmLabel={measureOnly ? '마디 정보 저장' : undefined}
+                onConfirm={(value) => void confirmStructure(value)}
+              />
+              {job.diagnostics && <ScorePdfDiagnostics value={job.diagnostics} />}
+              {measureOnly && structureSaved && (
+                <p role="status">마디 정보를 서버에 저장했어요.</p>
+              )}
+              {error && <p role="alert">{error}</p>}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  void api<Prepared>(`/score-pdf/jobs/${job.id}/analyze`, 'POST', { retry: true })
+                    .then(setJob)
+                    .catch((e) => setError(e.message));
+                }}
+              >
+                구조 다시 분석 (API 1회)
+              </button>
+              <button type="button" disabled={busy} onClick={clearJob}>
+                취소
+              </button>
+            </>
+          )}
         {viewingIssues && job?.structure && job.issues && (
           <>
             {job.error && (
@@ -695,81 +749,100 @@ export function ScorePdfImport({
         <div
           className="score-pdf-workspace"
           style={
-            job?.status === 'structure_review' || viewingIssues ? { display: 'none' } : undefined
+            job?.status === 'structure_review' ||
+            viewingIssues ||
+            (measureOnly && job?.structure && job.status !== 'analyzing')
+              ? { display: 'none' }
+              : undefined
           }
         >
-          <div className="score-pdf-source">
-            <fieldset className="score-pdf-output">
-              <legend>추출 파일</legend>
-              <div className="score-pdf-output-row">
-                <label>
-                  파일 형식{' '}
-                  <select value={format} onChange={(e) => setFormat(e.target.value)}>
-                    <option value="moajam">.moajam</option>
-                    <option value="musicxml">.musicxml</option>
-                    <option value="mid">.mid</option>
-                  </select>
-                </label>
-                <label className="score-pdf-filename">
-                  파일 이름{' '}
-                  <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="악보 이름"
-                  />{' '}
-                  .{format}
-                </label>
-              </div>
-              {source && (
-                <div className="score-pdf-download-selection">
-                  <div className="score-pdf-download-heading">
-                    <strong>다운로드할 파일</strong>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        setDownloadParts(
-                          selectedFiles.length === outputFiles.length
-                            ? []
-                            : outputFiles.map((f) => f.owner),
-                        )
-                      }
-                    >
-                      {selectedFiles.length === outputFiles.length ? '전체 해제' : '전체 선택'}
-                    </button>
-                  </div>
-                  <div className="score-pdf-download-list">
-                    {outputFiles.map((entry) => (
-                      <label
-                        key={entry.owner}
-                        data-selected={selectedFiles.some((f) => f.owner === entry.owner)}
-                      >
-                        <input
-                          type="checkbox"
-                          disabled={busy}
-                          checked={selectedFiles.some((f) => f.owner === entry.owner)}
-                          onChange={(e) =>
-                            setDownloadParts(
-                              e.target.checked
-                                ? [...selectedFiles.map((f) => f.owner), entry.owner]
-                                : selectedFiles
-                                    .filter((f) => f.owner !== entry.owner)
-                                    .map((f) => f.owner),
-                            )
-                          }
-                        />
-                        <span>
-                          <strong>{entry.owner}</strong>
-                          <small>{entry.name}</small>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
+          {measureOnly && (
+            <div className="score-pdf-measure-preview">
+              {measurePreviewUrl ? (
+                <iframe
+                  title="현재 PDF 미리보기"
+                  src={`${measurePreviewUrl}#toolbar=0&navpanes=0&view=FitH`}
+                />
+              ) : (
+                <p>PDF를 준비하고 있어요…</p>
               )}
-            </fieldset>
+            </div>
+          )}
+          <div className="score-pdf-source">
+            {!measureOnly && (
+              <fieldset className="score-pdf-output">
+                <legend>추출 파일</legend>
+                <div className="score-pdf-output-row">
+                  <label>
+                    파일 형식{' '}
+                    <select value={format} onChange={(e) => setFormat(e.target.value)}>
+                      <option value="moajam">.moajam</option>
+                      <option value="musicxml">.musicxml</option>
+                      <option value="mid">.mid</option>
+                    </select>
+                  </label>
+                  <label className="score-pdf-filename">
+                    파일 이름{' '}
+                    <input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="악보 이름"
+                    />{' '}
+                    .{format}
+                  </label>
+                </div>
+                {source && (
+                  <div className="score-pdf-download-selection">
+                    <div className="score-pdf-download-heading">
+                      <strong>다운로드할 파일</strong>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          setDownloadParts(
+                            selectedFiles.length === outputFiles.length
+                              ? []
+                              : outputFiles.map((f) => f.owner),
+                          )
+                        }
+                      >
+                        {selectedFiles.length === outputFiles.length ? '전체 해제' : '전체 선택'}
+                      </button>
+                    </div>
+                    <div className="score-pdf-download-list">
+                      {outputFiles.map((entry) => (
+                        <label
+                          key={entry.owner}
+                          data-selected={selectedFiles.some((f) => f.owner === entry.owner)}
+                        >
+                          <input
+                            type="checkbox"
+                            disabled={busy}
+                            checked={selectedFiles.some((f) => f.owner === entry.owner)}
+                            onChange={(e) =>
+                              setDownloadParts(
+                                e.target.checked
+                                  ? [...selectedFiles.map((f) => f.owner), entry.owner]
+                                  : selectedFiles
+                                      .filter((f) => f.owner !== entry.owner)
+                                      .map((f) => f.owner),
+                              )
+                            }
+                          />
+                          <span>
+                            <strong>{entry.owner}</strong>
+                            <small>{entry.name}</small>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </fieldset>
+            )}
             <div
               className="score-pdf-drop"
+              style={measureOnly ? { display: 'none' } : undefined}
               data-dragging={dragging}
               data-has-file={!!file}
               data-preview={showPdfContent}
@@ -908,12 +981,12 @@ export function ScorePdfImport({
               </select>
               <small>선택한 종류의 악보만 인식해요.</small>
             </label>
-            {pages !== null && pages > 1 && (
+            {pages !== null && (pages > 1 || measureOnly) && (
               <fieldset
                 className="score-pdf-page-selection"
                 disabled={busy || reading || bandPicking}
               >
-                <legend>추출 페이지</legend>
+                <legend>{measureOnly ? '분석할 페이지' : '추출 페이지'}</legend>
                 <div>
                   <button
                     type="button"
@@ -999,10 +1072,26 @@ export function ScorePdfImport({
                 {bandError && <p role="alert">{bandError}</p>}
               </section>
             )}
-            <p className="score-pdf-notice">
-              전체 추출은 구조·음표 분석으로 2회, 마디 재분석은 1회 API를 호출합니다. 자동 재시도는
-              하지 않습니다. 다운로드·악보 적용에는 추가 호출이 없습니다.
-            </p>
+            {measureOnly && job && (
+              <div className="score-pdf-measure-status">
+                {job.status === 'analyzing' ? (
+                  <PdfAnalysisLoading
+                    job={job}
+                    delayed={statusCheckDelayed}
+                    cancelling={cancelling}
+                    onCancel={() => void cancelAnalysis()}
+                  />
+                ) : (
+                  <p>{job.error?.message ?? '마디 분석을 준비했어요.'}</p>
+                )}
+              </div>
+            )}
+            {!measureOnly && (
+              <p className="score-pdf-notice">
+                전체 추출은 구조·음표 분석으로 2회, 마디 재분석은 1회 API를 호출합니다. 자동
+                재시도는 하지 않습니다. 다운로드·악보 적용에는 추가 호출이 없습니다.
+              </p>
+            )}
             <button
               className="score-pdf-extract"
               type="button"
@@ -1010,12 +1099,18 @@ export function ScorePdfImport({
               onClick={() => void prepare()}
             >
               {busy
-                ? '악보를 분석하고 있어요…'
+                ? measureOnly
+                  ? '마디를 분석하고 있어요…'
+                  : '악보를 분석하고 있어요…'
                 : job?.status === 'failed'
-                  ? '다시 추출'
+                  ? measureOnly
+                    ? '마디 다시 분석'
+                    : '다시 추출'
                   : job?.status === 'completed'
                     ? '추출 결과 불러오기'
-                    : '악보 추출'}
+                    : measureOnly
+                      ? '마디 분석하기'
+                      : '악보 추출'}
             </button>
             {error && <p role="alert">{error}</p>}
             {error.includes('준비') && (
@@ -1057,7 +1152,7 @@ export function ScorePdfImport({
               aria-label="결과와 경고 미리보기"
               aria-live="polite"
             >
-              <h3>결과·경고 미리보기</h3>
+              <h3>{measureOnly ? '마디 분석 현황' : '결과·경고 미리보기'}</h3>
               {job?.status === 'analyzing' && (
                 <PdfAnalysisLoading
                   job={job}
@@ -1272,10 +1367,11 @@ export function ScorePdfImport({
                   )}
                 </>
               )}
-              {temporaryList}
+              {!measureOnly && temporaryList}
             </section>
             <button
               type="button"
+              hidden={measureOnly}
               disabled={!source || busy || !selectedFiles.length}
               onClick={() => void download()}
             >
@@ -1283,57 +1379,59 @@ export function ScorePdfImport({
             </button>
           </div>
         </div>
-        {(job?.status === 'structure_review' || viewingIssues) && temporaryList}
-        <fieldset
-          className="score-pdf-apply"
-          style={
-            job?.status === 'structure_review' || viewingIssues ? { display: 'none' } : undefined
-          }
-          disabled={!source || busy || applied || !score || !onApply}
-        >
-          <legend>악보에 적용</legend>
-          <div className="score-pdf-apply-options">
-            <label>
-              대상 파트
-              <select value={target} onChange={(e) => setTarget(e.target.value)}>
-                <option value="__all__">전체 악보로 교체</option>
-                {score?.parts.map((p) => (
-                  <option key={p}>{p}</option>
-                ))}
-              </select>
-            </label>
-            {target !== '__all__' && (
+        {!measureOnly && (job?.status === 'structure_review' || viewingIssues) && temporaryList}
+        {!measureOnly && (
+          <fieldset
+            className="score-pdf-apply"
+            style={
+              job?.status === 'structure_review' || viewingIssues ? { display: 'none' } : undefined
+            }
+            disabled={!source || busy || applied || !score || !onApply}
+          >
+            <legend>악보에 적용</legend>
+            <div className="score-pdf-apply-options">
               <label>
-                시작 마디
-                <input
-                  type="number"
-                  value={bar}
-                  onChange={(e) => setBar(e.target.value)}
-                  onBlur={() => setBar(String(normalizedBar()))}
-                />
+                대상 파트
+                <select value={target} onChange={(e) => setTarget(e.target.value)}>
+                  <option value="__all__">전체 악보로 교체</option>
+                  {score?.parts.map((p) => (
+                    <option key={p}>{p}</option>
+                  ))}
+                </select>
               </label>
-            )}
-            {source &&
-              score &&
-              target !== '__all__' &&
-              scorePartStaves(source, from).length > scorePartStaves(score, target).length && (
-                <small>
-                  대상 보표 수가 적어 첫 보표만 삽입됩니다. 양손·전체 파트는 전체 악보로 교체를
-                  선택해주세요.
-                </small>
+              {target !== '__all__' && (
+                <label>
+                  시작 마디
+                  <input
+                    type="number"
+                    value={bar}
+                    onChange={(e) => setBar(e.target.value)}
+                    onBlur={() => setBar(String(normalizedBar()))}
+                  />
+                </label>
               )}
-            <small>
-              {applied
-                ? '악보를 적용했어요. 프로젝트를 저장해주세요.'
-                : target === '__all__'
-                  ? '현재 프로젝트의 모든 파트와 음표를 변환 결과로 교체합니다.'
-                  : '미리보기에서 선택한 파트를 삽입합니다. 대상 프로젝트의 악기·BPM 설정은 유지합니다.'}
-            </small>
-          </div>
-          <button type="button" onClick={() => apply()}>
-            악보에 적용
-          </button>
-        </fieldset>
+              {source &&
+                score &&
+                target !== '__all__' &&
+                scorePartStaves(source, from).length > scorePartStaves(score, target).length && (
+                  <small>
+                    대상 보표 수가 적어 첫 보표만 삽입됩니다. 양손·전체 파트는 전체 악보로 교체를
+                    선택해주세요.
+                  </small>
+                )}
+              <small>
+                {applied
+                  ? '악보를 적용했어요. 프로젝트를 저장해주세요.'
+                  : target === '__all__'
+                    ? '현재 프로젝트의 모든 파트와 음표를 변환 결과로 교체합니다.'
+                    : '미리보기에서 선택한 파트를 삽입합니다. 대상 프로젝트의 악기·BPM 설정은 유지합니다.'}
+              </small>
+            </div>
+            <button type="button" onClick={() => apply()}>
+              악보에 적용
+            </button>
+          </fieldset>
+        )}
         {confirm && (
           <ScoreImportOverwrite
             format="PDF"

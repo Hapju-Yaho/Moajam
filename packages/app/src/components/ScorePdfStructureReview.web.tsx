@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { changeMeasureBounds } from '../lib/pdf-measure-bounds';
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 
 export type PdfStructure = {
   bpm: number | null;
@@ -26,12 +28,14 @@ export function ScorePdfStructureReview({
   pages,
   busy,
   onConfirm,
+  confirmLabel = '확인 후 음표 분석',
 }: {
   file: File | null;
   structure: PdfStructure;
   pages: number;
   busy: boolean;
   onConfirm: (value: PdfStructure) => void;
+  confirmLabel?: string;
 }) {
   const [draft, setDraft] = useState(structure);
   const [part, setPart] = useState(0);
@@ -40,9 +44,10 @@ export function ScorePdfStructureReview({
   const [mode, setMode] = useState<'select' | 'draw' | 'add'>('select');
   const [error, setError] = useState('');
   const [drawing, setDrawing] = useState<number[] | null>(null);
-  const [ratio, setRatio] = useState(1);
-  const canvas = useRef<HTMLCanvasElement>(null);
+  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
+  const pageElements = useRef(new Map<number, HTMLDivElement>());
   const origin = useRef<number[] | null>(null);
+  const drawingPage = useRef(1);
   const repeatTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerClick = useRef(false);
   const stopRepeat = () => {
@@ -65,6 +70,7 @@ export function ScorePdfStructureReview({
     let active = true;
     let dispose: (() => void) | undefined;
     setError('');
+    setPdf(null);
     void (async () => {
       const engine = await import('pdfjs-dist');
       engine.GlobalWorkerOptions.workerSrc = new URL(
@@ -78,24 +84,11 @@ export function ScorePdfStructureReview({
       };
       try {
         const pdf = await task.promise;
-        const sheet = await pdf.getPage(page);
-        if (!active || !canvas.current) return;
-        const original = sheet.getViewport({ scale: 1 });
-        const viewport = sheet.getViewport({ scale: Math.min(2, 1600 / original.width) });
-        setRatio(viewport.width / viewport.height);
-        const target = canvas.current;
-        target.width = viewport.width;
-        target.height = viewport.height;
-        const context = target.getContext('2d');
-        if (!context) throw Error('PDF 화면을 만들지 못했어요.');
-        const render = sheet.render({ canvas: target, canvasContext: context, viewport });
-        dispose = () => {
-          render.cancel();
-          void task.destroy();
-        };
-        await render.promise;
-      } finally {
+        if (active) setPdf(pdf);
+        else await task.destroy();
+      } catch (error) {
         await task.destroy();
+        throw error;
       }
     })().catch((e) => {
       if (active) setError(e instanceof Error ? e.message : 'PDF를 표시하지 못했어요.');
@@ -104,7 +97,10 @@ export function ScorePdfStructureReview({
       active = false;
       dispose?.();
     };
-  }, [file, page]);
+  }, [file]);
+  useEffect(() => {
+    pageElements.current.get(page)?.scrollIntoView({ block: 'nearest' });
+  }, [page]);
   const current = draft.parts[part];
   const bar = current?.measures[selected];
   const update = (
@@ -215,8 +211,12 @@ export function ScorePdfStructureReview({
           {!file ? (
             <p role="alert">원본 PDF를 다시 선택해주세요.</p>
           ) : (
-            <div className="score-pdf-structure-page" style={{ aspectRatio: ratio }}>
-              <canvas ref={canvas} />
+            Array.from({ length: pages }, (_, i) => i + 1).map((pageNumber) => {
+              const page = pageNumber;
+              return <div key={page} ref={(node) => { if (node) pageElements.current.set(page, node); else pageElements.current.delete(page); }}>
+              <p className="score-pdf-page-label">{page}???</p>
+              <StructurePage pdf={pdf} page={page}>
+
               <svg
                 viewBox="0 0 1000 1000"
                 preserveAspectRatio="none"
@@ -224,6 +224,8 @@ export function ScorePdfStructureReview({
                 style={{ touchAction: mode === 'select' ? 'auto' : 'none' }}
                 onPointerDown={(e) => {
                   if (mode === 'select') return;
+                  if (mode === 'draw' && bar?.page !== page) return;
+                  drawingPage.current = page;
                   origin.current = point(e);
                   setDrawing([...origin.current, ...origin.current]);
                   e.currentTarget.setPointerCapture(e.pointerId);
@@ -257,7 +259,7 @@ export function ScorePdfStructureReview({
                   if (bounds[2] - bounds[0] < 5 || bounds[3] - bounds[1] < 5) return;
                   if (mode === 'draw')
                     update((rows) =>
-                      rows.map((m, i) => (i === selected ? { ...m, page, bounds } : m)),
+                      changeMeasureBounds(rows, selected, bounds),
                     );
                   else
                     update((rows) =>
@@ -286,7 +288,7 @@ export function ScorePdfStructureReview({
                       <g
                         key={`${i}:${m.number}`}
                         onClick={() => {
-                          if (mode === 'select') setSelected(i);
+                          if (mode === 'select') { setSelected(i); setPage(page); }
                         }}
                       >
                         <rect
@@ -307,7 +309,7 @@ export function ScorePdfStructureReview({
                       </g>
                     ),
                 )}
-                {drawing && (
+                {drawing && page === drawingPage.current && (
                   <rect
                     x={drawing[0]}
                     y={drawing[1]}
@@ -320,7 +322,9 @@ export function ScorePdfStructureReview({
                   />
                 )}
               </svg>
-            </div>
+              </StructurePage>
+            </div>;
+            })
           )}
         </div>
         <div className="score-pdf-structure-fields">
@@ -462,17 +466,8 @@ export function ScorePdfStructureReview({
                     const description = `${label} 경계 ${expand ? '바깥으로 확장' : '안쪽으로 축소'}`;
                     const adjust = () =>
                       update((rows) =>
-                        rows.map((m, i) => {
-                          if (i !== selected) return m;
-                          const minimum = index < 2 ? 0 : m.bounds[index - 2] + 1;
-                          const maximum = index < 2 ? m.bounds[index + 2] - 1 : 1000;
-                          return {
-                            ...m,
-                            bounds: m.bounds.map((n, j) =>
-                              j === index ? Math.max(minimum, Math.min(maximum, n + delta)) : n,
-                            ),
-                          };
-                        }),
+                        changeMeasureBounds(rows, selected, rows[selected].bounds.map((n, j) =>
+                          j === index ? n + delta : n)),
                       );
                     return (
                       <button
@@ -623,9 +618,51 @@ export function ScorePdfStructureReview({
         disabled={busy || !!errors.length || !file || !!error}
         onClick={() => onConfirm(draft)}
       >
-        확인 후 음표 분석
+        {confirmLabel}
       </button>
       <small>확인하면 전체 PDF와 수정한 구조를 전송하며 API를 1회 호출합니다.</small>
     </section>
   );
+}
+function StructurePage({ pdf, page, children }: { pdf: PDFDocumentProxy | null; page: number; children: ReactNode }) {
+  const container = useRef<HTMLDivElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [ratio, setRatio] = useState(0.707);
+  const [visible, setVisible] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { rootMargin: '600px' });
+    if (container.current) observer.observe(container.current);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!pdf) return;
+    let active = true;
+    void pdf.getPage(page).then((sheet) => {
+      if (active) { const viewport = sheet.getViewport({ scale: 1 }); setRatio(viewport.width / viewport.height); }
+    }).catch(() => { if (active) setError('PDF 페이지를 불러오지 못했어요.'); });
+    return () => { active = false; };
+  }, [pdf, page]);
+  useEffect(() => {
+    if (!pdf || !visible) return;
+    let active = true;
+    let cancel: (() => void) | undefined;
+    void (async () => {
+      const sheet = await pdf.getPage(page);
+      if (!active || !canvas.current) return;
+      const original = sheet.getViewport({ scale: 1 });
+      const viewport = sheet.getViewport({ scale: Math.min(2, 1600 / original.width) });
+      const target = canvas.current;
+      target.width = viewport.width; target.height = viewport.height;
+      const render = sheet.render({ canvas: target, viewport });
+      cancel = () => render.cancel();
+      await render.promise;
+    })().catch((error) => { if (active) setError(error instanceof Error ? error.message : 'PDF 페이지를 표시하지 못했어요.'); });
+    return () => { active = false; cancel?.(); if (canvas.current) { canvas.current.width = 0; canvas.current.height = 0; } };
+  }, [pdf, page, visible]);
+  return <div ref={container} className="score-pdf-structure-page" style={{ aspectRatio: ratio }}>
+    {error && <p role="alert">{error}</p>}
+    <canvas ref={canvas} aria-label={`${page}페이지`} />
+    {children}
+  </div>;
 }

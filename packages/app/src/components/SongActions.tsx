@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Modal, Pressable, View } from 'react-native';
 import { ActionButton, FlexRow, Heading, Meta, Surface } from './ProductUI';
 import { Input } from '../styles/layout';
-import { useMockAppState } from '../state/MockAppState';
+import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
+import { SongAudioField } from './SongAudioField';
+import type { SongAudio } from '../lib/songAudio';
 import { parseVideoUrl } from '../lib/video';
 import type { RecommendationItem } from '../mocks/data';
 export function SongActions({
@@ -19,6 +21,9 @@ export function SongActions({
   const [mode, setMode] = useState<'edit' | 'delete' | null>(null);
   const [draft, setDraft] = useState({ title: '', artist: '', reason: '', referenceUrl: '' });
   const [error, setError] = useState('');
+  const [songAudio, setSongAudio] = useWorkspaceValue<SongAudio | null>(`song/${song.id}/audio`, null);
+  const [draftAudio, setDraftAudio] = useState<SongAudio | null>(null);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
   if (!canManage && (!recommendation || song.authorId !== currentUserId)) return null;
   return (
     <View>
@@ -35,6 +40,7 @@ export function SongActions({
                 referenceUrl: song.referenceUrl ?? '',
               });
               setError('');
+              setDraftAudio(songAudio);
               setMode('edit');
             }}
           >
@@ -56,7 +62,7 @@ export function SongActions({
         visible={mode !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setMode(null)}
+        onRequestClose={() => { if (!uploadingAudio) setMode(null); }}
       >
         <View
           style={{
@@ -69,7 +75,7 @@ export function SongActions({
         >
           <Pressable
             accessibilityLabel="닫기"
-            onPress={() => setMode(null)}
+            onPress={() => { if (!uploadingAudio) setMode(null); }}
             style={{ position: 'absolute', inset: 0 }}
           />
           <Surface style={{ width: '100%', maxWidth: 520 }}>
@@ -99,14 +105,21 @@ export function SongActions({
                   </FlexRow>
                 ))}
                 {!!error && <Meta>{error}</Meta>}
+                <FlexRow>
+                  <Meta style={{ width: 96 }}>곡 음원</Meta>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <SongAudioField songId={song.id} value={draftAudio} onChange={setDraftAudio} onBusy={setUploadingAudio} />
+                  </View>
+                </FlexRow>
               </>
             )}
             <FlexRow>
-              <ActionButton secondary onPress={() => setMode(null)}>
+              <ActionButton secondary disabled={uploadingAudio} onPress={() => setMode(null)}>
                 취소
               </ActionButton>
               <ActionButton
                 danger={mode === 'delete'}
+                disabled={uploadingAudio}
                 onPress={() => {
                   if (mode === 'delete') {
                     if (recommendation) deleteRecommendation(song.id);
@@ -131,6 +144,7 @@ export function SongActions({
                         ? { thumbnailUrl: video?.thumbnail }
                         : {}),
                     });
+                    setSongAudio(draftAudio);
                   }
                   setMode(null);
                 }}

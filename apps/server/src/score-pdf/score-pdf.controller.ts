@@ -64,11 +64,31 @@ class StructureDto {
   @IsObject() structure!: object;
   @IsInt() @Min(1) revision!: number;
 }
+class SourcePagesDto {
+  @IsString() @MaxLength(160) pages!: string;
+}
 @ApiTags('Score PDF preparation')
 @ApiBearerAuth()
 @Controller('score-pdf/jobs')
 export class ScorePdfController {
   constructor(private readonly service: ScorePdfService) {}
+  @Post(':id/source-link') async linkSource(
+    @CurrentUser() user: AuthenticatedUser, @Param('id') id: string,
+    @Req() req: FastifyRequest, @Query() query: SourcePagesDto,
+  ) {
+    if (!/^\d+(,\d+)*$/.test(query.pages)) throw new BadRequestException('페이지 정보를 확인해주세요.');
+    const file = await req.file({ limits: { fileSize: PDF_MAX_BYTES, files: 1, fields: 0, parts: 1 } });
+    if (!file) throw new BadRequestException('PDF 파일이 필요합니다.');
+    return this.service.linkSource(user.id, id, await file.toBuffer(), query.pages.split(',').map(Number));
+  }
+  @Post('saved/lookup') async savedStructures(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: FastifyRequest,
+  ) {
+    const file = await req.file({ limits: { fileSize: PDF_MAX_BYTES, files: 1, fields: 0, parts: 1 } });
+    if (!file) throw new BadRequestException('PDF 파일이 필요합니다.');
+    return this.service.savedStructures(user.id, await file.toBuffer());
+  }
   @Get() list(@CurrentUser() user: AuthenticatedUser) {
     return this.service.list(user.id);
   }
@@ -123,6 +143,13 @@ export class ScorePdfController {
     @Body() body: StructureDto,
   ) {
     return this.service.confirmStructure(user.id, id, body.structure, body.revision);
+  }
+  @Post(':id/structure/save') saveStructure(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: StructureDto,
+  ) {
+    return this.service.saveStructure(user.id, id, body.structure, body.revision);
   }
   @Delete(':id') remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.service.remove(user.id, id);

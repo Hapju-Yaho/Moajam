@@ -4,23 +4,35 @@
 .band-song-practice-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px;
   margin-bottom: 0;
+  padding: 0;
+  border-bottom: 1px solid #cbd8cf;
+  align-items: flex-end;
 }
 .band-song-practice-tabs button {
   font: inherit;
   font-size: 13px;
   padding: 9px 14px;
-  border: 1px solid #dce4ef;
-  border-radius: 8px;
-  background: #fff;
-  color: #3b5671;
+  border: 1px solid #cbd8cf;
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  background: #e8efea;
+  color: #687e6e;
   cursor: pointer;
+  position: relative;
+  top: 1px;
+  transition: background .15s, color .15s;
 }
 .band-song-practice-tabs button[aria-pressed='true'] {
-  background: #3478ef;
-  border-color: #3478ef;
-  color: #fff;
+  background: #fff;
+  border-color: #cbd8cf;
+  color: #315d40;
+  font-weight: 600;
+  padding-top: 12px;
+  padding-bottom: 10px;
+  box-shadow: 0 2px 0 #fff;
+  z-index: 1;
 }
 .band-song-practice-tabs button:focus-visible {
   outline: 2px solid #3478ef;
@@ -28,4 +40,17 @@
 }
 .band-song-practice-content {
   min-width: 0;
+  padding: 14px;
+  border: 1px solid #cbd8cf;
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: #fff;
 }
+.band-song-practice-tabs .band-song-help-tab { margin-left: auto; display: flex; align-items: center; justify-content: center; min-width: 42px; min-height: 37px; cursor: default; }
+.band-song-practice-content .studio-heading-info > div:has(h2),
+.band-song-practice-content .studio-heading .studio-help-button { display: none !important; }
+.band-song-practice-tabs .band-song-score-tab { background: #dae2ef; color: #354e74; border-color: #8d9fba; }
+.band-song-practice-tabs .band-song-score-tab[aria-pressed='true'] { background: #fff; color: #293b55; border-color: #8d9fba; box-shadow: 0 2px 0 #fff; }
+.band-song-practice-tabs .band-song-pdf-tab { background: #f8e3e1; color: #a8443d; border-color: #dbaba6; }
+.band-song-practice-tabs .band-song-pdf-tab[aria-pressed='true'] { background: #fff; color: #b84740; border-color: #dbaba6; box-shadow: 0 2px 0 #fff; }
+.band-song-practice-tabs .band-song-help-tab { background: #fff0bf; color: #946b17; border-color: #dec17a; }

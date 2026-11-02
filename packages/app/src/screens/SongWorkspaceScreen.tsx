@@ -14,6 +14,7 @@ import {
   Surface,
 } from '../components/ProductUI';
 import { SongActions } from '../components/SongActions';
+import { SongAudioPlayer } from '../components/SongAudioPlayer';
 import { ReferenceVideo } from '../components/ReferenceVideo';
 import { BandSongPractice } from '../components/BandSongPractice';
 import { useMockAppState, useWorkspaceValue } from '../state/MockAppState';
@@ -139,22 +140,24 @@ export function SongWorkspaceScreen({
               {arrangement.key || '미정'} · BPM {arrangement.bpm || '미정'}
             </Copy>
             {!!message && <Meta accessibilityLiveRegion="polite">{message}</Meta>}
+            <View style={{ marginTop: 'auto' }}>
+              <SongAudioPlayer songId={song.id} />
+            </View>
             <View
               style={{
-                marginTop: 'auto',
                 flexDirection: 'row',
                 flexWrap: 'wrap',
                 alignItems: 'flex-end',
                 gap: 12,
               }}
             >
-              <View nativeID="band-song-practice-toolbar" style={{ flex: 1, minWidth: 260 }} />
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ expanded: overviewOpen }}
                 onPress={() => setOverviewOpen((open) => !open)}
                 style={{
                   alignSelf: 'flex-end',
+                  marginLeft: 'auto',
                   marginTop: 'auto',
                   flexDirection: 'row',
                   alignItems: 'center',

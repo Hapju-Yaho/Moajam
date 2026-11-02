@@ -156,3 +156,165 @@
     padding: 7px 10px;
   }
 }
+.performance-pdf-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.performance-pdf-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.performance-pdf-zoom > span {
+  min-width: 48px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.performance-reader .performance-pdf-zoom > button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 20px;
+}
+.pdf-beat-analysis-prompt {
+  width: min(420px, calc(100vw - 32px));
+  padding: 22px;
+  border: 1px solid #b8c8bc;
+  border-radius: 12px;
+  background: #f5f8f5;
+  color: #263d32;
+}
+.pdf-beat-analysis-prompt::backdrop {
+  background: #0f172a80;
+}
+.pdf-beat-analysis-prompt h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+}
+.pdf-beat-analysis-prompt p {
+  line-height: 1.6;
+}
+.pdf-beat-analysis-prompt small {
+  display: block;
+  line-height: 1.5;
+  color: #66756b;
+}
+.pdf-beat-analysis-prompt > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.performance-reader .pdf-beat-analysis-prompt button {
+  background: #e7eee8;
+  color: #304b39;
+  border: 1px solid #b7c7ba;
+}
+.performance-reader .pdf-beat-analysis-prompt button:last-child {
+  background: #55775e;
+  color: white;
+}
+.pdf-saved-parts {
+  display: grid;
+  gap: 8px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.performance-reader .pdf-saved-parts button {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px;
+  color: #eff8f1;
+  background: #405b48;
+  border: 1px solid #75947c;
+  text-align: left;
+}
+.pdf-saved-parts small { color: #d0dfd3; }
+.pdf-saved-parts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.pdf-saved-parts-header h2 { margin: 0; }
+.pdf-saved-parts-header button { white-space: nowrap; }
+.pdf-follow-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: #e7eee8;
+  color: #2f4836;
+  border-bottom: 1px solid #b7c8ba;
+  flex-wrap: nowrap;
+  font-size: 11px;
+  overflow-x: auto;
+}
+.pdf-follow-toolbar label { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.pdf-follow-toolbar input[type="number"] { width: 44px; box-sizing: border-box; }
+.pdf-follow-toolbar input[type="checkbox"] { width: 12px; height: 12px; margin: 0; }
+.pdf-follow-toolbar:has(.pdf-follow-transport) {
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  min-width: 0;
+}
+.pdf-follow-source { display: flex; align-items: center; gap: 6px; grid-column: 1; grid-row: 1; }
+.pdf-follow-source select { max-width: 125px; min-width: 65px; }
+.pdf-follow-transport { display: flex; align-items: center; gap: 3px; grid-column: 2; grid-row: 1; }
+.pdf-follow-settings { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; grid-column: 3; grid-row: 1; white-space: nowrap; }
+.pdf-follow-stage-wrap { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.performance-pdf-embedded .pdf-follow-stage-wrap .performance-reader-stage { flex: 1; min-height: 0; overflow: auto; }
+.performance-reader .pdf-follow-toolbar .pdf-listen-switch { width: 28px; height: 16px; min-height: 16px; padding: 2px; border: 0; border-radius: 10px; background: #89998c; }
+.pdf-listen-switch span { display: block; width: 12px; height: 12px; border-radius: 50%; background: white; transition: transform .15s; }
+.performance-reader .pdf-follow-toolbar .pdf-listen-switch[aria-checked="true"] { background: #4d825b; }
+.pdf-listen-switch[aria-checked="true"] span { transform: translateX(12px); }
+@media (max-width: 850px) {
+  .pdf-follow-toolbar:has(.pdf-follow-transport) { grid-template-columns: auto auto auto; }
+}
+.pdf-follow-toolbar .pdf-follow-analyze { margin-left: auto; }
+.performance-reader .pdf-follow-toolbar button { background: #405b48; color: #eff8f1; border: 1px solid #75947c; font-size: 11px; padding: 4px 6px; min-height: 26px; white-space: nowrap; }
+.performance-reader .pdf-follow-toolbar select,
+.performance-reader .pdf-follow-toolbar input[type="number"] { background: #f7faf7; color: #2f4836; border: 1px solid #9db29f; border-radius: 4px; padding: 3px; font-size: 11px; height: 26px; }
+.pdf-continuous-page { position: relative; margin: 0 auto 16px; background: white; flex-shrink: 0; }
+.pdf-continuous-page:last-child { margin-bottom: 0; }
+.pdf-continuous-page-error { position: absolute; top: 12px; left: 12px; color: #a02929; }
+.pdf-audio-settings { width: min(520px, calc(100vw - 32px)); max-height: 85dvh; overflow: auto; padding: 0; border: 1px solid #9eb2a3; border-radius: 12px; background: #edf3ee; color: #2d4434; }
+.pdf-audio-settings::backdrop { background: #0006; }
+.pdf-audio-settings header, .pdf-audio-settings footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: #26332c; }
+.pdf-audio-settings header h2 { margin: 0; font-size: 18px; }
+.pdf-audio-settings button { border: 1px solid #718778; border-radius: 8px; padding: 7px 12px; background: #3c5546; color: white; cursor: pointer; }
+.pdf-audio-settings button:disabled { opacity: .4; cursor: default; }
+.pdf-audio-filename { margin: 16px; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
+.pdf-audio-settings header h2 { color: #f4faf5; }
+.pdf-audio-drop { margin: 16px; padding: 24px 16px; border: 2px dashed #92ac99; border-radius: 10px; text-align: center; background: #fff; }
+.pdf-audio-drop.is-dragging { border-color: #3a8050; background: #e0efe2; }
+.pdf-audio-drop p { overflow-wrap: anywhere; }
+.pdf-audio-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 16px 16px; }
+.pdf-audio-preview audio { width: 100%; }
+.pdf-audio-preview input { width: 85px; }
+.pdf-audio-preview small { display: block; width: 100%; color: #5c7062; }
+.pdf-audio-settings > p[role="alert"] { color: #a02d2d; padding: 0 16px; }
+.pdf-audio-settings footer { justify-content: flex-end; }
+.performance-pdf-navigation { flex-shrink: 0; }
+.pdf-following .performance-pdf-navigation { position: sticky; top: 0; z-index: 10; background: #26332c; }
+.performance-reader.performance-pdf-embedded.pdf-following { overflow: visible; }
+.pdf-audio-settings.song-audio-settings { padding: 18px; border: 1px solid #e5eaf2; border-radius: 16px; background: white; color: #111d38; box-shadow: 0 12px 40px #0f172a26; }
+.song-audio-settings::backdrop { background: #0f172a80; }
+.song-audio-settings header, .song-audio-settings footer { background: white; padding: 0; }
+.song-audio-settings header { margin-bottom: 16px; }
+.song-audio-settings header h2 { color: #111d38; font-size: 18px; font-weight: 600; }
+.song-audio-settings .pdf-audio-filename { margin: 0 0 14px; color: #111d38; }
+.song-audio-settings .pdf-audio-preview { padding: 0 0 18px; }
+.song-audio-settings .pdf-audio-preview small { color: #7b879f; }
+.song-audio-settings input[type="number"] { border: 1px solid #e5eaf2; border-radius: 10px; padding: 10px 13px; background: white; color: #111d38; }
+.song-audio-settings button { border: 1px solid #b9cdfc; border-radius: 9px; padding: 9px 15px; background: white; color: #2563eb; font-size: 13px; font-weight: 500; }
+.song-audio-settings footer { justify-content: flex-end; }
+.song-audio-settings footer button:last-child { background: #2563eb; color: white; border-color: #2563eb; }
+.pdf-follow-audio-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #526556; font-size: 11px; }
+.pdf-follow-progress { padding: 4px 10px 6px; background: #e7eee8; color: #526556; }
+.pdf-follow-progress input[type="range"] { display: block; width: 100%; padding: 0; margin: 0; accent-color: #527b60; cursor: pointer; }
+.pdf-follow-progress > div { display: flex; justify-content: space-between; font-size: 11px; font-variant-numeric: tabular-nums; }

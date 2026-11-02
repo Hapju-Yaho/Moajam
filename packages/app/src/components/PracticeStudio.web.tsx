@@ -975,11 +975,6 @@ export function PracticeStudioSession({
     );
   return (
     <>
-      {loadFailed && (
-        <ActionButton secondary onPress={() => setLoadAttempt((value) => value + 1)}>
-          연습 데이터 다시 불러오기
-        </ActionButton>
-      )}
       <ScheduleDialog
         label={dialog?.title}
         visible={!!dialog}
@@ -1021,7 +1016,7 @@ export function PracticeStudioSession({
           saveLabel={
             !loaded
               ? loadFailed
-                ? '불러오기 실패'
+                ? ''
                 : '불러오는 중…'
               : readOnly
                 ? '재생 전용 · 음량과 반복 설정은 나에게만 적용돼요'
