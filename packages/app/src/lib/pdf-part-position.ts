@@ -1,4 +1,5 @@
-type Measure = { page: number; bounds: number[]; meter: number[]; restCount?: number | null };
+import { pdfPlaybackTimeline } from './pdf-playback-timeline';
+type Measure = { number?: number; page: number; bounds: number[]; meter: number[]; restCount?: number | null };
 
 /** Locate the target part nearest to the current measure on the PDF. */
 export function nearestPdfPartPosition(source: Measure | undefined, measures: Measure[]): number {
@@ -13,6 +14,5 @@ export function nearestPdfPartPosition(source: Measure | undefined, measures: Me
   for (let i = 1; i < measures.length; i++) {
     if (distance(measures[i]) < distance(measures[nearest])) nearest = i;
   }
-  return measures.slice(0, nearest).reduce((beats, measure) =>
-    beats + measure.meter[0] * 4 / measure.meter[1] * (measure.restCount ?? 1), 0);
+  return pdfPlaybackTimeline(measures)[nearest].start;
 }

@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AudioSettingsWaveform } from './AudioSettingsWaveform.web';
+import { ScoreTransportIcon } from './ScoreTransportIcon.web';
+import { startMetronome } from '../lib/metronome.web';
+import { signatures, type TimeSignature } from '../lib/practiceTimeline';
 
 export function PdfAudioSettings({ file, start, onApply, onClose, fixedFile = false, bpm = 120, signature = '4/4' }: {
   file: File | null;
@@ -23,6 +26,30 @@ export function PdfAudioSettings({ file, start, onApply, onClose, fixedFile = fa
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState('');
   const [dragging, setDragging] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [metronome, setMetronome] = useState(false);
+  const [clickVolume, setClickVolume] = useState(0.5);
+  const [clickEpoch, setClickEpoch] = useState(0);
+  const clickContext = useRef<AudioContext | null>(null);
+  useEffect(() => () => { void clickContext.current?.close(); }, []);
+  useEffect(() => {
+    if (!metronome || !playing || !clickContext.current || !audio.current) return;
+    const position = audio.current.currentTime - offset;
+    return startMetronome(clickContext.current, {
+      bpm: draftBpm,
+      signature: signatures.includes(draftSignature as TimeSignature) ? draftSignature as TimeSignature : '4/4',
+      volume: clickVolume, position: Math.max(0, position), leadIn: Math.max(0, -position) + 0.025,
+      onBeat: () => {},
+    });
+  }, [metronome, playing, draftBpm, draftSignature, clickVolume, clickEpoch, offset]);
+  const toggleMetronome = async () => {
+    if (metronome) { setMetronome(false); return; }
+    try {
+      clickContext.current ??= new AudioContext();
+      await clickContext.current.resume();
+      setMetronome(true);
+    } catch { setError('메트로놈을 재생하지 못했어요.'); }
+  };
   useEffect(() => {
     const node = dialog.current;
     node?.showModal();
@@ -58,6 +85,7 @@ export function PdfAudioSettings({ file, start, onApply, onClose, fixedFile = fa
     {url && <section className="pdf-audio-preview">
       <audio ref={audio} src={url} controls={!fixedFile} preload="metadata"
         onTimeUpdate={() => setTime(audio.current?.currentTime ?? 0)}
+        onSeeked={() => setClickEpoch((value) => value + 1)}
         onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
         onLoadedMetadata={() => {
           const length = audio.current?.duration ?? 0;
@@ -67,7 +95,15 @@ export function PdfAudioSettings({ file, start, onApply, onClose, fixedFile = fa
         }} onError={() => setError('이 음원 형식을 재생할 수 없어요. 다른 파일을 선택해주세요.')} />
       {fixedFile && selected && <>
         <AudioSettingsWaveform file={selected} duration={duration} time={time} start={offset} bpm={draftBpm} onBpmChange={setDraftBpm}
-          signature={draftSignature} onSignatureChange={setDraftSignature} onSeek={(value) => {
+          signature={draftSignature} onSignatureChange={setDraftSignature}
+          metronomeControls={<div className="audio-settings-metronome-controls">
+            <button type="button" className="audio-settings-metronome-toggle" role="switch" aria-label="메트로놈" aria-checked={metronome}
+              onClick={() => void toggleMetronome()}>
+              <ScoreTransportIcon name="metronome" /><span className="audio-settings-switch"><span /></span>
+            </button>
+            <input type="range" aria-label="메트로놈 음량" title="메트로놈 음량" min={0} max={1} step={0.01} value={clickVolume} onChange={(e) => setClickVolume(Number(e.target.value))} />
+          </div>}
+          onSeek={(value) => {
           const next = Math.max(0, Math.min(duration, value));
           if (audio.current) audio.current.currentTime = next;
           setTime(next);
@@ -87,6 +123,10 @@ export function PdfAudioSettings({ file, start, onApply, onClose, fixedFile = fa
             if (audio.current) { audio.current.currentTime = duration; audio.current.pause(); }
             setTime(duration);
           }}>▶│</button>
+          <label className="audio-settings-volume" title="음원 음량">음량
+            <input type="range" aria-label="음원 음량" min={0} max={1} step={0.01} value={volume}
+              onChange={(e) => { const next = Number(e.target.value); setVolume(next); if (audio.current) audio.current.volume = next; }} />
+          </label>
         </div>
       </>}
       <label>음원 시작 위치 <input type="number" min={0} max={duration || undefined} step="0.1" value={offset}

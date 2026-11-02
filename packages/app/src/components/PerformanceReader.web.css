@@ -413,3 +413,23 @@
 .audio-settings-waveform-ruler > span b { display: block; font-size: 12px; line-height: 15px; font-weight: 600; }
 .audio-settings-waveform-ruler > span small { display: block; color: #9eafbc; font-size: 9px; line-height: 12px; }
 .song-audio-settings .audio-settings-waveform-caption select { height: 25px; padding: 2px 5px; border: 1px solid #e5eaf2; border-radius: 6px; background: white; color: #111d38; font-size: 12px; }
+.audio-settings-waveform-caption { gap: 8px; }
+.audio-settings-metronome-controls { display: inline-flex; align-items: center; gap: 5px; }
+.song-audio-settings .audio-settings-metronome-controls .audio-settings-metronome-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 2px 3px; border: 0; background: transparent; color: #647f96; height: 25px; }
+.audio-settings-metronome-toggle svg { width: 18px; height: 18px; }
+.audio-settings-switch { display: block; width: 26px; height: 14px; padding: 2px; box-sizing: border-box; border-radius: 9px; background: #b8c3ce; }
+.audio-settings-switch > span { display: block; width: 10px; height: 10px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.audio-settings-metronome-toggle[aria-checked="true"] .audio-settings-switch { background: #647f96; }
+.audio-settings-metronome-toggle[aria-checked="true"] .audio-settings-switch > span { transform: translateX(12px); }
+.audio-settings-metronome-controls input[type="range"] { width: 58px; margin: 0; accent-color: #647f96; }
+.audio-settings-transport { position: relative; }
+.pdf-audio-settings .audio-settings-volume { position: static; display: inline-flex; align-items: center; gap: 4px; margin-left: 2px; color: #647f96; font-size: 11px; }
+.audio-settings-volume input[type="range"] { width: 75px; margin: 0; accent-color: #647f96; }
+@media (max-width: 480px) {
+  .audio-settings-waveform-heading { flex-wrap: wrap; gap: 6px; }
+  .audio-settings-waveform-caption { flex-wrap: wrap; }
+  .pdf-audio-settings .audio-settings-volume { position: static; margin-left: 4px; }
+}
+.pdf-follow-toolbar .pdf-follow-volume { display: inline-flex; align-items: center; gap: 4px; color: #c6cdd7; font-size: 11px; }
+.pdf-follow-toolbar .pdf-follow-volume input[type="range"] { width: 75px; margin: 0; accent-color: #93afd5; cursor: pointer; }
+.pdf-follow-toolbar .pdf-follow-volume input:disabled { opacity: .4; cursor: default; }
