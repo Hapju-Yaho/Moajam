@@ -76,6 +76,12 @@ export function ScoreEnsemble({
                   )}
                   <GuitarStaff
                     {...props}
+                    timedLyrics={
+                      props.score.keyboardStaves?.[owner] && part === owner
+                        ? undefined
+                        : props.timedLyrics
+                    }
+                    lyricSystemOverride={props.timedLyrics?.length ? rows : undefined}
                     part={displayedPart}
                     onPartSelect={onPartSelect}
                     layoutWidth={props.layoutWidth ?? width}

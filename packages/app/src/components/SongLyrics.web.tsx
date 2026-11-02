@@ -79,7 +79,7 @@ function LyricsReader({
   const stage = useRef<HTMLDivElement>(null);
   const ownsFullscreen = useRef(false);
   const [expanded, setExpanded] = useState(false);
-  const inline = embedded && !expanded;
+  const timingClose = useRef<(() => void) | null>(null);
   const [lyricsWidth, setLyricsWidth] = useState(1000);
   const [draft, setDraft] = useState(lyrics);
   const [editing, setEditing] = useState(!lyrics);
@@ -98,6 +98,7 @@ function LyricsReader({
   const [error, setError] = useState('');
   const [follow, setFollow] = useState(false);
   const [timingSettings, setTimingSettings] = useState(false);
+  const inline = embedded && !expanded && !timingSettings;
   const [timingDirty, setTimingDirty] = useState(false);
   const dirty = (editing && draft !== lyrics) || timingDirty;
   useEffect(() => {
@@ -115,6 +116,10 @@ function LyricsReader({
     }
   }, [size, speed, preferenceKey]);
   const close = () => {
+    if (timingSettings) {
+      timingClose.current?.();
+      return;
+    }
     if (embedded && expanded) {
       if (timingDirty && !window.confirm('가사 타이밍을 저장하지 않고 작게 보기로 전환할까요?'))
         return;
@@ -173,7 +178,7 @@ function LyricsReader({
   }, [playing, editing, speed]);
   const content = (
     <div className="performance-reader-content">
-      <header>
+      <header style={timingSettings ? { display: 'none' } : undefined}>
         <div className="lyrics-reader-title">
           <h2>{title} · 가사</h2>
           <div className="performance-reader-settings">
@@ -219,8 +224,6 @@ function LyricsReader({
                 <button
                   aria-pressed={timingSettings}
                   onClick={() => {
-                    if (timingDirty && !window.confirm('가사 박자 설정을 저장하지 않고 닫을까요?'))
-                      return;
                     setPlaying(false);
                     setTimingDirty(false);
                     setTimingSettings((value) => !value);
@@ -298,6 +301,11 @@ function LyricsReader({
             onDirtyChange={setTimingDirty}
             settingsOpen={timingSettings}
             followEnabled={follow}
+            closeRequestRef={timingClose}
+            onCloseSettings={() => {
+              setTimingSettings(false);
+              setTimingDirty(false);
+            }}
           />
         ) : (
           <div
@@ -308,7 +316,7 @@ function LyricsReader({
           </div>
         )}
       </div>
-      <footer>
+      <footer style={timingSettings ? { display: 'none' } : undefined}>
         <div className="performance-reader-settings">
           <button
             aria-pressed={follow}
@@ -389,5 +397,5 @@ function LyricsReader({
       {content}
     </dialog>
   );
-  return embedded && expanded ? createPortal(reader, document.body) : reader;
+  return embedded && (expanded || timingSettings) ? createPortal(reader, document.body) : reader;
 }

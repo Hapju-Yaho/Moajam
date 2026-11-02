@@ -108,7 +108,9 @@ test('TAB only omits staff SVG, uses its own coordinates and retains editing/pla
   assert.match(combined, /data-staff-tone/);
   assert.ok(tab.length < combined.length);
   const stringYs = (html) =>
-    [...html.matchAll(/<line x1="45"[^>]*y1="([^"]+)"/g)].map((m) => Number(m[1]));
+    [...html.matchAll(/<line x1="45" x2="(?!45")[^"]+"[^>]*y1="([^"]+)"/g)].map((m) =>
+      Number(m[1]),
+    );
   assert.equal(stringYs(tab)[1] - stringYs(tab)[0], 16);
   assert.equal(stringYs(combined)[1] - stringYs(combined)[0], 20);
 

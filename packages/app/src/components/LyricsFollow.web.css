@@ -471,3 +471,15 @@
   font-size: clamp(80px, 15vw, 160px);
   line-height: 1;
 }
+.lyrics-countdown-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lyrics-follow .lyrics-countdown-settings input[type='number'] {
+  width: 48px;
+}
+.lyrics-countdown-settings input:disabled {
+  background: #e0e5e9;
+  color: #89939b;
+}

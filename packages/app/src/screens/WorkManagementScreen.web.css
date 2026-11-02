@@ -56,3 +56,66 @@
   color: #718096;
   line-height: 1.4;
 }
+.work-project-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.work-project-create {
+  width: min(400px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 22px;
+  border: 1px solid #cfdae5;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #193348;
+  box-shadow: 0 12px 50px #162c4a33;
+}
+.work-project-create::backdrop {
+  background: #172c4559;
+}
+.work-project-create h2 {
+  margin: 0 0 18px;
+  font-size: 18px;
+}
+.work-project-create label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.work-project-create input {
+  padding: 10px;
+  border: 1px solid #bfcedc;
+  border-radius: 7px;
+  background: white;
+  color: #193348;
+  font: inherit;
+}
+.work-project-create footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.work-project-create button {
+  padding: 8px 16px;
+  border: 1px solid #bdcddd;
+  border-radius: 7px;
+  cursor: pointer;
+  background: white;
+  color: #304e65;
+}
+.work-project-create button[type='submit'] {
+  background: #316cd1;
+  border-color: #316cd1;
+  color: white;
+}
+.work-project-create button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.work-project-create [role='alert'] {
+  font-size: 12px;
+  color: #b74343;
+}

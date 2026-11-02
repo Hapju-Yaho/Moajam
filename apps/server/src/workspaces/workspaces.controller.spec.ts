@@ -29,9 +29,32 @@ describe('song lyrics', () => {
     };
     assert.ok(isWorkspaceDocumentKey(key));
     assert.ok(canWriteDocument(key, null, value, 'member', false));
+    assert.ok(
+      canWriteDocument(
+        key,
+        null,
+        {
+          ...value,
+          tracks: {
+            'score:project-1': {
+              ...value.tracks['score:project-1'],
+              cues: [{ section: 1, beat: 8 }],
+            },
+          },
+        },
+        'member',
+        false,
+      ),
+    );
     for (const cues of [
       [{ section: 0, beat: 0.25 }],
-      [{ section: 1, beat: 0 }],
+      [{ section: 2, beat: 0 }],
+      [{ section: -1, beat: 0 }],
+      [{ section: 0.5, beat: 0 }],
+      [
+        { section: 1, beat: 0 },
+        { section: 1, beat: 1 },
+      ],
       [
         { section: 0, beat: 2 },
         { section: 1, beat: 1 },

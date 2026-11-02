@@ -14,6 +14,7 @@ export function LyricsReferencePlayer({
   metronomeOnly = false,
   compactControls = false,
   countIn = false,
+  countInBeats = 4,
 }: {
   video: string;
   bpm: number;
@@ -25,6 +26,7 @@ export function LyricsReferencePlayer({
   metronomeOnly?: boolean;
   compactControls?: boolean;
   countIn?: boolean;
+  countInBeats?: number;
 }) {
   const player = useRef<ScoreYouTubeHandle | null>(null),
     audio = useRef<AudioContext | null>(null);
@@ -40,11 +42,14 @@ export function LyricsReferencePlayer({
   const [countdown, setCountdown] = useState<number | null>(null);
   const counting = useRef(false);
   const generation = useRef(0);
-  useEffect(() => () => {
-    generation.current += 1;
-    counting.current = false;
-    setCountdown(null);
-  }, [countIn]);
+  useEffect(
+    () => () => {
+      generation.current += 1;
+      counting.current = false;
+      setCountdown(null);
+    },
+    [countIn, countInBeats],
+  );
   useEffect(() => setTempo(String(bpm)), [bpm]);
   const read = () =>
     running.current
@@ -80,11 +85,12 @@ export function LyricsReferencePlayer({
       await audio.current.resume();
       if (attempt !== generation.current) return;
       if (countIn) {
+        const count = Math.max(1, Math.min(32, Math.round(countInBeats) || 4));
         const start = performance.now();
         const interval = 60000 / bpm;
-        for (let index = 0; index < 4; index += 1) {
+        for (let index = 0; index < count; index += 1) {
           if (attempt !== generation.current) return;
-          setCountdown(4 - index);
+          setCountdown(count - index);
           if (metronome)
             scheduleClick(audio.current, audio.current.currentTime + 0.025, index === 0, 0.5);
           await new Promise<void>((resolve) =>
@@ -142,7 +148,18 @@ export function LyricsReferencePlayer({
         return { bar: Math.floor(beat / length), offset: beat % length };
       },
     });
-  }, [onTransport, metronomeOnly, video, ready, playing, bpm, meter, metronome, countIn]);
+  }, [
+    onTransport,
+    metronomeOnly,
+    video,
+    ready,
+    playing,
+    bpm,
+    meter,
+    metronome,
+    countIn,
+    countInBeats,
+  ]);
   useEffect(() => {
     if (!playing) return;
     let next = -1,

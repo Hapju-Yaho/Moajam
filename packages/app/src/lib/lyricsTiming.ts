@@ -53,11 +53,23 @@ export function activeLyricsSection(cues: LyricsCue[], beat: number): number {
   return active;
 }
 export function addLyricsCue(cues: LyricsCue[], beat: number, count: number): LyricsCue[] {
+  const section = Array.from({ length: count }, (_, index) => index).find(
+    (index) => !cues.some((cue) => cue.section === index),
+  );
+  if (section === undefined) throw new Error('모든 구분절의 타이밍을 입력했어요.');
+  return recordLyricsCue(cues, section, beat);
+}
+export function recordLyricsCue(cues: LyricsCue[], section: number, beat: number): LyricsCue[] {
   if (!Number.isFinite(beat) || beat < 0 || beat > 128000)
     throw new Error('재생 위치를 확인한 뒤 다시 입력해주세요.');
-  if (cues.length >= count) throw new Error('모든 구분절의 타이밍을 입력했어요.');
   const snapped = snapLyricsBeat(beat);
-  if (cues.length && snapped <= cues[cues.length - 1].beat)
+  const previous = cues.filter((cue) => cue.section < section).at(-1);
+  const next = cues.find((cue) => cue.section > section);
+  if (previous && snapped <= previous.beat)
     throw new Error('이전 구분절보다 뒤의 8분음표 위치에서 입력해주세요.');
-  return [...cues, { section: cues.length, beat: snapped }];
+  if (next && (beat >= next.beat || snapped >= next.beat))
+    throw new Error('다음 가사의 시작 박자가 지났어요. 이전 위치에서 다시 기록해주세요.');
+  return [...cues.filter((cue) => cue.section !== section), { section, beat: snapped }].sort(
+    (a, b) => a.section - b.section,
+  );
 }

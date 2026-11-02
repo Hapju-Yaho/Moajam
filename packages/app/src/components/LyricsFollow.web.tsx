@@ -4,6 +4,7 @@ import {
   activeLyricsSection,
   addLyricsCue,
   moveLyricsCue,
+  recordLyricsCue,
   lyricsSections,
   lyricsCueLabel,
   type LyricsCue,
@@ -20,6 +21,8 @@ export function LyricsFollow({
   onDirtyChange,
   settingsOpen,
   followEnabled,
+  onCloseSettings,
+  closeRequestRef,
 }: {
   songId: string;
   lyrics: string;
@@ -27,6 +30,8 @@ export function LyricsFollow({
   onDirtyChange: (value: boolean) => void;
   settingsOpen: boolean;
   followEnabled: boolean;
+  onCloseSettings?: () => void;
+  closeRequestRef?: { current: (() => void) | null };
 }) {
   const { actionError, storageError, syncStatus } = useMockAppState();
   const [document, setDocument] = useWorkspaceValue<LyricsTimingDocument>(
@@ -35,6 +40,9 @@ export function LyricsFollow({
   );
   const [bpm, setBpm] = useState(120),
     [meter, setMeter] = useState<[number, number]>([4, 4]);
+  const [countdownEnabled, setCountdownEnabled] = useState(true);
+  const [countdownBeats, setCountdownBeats] = useState(4);
+  const [countdownText, setCountdownText] = useState('4');
   const [transport, setTransport] = useState<LyricsTransport | null>(null);
   const receive = useCallback((value: LyricsTransport | null) => setTransport(value), []);
   const [cues, setCues] = useState<LyricsCue[]>([]),
@@ -42,13 +50,17 @@ export function LyricsFollow({
     [beat, setBeat] = useState(0),
     [message, setMessage] = useState('');
   const sectionNodes = useRef(new Map<number, HTMLElement>());
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const frame = requestAnimationFrame(() => root.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [settingsOpen]);
   const [selectedSection, setSelectedSection] = useState<number | null>(null);
   const [redoSection, setRedoSection] = useState<number | null>(null);
   useEffect(() => setRedoSection(null), [settingsOpen, lyrics]);
   useEffect(() => setSelectedSection(null), [settingsOpen]);
   useEffect(() => {
-    if (redoSection !== null && !cues.some((cue) => cue.section === redoSection))
-      setRedoSection(null);
     if (selectedSection !== null && !cues.some((cue) => cue.section === selectedSection))
       setSelectedSection(null);
   }, [cues, redoSection, selectedSection]);
@@ -110,18 +122,10 @@ export function LyricsFollow({
     frame = requestAnimationFrame(update);
     return () => cancelAnimationFrame(frame);
   }, [transport]);
-  const active = activeLyricsSection(cues, beat),
-    location = transport?.location(beat);
+  const active = activeLyricsSection(cues, beat);
   const lastRecorded = !transport?.playing && redoSection !== null ? redoSection : active;
-  useEffect(() => {
-    if (redoSection === null || !transport?.playing) return;
-    const next = cues.find((cue) => cue.section === redoSection + 1);
-    if (next && beat >= next.beat) {
-      setRedoSection(null);
-      setSelectedSection(next.section);
-      setMessage('다음 가사의 기록된 박자로 넘어갔어요. 기존 기록은 유지됩니다.');
-    }
-  }, [redoSection, beat, cues, transport?.playing]);
+  const redoNext = redoSection === null ? undefined : cues.find((cue) => cue.section > redoSection);
+  const redoExpired = Boolean(redoNext && beat >= redoNext.beat);
   useEffect(() => {
     if (!settingsOpen) return;
     const node = sectionNodes.current.get(lastRecorded),
@@ -163,13 +167,7 @@ export function LyricsFollow({
     try {
       const position = transport.readBeat();
       if (redoSection !== null) {
-        const next = cues.find((cue) => cue.section === redoSection + 1);
-        if (next && position >= next.beat) {
-          setRedoSection(null);
-          setSelectedSection(next.section);
-          return;
-        }
-        setCues(moveLyricsCue(cues, redoSection, position));
+        setCues(recordLyricsCue(cues, redoSection, position));
         setRedoSection(null);
       } else setCues(addLyricsCue(cues, position, sections.length));
       setSelectedSection(redoSection);
@@ -208,10 +206,10 @@ export function LyricsFollow({
     return () => window.removeEventListener('keydown', down, true);
   });
   const save = () => {
-    if (!transport?.ready || !key || key.endsWith(':')) return;
+    if (!transport?.ready || !key || key.endsWith(':')) return false;
     if (cues.length > 3000) {
       setMessage('한 재생 기준에는 최대 3,000개 구분절을 저장할 수 있어요.');
-      return;
+      return false;
     }
     if (
       document.lyrics === lyrics &&
@@ -219,7 +217,7 @@ export function LyricsFollow({
       Object.keys(document.tracks).length >= 50
     ) {
       setMessage('한 곡에는 최대 50개의 재생 기준을 저장할 수 있어요.');
-      return;
+      return false;
     }
     setDocument((previous) => ({
       version: 1,
@@ -232,9 +230,24 @@ export function LyricsFollow({
     }));
     setDirty(false);
     setMessage('가사 타이밍을 저장 요청했어요.');
+    return true;
   };
+  const closeSettings = () => {
+    if (dirty && !save()) return;
+    transport?.seek(transport.readBeat());
+    onDirtyChange(false);
+    onCloseSettings?.();
+  };
+  useEffect(() => {
+    if (!closeRequestRef) return;
+    closeRequestRef.current = closeSettings;
+    return () => {
+      closeRequestRef.current = null;
+    };
+  });
   return (
     <section
+      ref={root}
       className="lyrics-follow"
       data-settings={settingsOpen}
       data-source="metronome"
@@ -287,11 +300,25 @@ export function LyricsFollow({
           <button
             className="lyrics-cue-capture"
             disabled={
-              !transport?.playing || (redoSection === null && cues.length >= sections.length)
+              !transport?.playing ||
+              redoExpired ||
+              (redoSection === null && cues.length >= sections.length)
             }
             onClick={capture}
           >
             다음 가사 박자 기록 · Enter
+          </button>
+        )}
+        {settingsOpen && (
+          <button
+            disabled={!cues.length}
+            onClick={() => {
+              setCues((value) => value.slice(0, -1));
+              setRedoSection(null);
+              setDirty(true);
+            }}
+          >
+            마지막 입력 취소
           </button>
         )}
         {settingsOpen ? (
@@ -337,14 +364,35 @@ export function LyricsFollow({
           onTransport={receive}
           metronomeOnly
           compactControls
-          countIn={settingsOpen}
+          countIn={settingsOpen && countdownEnabled}
+          countInBeats={countdownBeats}
         />
         {settingsOpen && (
-          <strong>
-            {location
-              ? `${location.bar + 1}마디 · ${(location.offset / (4 / (transport?.meter[1] ?? 4)) + 1).toFixed(1)}박`
-              : '재생 기준을 선택하세요'}
-          </strong>
+          <div className="lyrics-countdown-settings">
+            <label>
+              <input
+                type="checkbox"
+                checked={countdownEnabled}
+                onChange={(event) => setCountdownEnabled(event.target.checked)}
+              />
+              카운트다운
+            </label>
+            <input
+              type="number"
+              aria-label="카운트다운 박 수"
+              min={1}
+              max={32}
+              step={1}
+              disabled={!countdownEnabled || transport?.playing}
+              value={countdownText}
+              onChange={(event) => setCountdownText(event.target.value)}
+              onBlur={() => {
+                const value = Math.max(1, Math.min(32, Math.round(Number(countdownText)) || 4));
+                setCountdownBeats(value);
+                setCountdownText(String(value));
+              }}
+            />
+          </div>
         )}
         {settingsOpen && (
           <div className="lyrics-timing-save-actions">
@@ -352,17 +400,14 @@ export function LyricsFollow({
               disabled={!cues.length}
               onClick={() => {
                 setCues([]);
+                setRedoSection(null);
                 setDirty(true);
               }}
             >
               초기화
             </button>
-            <button
-              className="lyrics-timing-save"
-              disabled={!dirty || !transport?.ready}
-              onClick={save}
-            >
-              박자 저장{dirty ? ' *' : ''}
+            <button className="lyrics-timing-save" onClick={closeSettings}>
+              닫기
             </button>
           </div>
         )}
@@ -410,26 +455,9 @@ export function LyricsFollow({
       <div className="lyrics-follow-layout">
         {settingsOpen ? (
           <div className="lyrics-follow-queue">
-            <header>
-              <strong>
-                가사 {cues.length} / {sections.length} 기록
-              </strong>
-              <button
-                disabled={!cues.length}
-                onClick={() => {
-                  setCues((v) => v.slice(0, -1));
-                  setDirty(true);
-                }}
-              >
-                마지막 입력 취소
-              </button>
-            </header>
-            <p>
-              빈 줄로 구분절을 나누고, 시작할 때 Enter를 누르세요. 가장 가까운 8분음표로 보정됩니다.
-            </p>
             <ol className="lyrics-cue-list" aria-label="가사 박자 입력 목록">
               {sections.map((text, index) => {
-                const cue = cues[index];
+                const cue = cues.find((cue) => cue.section === index);
                 return (
                   <li
                     key={index}
@@ -466,6 +494,8 @@ export function LyricsFollow({
                         onClick={() => {
                           if (transport?.playing) transport.toggle();
                           setRedoSection(index);
+                          setCues((value) => value.filter((item) => item.section !== index));
+                          setDirty(true);
                           setSelectedSection(index);
                           setMessage(
                             `${index + 1}번 가사의 시작만 다시 입력합니다. 다음 가사의 박자가 오면 기존 기록으로 넘어갑니다.`,
@@ -488,9 +518,6 @@ export function LyricsFollow({
                 );
               })}
             </ol>
-            {cues.length === sections.length && sections.length > 0 && (
-              <p>모든 가사의 시작을 기록했어요. 박자 저장을 눌러주세요.</p>
-            )}
           </div>
         ) : (
           <div
@@ -509,14 +536,14 @@ export function LyricsFollow({
                 tabIndex={0}
                 onClick={() => {
                   if (transport?.playing) return;
-                  const position = cues[index]?.beat ?? playbackEnd;
+                  const position = cues.find((cue) => cue.section === index)?.beat ?? playbackEnd;
                   transport?.seek(position);
                   setBeat(position);
                 }}
                 onKeyDown={(event) => {
                   if (event.key !== 'Enter' || transport?.playing) return;
                   event.preventDefault();
-                  const position = cues[index]?.beat ?? playbackEnd;
+                  const position = cues.find((cue) => cue.section === index)?.beat ?? playbackEnd;
                   transport?.seek(position);
                   setBeat(position);
                 }}
