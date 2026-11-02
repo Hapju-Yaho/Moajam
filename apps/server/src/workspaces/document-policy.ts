@@ -227,7 +227,9 @@ export function canWriteDocument(
     object(after) && typeof after.id === 'string' && /^[\w-]{1,128}$/.test(after.id) &&
     typeof after.name === 'string' && after.name.length > 0 && after.name.length <= 255 &&
     (after.start === undefined || (typeof after.start === 'number' && Number.isFinite(after.start) && after.start >= 0 && after.start <= 604800)) &&
-    Object.keys(after).every((key) => key === 'id' || key === 'name' || key === 'start')
+    (after.bpm === undefined || (typeof after.bpm === 'number' && Number.isFinite(after.bpm) && after.bpm >= 20 && after.bpm <= 300)) &&
+    (after.signature === undefined || (typeof after.signature === 'string' && ['4/4', '3/4', '2/4', '6/8'].includes(after.signature))) &&
+    Object.keys(after).every((key) => ['id', 'name', 'start', 'bpm', 'signature'].includes(key))
   ));
   if (key.endsWith('/lyrics-timing')) return validLyricsTiming(after);
   if (key.endsWith('/memo') || key.endsWith('/lyrics'))

@@ -8,6 +8,10 @@ test('song audio references can only be changed by band managers', () => {
   assert.equal(isWorkspaceDocumentKey(key), true);
   assert.equal(canWriteDocument(key, null, value, 'owner', true), true);
   assert.equal(canWriteDocument(key, value, { ...value, start: 12.5 }, 'owner', true), true);
+  assert.equal(canWriteDocument(key, value, { ...value, start: 12.5, bpm: 124 }, 'owner', true), true);
+  assert.equal(canWriteDocument(key, value, { ...value, signature: '6/8' }, 'owner', true), true);
+  assert.equal(canWriteDocument(key, value, { ...value, signature: 'invalid' }, 'owner', true), false);
+  assert.equal(canWriteDocument(key, value, { ...value, bpm: 0 }, 'owner', true), false);
   assert.equal(canWriteDocument(key, value, null, 'owner', true), true);
   assert.equal(canWriteDocument(key, null, value, 'member', false), false);
   assert.equal(canWriteDocument(key, value, null, 'member', false), false);

@@ -378,3 +378,38 @@
 .pdf-playback-part-controls { display: flex; align-items: center; gap: 8px; min-width: 220px; }
 .pdf-playback-part-controls > select { flex: 1; min-width: 0; }
 .pdf-playback-part-controls > .pdf-start-measure-analysis { width: 100%; }
+.audio-settings-waveform { position: relative; width: 100%; height: 105px; background: #354751; border: 1px solid #7591a2; border-radius: 7px; overflow: hidden; cursor: crosshair; touch-action: none; }
+.audio-settings-waveform svg { display: block; width: 100%; height: 100%; }
+.audio-settings-waveform > span { position: absolute; inset: 0; display: grid; place-items: center; color: #dce6ed; font-size: 12px; pointer-events: none; }
+.audio-settings-waveform:focus-visible { outline: 2px solid #5b8ec5; outline-offset: 2px; }
+.audio-settings-transport { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; color: #5b6b7e; font-size: 12px; font-variant-numeric: tabular-nums; }
+.audio-settings-progress { width: 100%; }
+.pdf-audio-settings .audio-settings-progress input[type="range"] { width: 100%; display: block; margin: 0; accent-color: #647f96; }
+.audio-settings-progress > div { display: flex; justify-content: space-between; font-size: 11px; color: #617285; font-variant-numeric: tabular-nums; }
+.audio-settings-waveform-scroll { scrollbar-width: thin; scrollbar-color: #77909f #2b3943; }
+.audio-settings-waveform-scroll::-webkit-scrollbar { height: 8px; }
+.audio-settings-waveform-scroll::-webkit-scrollbar-track { background: #2b3943; }
+.audio-settings-waveform-scroll::-webkit-scrollbar-thumb { background: #77909f; border: 2px solid #2b3943; border-radius: 6px; }
+.audio-settings-waveform-editor { width: 100%; min-width: 0; }
+.audio-settings-waveform-heading { display: flex; align-items: center; justify-content: space-between; color: #58687a; font-size: 12px; margin-bottom: 6px; }
+.audio-settings-waveform-heading > div { display: flex; align-items: center; gap: 5px; }
+.audio-settings-waveform-heading > div > span { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; }
+.pdf-audio-settings .audio-settings-waveform-heading button { padding: 2px 7px; min-width: 26px; height: 25px; }
+.audio-settings-waveform-scroll { width: 100%; overflow-x: auto; overflow-y: hidden; border-radius: 7px; background: #354751; }
+.audio-settings-waveform-ruler { position: relative; height: 28px; background: #2b3943; color: #d7e2ea; border-bottom: 1px solid #718898; cursor: ns-resize; touch-action: none; user-select: none; overflow: hidden; }
+.audio-settings-waveform-ruler > span { position: absolute; top: 0; height: 100%; padding: 3px 0 0 5px; border-left: 1px solid #718898; font-size: 10px; box-sizing: border-box; white-space: nowrap; pointer-events: none; }
+.audio-settings-waveform-scroll .audio-settings-waveform { border-radius: 0; box-sizing: border-box; }
+.pdf-audio-preview .audio-settings-progress { margin-bottom: -8px; }
+.pdf-audio-preview .audio-settings-transport { gap: 4px; margin-top: -2px; }
+.pdf-audio-settings .audio-settings-transport button { min-width: 28px; height: 25px; min-height: 25px; padding: 2px 6px; border-radius: 6px; font-size: 11px; }
+.pdf-audio-preview .audio-settings-transport { margin-top: -14px; }
+.pdf-audio-settings .audio-settings-transport button { background: #edf1f5; color: #647f96; border-color: #9baebf; }
+.pdf-audio-settings .audio-settings-transport button:hover:not(:disabled) { background: #dce5ed; border-color: #7894ab; }
+.audio-settings-progress > div { line-height: 13px; }
+.audio-settings-waveform-caption { display: flex; align-items: center; gap: 12px; }
+.audio-settings-waveform-caption label { font-size: 11px; gap: 5px; }
+.song-audio-settings .audio-settings-waveform-caption input[type="number"] { width: 56px; min-height: 25px; height: 25px; box-sizing: border-box; padding: 2px 5px; border-radius: 6px; font-size: 12px; }
+.audio-settings-waveform-ruler { height: 35px; }
+.audio-settings-waveform-ruler > span b { display: block; font-size: 12px; line-height: 15px; font-weight: 600; }
+.audio-settings-waveform-ruler > span small { display: block; color: #9eafbc; font-size: 9px; line-height: 12px; }
+.song-audio-settings .audio-settings-waveform-caption select { height: 25px; padding: 2px 5px; border: 1px solid #e5eaf2; border-radius: 6px; background: white; color: #111d38; font-size: 12px; }

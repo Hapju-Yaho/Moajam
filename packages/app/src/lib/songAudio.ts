@@ -1,6 +1,6 @@
 import { api, serverConfigured } from './remote';
 import { readMedia } from './mediaStore';
-export type SongAudio = { id: string; name: string; start?: number };
+export type SongAudio = { id: string; name: string; start?: number; bpm?: number; signature?: string };
 export async function songAudioBlob(audio: SongAudio): Promise<Blob> {
   if (!serverConfigured) {
     const blob = await readMedia<Blob>('song-audio/' + audio.id);
