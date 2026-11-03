@@ -45,7 +45,7 @@ test('measure-only confirmation saves boundaries without starting note recogniti
         instrument: 'guitar',
         capo: 0,
         tabLines: 6,
-        measures: [{ number: 1, page: 1, meter: [4, 4], system: 1, bounds: [20, 100, 980, 300] }],
+        measures: [{ number: 1, page: 1, meter: [4, 4], system: 1, bounds: [20, 100, 980, 300], repeat: { start: true, end: { target: 1, times: 2 }, ending: null } }],
       },
     ],
   };
@@ -72,6 +72,7 @@ test('measure-only confirmation saves boundaries without starting note recogniti
     assert.equal(saved.status, 'structure_review');
     assert.equal(saved.revision, revision + 1);
     assert.equal(calls, 1);
+    assert.deepEqual(stored.value.structure.parts[0].measures[0].repeat, structure.parts[0].measures[0].repeat);
     await assert.rejects(() => service.saveStructure('alice', job.id, result.structure, revision));
     await assert.rejects(() => service.saveStructure('bob', job.id, result.structure, saved.revision));
     const bytes = service.source('alice', job.id);

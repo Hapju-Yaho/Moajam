@@ -1,3 +1,4 @@
+import { pdfPlaybackTimeline, type PdfMeasureRepeat } from '../lib/pdf-playback-timeline';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { createPortal } from 'react-dom';
 import { changeMeasureBounds, moveMeasureRow } from '../lib/pdf-measure-bounds';
@@ -15,6 +16,7 @@ export type PdfStructure = {
     tabLines: number | null;
     measures: {
       restCount?: number | null;
+      repeat?: PdfMeasureRepeat | null;
       number: number;
       page: number;
       meter: number[];
@@ -122,13 +124,27 @@ export function ScorePdfStructureReview({
       parts: prev.parts.map((p, i) => (i === part ? { ...p, measures: change(p.measures) } : p)),
     }));
   };
+  const repeat = bar?.repeat ?? { start: false, end: null, ending: null };
+  const changeRepeat = (patch: Partial<PdfMeasureRepeat>) => update((rows) => rows.map((m, i) => i === selected
+    ? { ...m, repeat: { start: false, end: null, ending: null, ...m.repeat, ...patch } } : m));
   const renumber = (rows: PdfStructure['parts'][number]['measures']) => {
     let number = current.measures[0]?.number ?? 1;
-    return rows.map((m) => {
+    const firstNumbers = new Map<number, number>();
+    const lastNumbers = new Map<number, number>();
+    const numbered = rows.map((m) => {
       const value = { ...m, number };
+      for (let offset = 0; offset < (m.restCount ?? 1); offset++) {
+        if (!firstNumbers.has(m.number + offset)) firstNumbers.set(m.number + offset, number + offset);
+        lastNumbers.set(m.number + offset, number + offset);
+      }
       number += m.restCount ?? 1;
       return value;
     });
+    return numbered.map((m) => ({ ...m, repeat: m.repeat ? {
+      ...m.repeat,
+      end: m.repeat.end ? { ...m.repeat.end, target: firstNumbers.get(m.repeat.end.target) ?? m.repeat.end.target } : null,
+      ending: m.repeat.ending ? { ...m.repeat.ending, end: lastNumbers.get(m.repeat.ending.end) ?? m.repeat.ending.end } : null,
+    } : null }));
   };
   const point = (e: PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -141,6 +157,10 @@ export function ScorePdfStructureReview({
   for (const p of draft.parts) {
     if (!p.measures.length) errors.push(`${p.name}: 마디가 필요합니다.`);
     p.measures.forEach((m, i) => {
+      const last = p.measures.at(-1)!;
+      const lastNumber = last.number + (last.restCount ?? 1) - 1;
+      if (m.repeat?.end && (m.repeat.end.target < p.measures[0].number || m.repeat.end.target > m.number + (m.restCount ?? 1) - 1 || m.repeat.end.times < 2 || m.repeat.end.times > 8)) errors.push(`${p.name} ${m.number}마디: 반복 위치·횟수를 확인해주세요.`);
+      if (m.repeat?.ending && (m.repeat.ending.end < m.number || m.repeat.ending.end > lastNumber)) errors.push(`${p.name} ${m.number}마디: 괄호의 끝 마디를 확인해주세요.`);
       const b = m.bounds;
       if (
         m.page < 1 ||
@@ -164,13 +184,14 @@ export function ScorePdfStructureReview({
       )
         errors.push(`${p.name} ${m.number}마디: 앞 마디와 겹치거나 순서가 다릅니다.`);
     });
+    try { pdfPlaybackTimeline(p.measures); } catch (cause) { errors.push(cause instanceof Error ? cause.message : '반복 설정을 확인해주세요.'); }
   }
   return (
     <section className="score-pdf-structure-review">
       <h3>마디 경계 확인</h3>
       <p>
         상자는 한 마디의 오선·타브 전체를 감싸야 합니다. 잘못 나뉜 마디를 합치거나 나누고
-        확인해주세요. 오른쪽 조절판의 화살표로 선택 마디의 각 경계를 넓히거나 좁힐 수 있어요.
+        확인해주세요. 경계선을 드래그해 크기를 조절하고, 오른쪽 화살표로 선택한 줄을 이동할 수 있어요.
       </p>
       <div className="score-pdf-structure-tools">
         <label>
@@ -377,6 +398,29 @@ export function ScorePdfStructureReview({
         <div className="score-pdf-structure-fields">
           {bar && (
             <>
+              <div className="score-pdf-repeat-fields" key={`${part}:${bar.number}`}>
+                <span className="score-pdf-boundary-title">반복 설정 · {bar.number}마디</span>
+                <small>{!repeat.start && !repeat.end && !repeat.ending ? '반복 없음' : '분석 결과를 확인하고 수정할 수 있어요.'}</small>
+                {draft.warnings.filter((warning) => (warning.part === current.id || !warning.part) && (warning.measure === bar.number || !warning.measure) && warning.code.includes('REPEAT')).map((warning, index) => <small key={index} role="status">반복 기호를 확인해주세요. ({warning.code})</small>)}
+                <label><span>반복 시작</span><input type="checkbox" checked={repeat.start} disabled={busy} onChange={(e) => changeRepeat({ start: e.target.checked })} /></label>
+                <label><span>반복 끝</span><input type="checkbox" checked={!!repeat.end} disabled={busy} onChange={(e) => changeRepeat({ end: e.target.checked ? { target: [...current.measures.slice(0, selected + 1)].reverse().find((m) => m.repeat?.start)?.number ?? current.measures[0].number, times: 2 } : null })} /></label>
+                {repeat.end && <>
+                  <label>돌아갈 마디<input type="number" min={current.measures[0].number} max={bar.number + (bar.restCount ?? 1) - 1} defaultValue={repeat.end.target} disabled={busy}
+                    onBlur={(e) => changeRepeat({ end: { ...repeat.end!, target: Math.round(Number(e.target.value)) } })} /></label>
+                  <label>총 연주 횟수<input type="number" min={2} max={8} defaultValue={repeat.end.times} disabled={busy}
+                    onBlur={(e) => changeRepeat({ end: { ...repeat.end!, times: Math.round(Number(e.target.value)) } })} /></label>
+                </>}
+                <label>반복 괄호<select value={repeat.ending?.passes.join(',') ?? ''} disabled={busy}
+                  onChange={(e) => changeRepeat({ ending: e.target.value ? { passes: e.target.value.split(',').map(Number), end: repeat.ending?.end ?? bar.number + (bar.restCount ?? 1) - 1 } : null })}>
+                  <option value="">없음</option>
+                  {Array.from({ length: 8 }, (_, index) => <option key={index + 1} value={String(index + 1)}>{index + 1}번</option>)}
+                  <option value="1,2">1·2번</option>
+                  {repeat.ending && repeat.ending.passes.length > 1 && repeat.ending.passes.join(',') !== '1,2' && <option value={repeat.ending.passes.join(',')}>{repeat.ending.passes.join('·')}번</option>}
+                </select></label>
+                {repeat.ending && <label>괄호 끝 마디<input type="number" min={bar.number} max={current.measures.at(-1)!.number + (current.measures.at(-1)!.restCount ?? 1) - 1} defaultValue={repeat.ending.end} disabled={busy}
+                  onBlur={(e) => changeRepeat({ ending: { ...repeat.ending!, end: Math.round(Number(e.target.value)) } })} /></label>}
+                {repeat.end && <small>{repeat.end.target}마디로 돌아가 총 {repeat.end.times}회 연주</small>}
+              </div>
               <div className="score-pdf-row-move-group">
                 <span className="score-pdf-boundary-title">영역 위치 이동</span>
                 <div className="score-pdf-row-move" role="group" aria-label="선택한 줄의 마디 영역 이동">
@@ -409,155 +453,6 @@ export function ScorePdfStructureReview({
                   })}
                 </div>
               </div>
-              <div className="score-pdf-boundary-group">
-                <span className="score-pdf-boundary-title">영역 크기 조정</span>
-                <div
-                  className="score-pdf-boundary-control"
-                  role="group"
-                  aria-label="선택 마디 경계 조정"
-                >
-                  <div className="score-pdf-boundary-box" />
-                  <span className="score-pdf-boundary-center">영역</span>
-                  {[
-                    {
-                      index: 0,
-                      label: '왼쪽',
-                      direction: 'left',
-                      delta: -1,
-                      row: 3,
-                      column: 1,
-                      expand: true,
-                    },
-                    {
-                      index: 0,
-                      label: '왼쪽',
-                      direction: 'right',
-                      delta: 1,
-                      row: 3,
-                      column: 2,
-                      expand: false,
-                    },
-                    {
-                      index: 1,
-                      label: '위쪽',
-                      direction: 'up',
-                      delta: -1,
-                      row: 1,
-                      column: 3,
-                      expand: true,
-                    },
-                    {
-                      index: 1,
-                      label: '위쪽',
-                      direction: 'down',
-                      delta: 1,
-                      row: 2,
-                      column: 3,
-                      expand: false,
-                    },
-                    {
-                      index: 2,
-                      label: '오른쪽',
-                      direction: 'left',
-                      delta: -1,
-                      row: 3,
-                      column: 4,
-                      expand: false,
-                    },
-                    {
-                      index: 2,
-                      label: '오른쪽',
-                      direction: 'right',
-                      delta: 1,
-                      row: 3,
-                      column: 5,
-                      expand: true,
-                    },
-                    {
-                      index: 3,
-                      label: '아래쪽',
-                      direction: 'up',
-                      delta: -1,
-                      row: 4,
-                      column: 3,
-                      expand: false,
-                    },
-                    {
-                      index: 3,
-                      label: '아래쪽',
-                      direction: 'down',
-                      delta: 1,
-                      row: 5,
-                      column: 3,
-                      expand: true,
-                    },
-                  ].map(({ index, label, direction, delta, expand }) => {
-                    const minimum = index < 2 ? 0 : bar.bounds[index - 2] + 1;
-                    const maximum = index < 2 ? bar.bounds[index + 2] - 1 : 1000;
-                    const description = `${label} 경계 ${expand ? '바깥으로 확장' : '안쪽으로 축소'}`;
-                    const adjust = () =>
-                      update((rows) =>
-                        changeMeasureBounds(rows, selected, rows[selected].bounds.map((n, j) =>
-                          j === index ? n + delta : n)),
-                      );
-                    return (
-                      <button
-                        key={`${index}:${delta}`}
-                        type="button"
-                        aria-label={description}
-                        title={description}
-                        data-edge={index}
-                        data-expand={expand}
-                        disabled={
-                          busy ||
-                          (delta < 0 ? bar.bounds[index] <= minimum : bar.bounds[index] >= maximum)
-                        }
-                        onPointerDown={(e) => {
-                          if (e.button !== 0 || !e.isPrimary) return;
-                          stopRepeat();
-                          pointerClick.current = true;
-                          e.currentTarget.setPointerCapture(e.pointerId);
-                          adjust();
-                          const repeat = () => {
-                            adjust();
-                            repeatTimer.current = setTimeout(repeat, 60);
-                          };
-                          repeatTimer.current = setTimeout(repeat, 350);
-                        }}
-                        onPointerUp={stopRepeat}
-                        onPointerCancel={stopRepeat}
-                        onLostPointerCapture={stopRepeat}
-                        onContextMenu={(e) => e.preventDefault()}
-                        onClick={(e) => {
-                          if (e.detail === 0 || !pointerClick.current) adjust();
-                          pointerClick.current = false;
-                        }}
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          aria-hidden="true"
-                          style={{
-                            transform: `rotate(${{ right: 0, down: 90, left: 180, up: 270 }[direction]}deg)`,
-                          }}
-                        >
-                          <path d="m9 6 6 6-6 6" />
-                        </svg>
-                      </button>
-                    );
-                  })}
-                </div>
-                <small className="score-pdf-boundary-hint">
-                  안쪽 화살표는 축소, 바깥쪽은 확장
-                  <br />한 번에 1씩 · 길게 누르면 연속 조정
-                </small>
-              </div>
               <button
                 type="button"
                 disabled={!!bar.restCount}
@@ -570,6 +465,7 @@ export function ScorePdfStructureReview({
                           : [
                               {
                                 ...m,
+                                repeat: m.repeat ? { ...m.repeat, end: null } : null,
                                 bounds: [
                                   m.bounds[0],
                                   m.bounds[1],
@@ -579,6 +475,7 @@ export function ScorePdfStructureReview({
                               },
                               {
                                 ...m,
+                                repeat: m.repeat ? { start: false, end: m.repeat.end, ending: null } : null,
                                 bounds: [
                                   Math.round((m.bounds[0] + m.bounds[2]) / 2),
                                   m.bounds[1],
@@ -598,6 +495,8 @@ export function ScorePdfStructureReview({
                 type="button"
                 disabled={
                   !!bar.restCount ||
+                  !!bar.repeat?.end ||
+                  !!current.measures[selected + 1]?.repeat?.start ||
                   !!current.measures[selected + 1]?.restCount ||
                   !current.measures[selected + 1] ||
                   current.measures[selected + 1].page !== bar.page ||
@@ -611,6 +510,7 @@ export function ScorePdfStructureReview({
                           ? [
                               {
                                 ...m,
+                                repeat: { start: m.repeat?.start ?? false, end: rows[i + 1].repeat?.end ?? m.repeat?.end ?? null, ending: m.repeat?.ending ?? rows[i + 1].repeat?.ending ?? null },
                                 bounds: [
                                   m.bounds[0],
                                   Math.min(m.bounds[1], rows[i + 1].bounds[1]),
