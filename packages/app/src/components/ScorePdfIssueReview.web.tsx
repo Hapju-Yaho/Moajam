@@ -114,9 +114,9 @@ export function ScorePdfIssueReview({
       dispose: (() => void) | undefined;
     setError('');
     void (async () => {
-      const engine = await import('pdfjs-dist');
+      const engine = await import('pdfjs-dist/legacy/build/pdf.mjs');
       engine.GlobalWorkerOptions.workerSrc = new URL(
-        'pdfjs-dist/build/pdf.worker.min.mjs',
+        'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
         import.meta.url,
       ).toString();
       const bytes = new Uint8Array(await file.arrayBuffer());
