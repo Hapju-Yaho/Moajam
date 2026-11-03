@@ -1111,6 +1111,11 @@
   .score-pdf-structure-review .score-pdf-structure-tools { width: 100%; }
 }
 .score-pdf-row-move-group { display: grid; gap: 8px; margin-bottom: 8px; }
+.score-pdf-repeat-fields { display: grid; gap: 7px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid #9da5af; }
+.score-pdf-repeat-fields label { justify-content: space-between; font-size: 12px; }
+.score-pdf-repeat-fields input[type='number'] { width: 60px; min-width: 0; }
+.score-pdf-repeat-fields input[type='checkbox'] { width: auto; }
+.score-pdf-repeat-fields small { font-size: 11px; line-height: 1.4; }
 .score-pdf-row-move { display: grid; grid-template-columns: 20px 1fr 20px; grid-template-rows: 20px 64px 20px; gap: 4px; }
 .score-pdf-row-move-box { grid-column: 2; grid-row: 2; border: 1px solid #8d9aa9; background: #e0e6ed; color: #5b6878; display: grid; place-items: center; font-size: 12px; }
 .score-pdf-import .score-pdf-row-move button { display: flex; align-items: center; justify-content: center; padding: 0; min-width: 0; min-height: 0; touch-action: none; }

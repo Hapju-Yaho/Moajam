@@ -1,7 +1,7 @@
 import { BpmInput } from './BpmInput.web';
 import { ScoreTransportIcon } from './ScoreTransportIcon.web';
 import { scheduleClick } from '../lib/metronome.web';
-import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { ScorePdfImport } from './ScorePdfImport.web';
 import { PdfMeasureHighlightSettings, defaultPdfMeasureHighlight } from './PdfMeasureHighlightSettings.web';
@@ -38,6 +38,7 @@ export function PdfScoreReader({
   activeUser.current = user;
   const stage = useRef<HTMLDivElement>(null);
   const activeRegion = useRef<SVGRectElement>(null);
+  const lastFocusedMeasure = useRef<{ part: string; number: number; nextNumber?: number } | null>(null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [externalPdfUrl, setExternalPdfUrl] = useState('');
   const [zoom, setZoom] = useState(100);
@@ -80,6 +81,52 @@ export function PdfScoreReader({
   const following = true;
   const [playing, setPlaying] = useState(false);
   const [bpm, setBpm] = useState(120);
+  const [bpmReady, setBpmReady] = useState(false);
+  const bpmPreference = useRef<{ key: string; value: number | null }>({ key: '', value: null });
+  useEffect(() => {
+    let active = true;
+    setBpmReady(false);
+    const key = pdf ? `practice/pdf-song-tempo/${songKey}` : '';
+    bpmPreference.current = { key, value: null };
+    if (!key) return;
+    const load = async () => {
+      let saved = serverConfigured ? await readPersonal<{ bpm?: number }>(key, user)
+        : JSON.parse(localStorage.getItem(`moajam/${user}/${key}`) ?? 'null');
+      if (!saved && pdf?.fingerprints[0]) {
+        const oldKey = `practice/pdf-tempo/${pdf.fingerprints[0]}`;
+        saved = serverConfigured ? await readPersonal<{ bpm?: number }>(oldKey, user)
+          : JSON.parse(localStorage.getItem(`moajam/${user}/${oldKey}`) ?? 'null');
+        if (!active) return;
+        if (typeof saved?.bpm === 'number' && Number.isFinite(saved.bpm)) {
+          const migrated = { bpm: Math.max(20, Math.min(300, saved.bpm)) };
+          if (serverConfigured) await writePersonal(key, migrated, user);
+          else localStorage.setItem(`moajam/${user}/${key}`, JSON.stringify(migrated));
+        }
+      }
+      if (!active) return;
+      if (typeof saved?.bpm === 'number' && Number.isFinite(saved.bpm)) {
+        const value = Math.max(20, Math.min(300, saved.bpm));
+        bpmPreference.current = { key, value };
+        setBpm(value);
+      }
+      setBpmReady(true);
+    };
+    void load().catch(() => { if (active) setError('PDF BPM 설정을 불러오지 못했어요. PDF를 다시 열어주세요.'); });
+    return () => { active = false; };
+  }, [pdf, user, name, songKey]);
+  const changeBpm = (value: number) => {
+    const key = bpmPreference.current.key;
+    if (!bpmReady || !key) return;
+    setPlaying(false);
+    setBpm(value);
+    bpmPreference.current = { key, value };
+    const owner = user;
+    const save = async () => {
+      if (serverConfigured) await writePersonal(key, { bpm: value }, owner);
+      else localStorage.setItem(`moajam/${owner}/${key}`, JSON.stringify({ bpm: value }));
+    };
+    void save().catch(() => { if (activeUser.current === owner && bpmPreference.current.key === key) setError('PDF BPM을 저장하지 못했어요. PDF를 다시 열고 설정해주세요.'); });
+  };
   const [countEnabled, setCountEnabled] = useState(true);
   const [countBeats, setCountBeats] = useState(4);
   const [loopEnabled, setLoopEnabled] = useState(false);
@@ -275,22 +322,26 @@ export function PdfScoreReader({
       setSavedChoices(saved);
       const first = saved[0]?.structure.parts[0] ?? null;
       setSelectedPart(first);
-      setBpm(saved[0]?.structure.bpm ?? 120);
+      setBpm(bpmPreference.current.value ?? saved[0]?.structure.bpm ?? 120);
       setPosition(0);
     } catch (e) {
       setError(e instanceof Error ? e.message : '저장된 마디 정보를 불러오지 못했어요.');
     } finally { setPreparingAnalysis(false); }
   };
   const parts = (savedChoices ?? []).flatMap((choice) => choice.structure.parts.map((part) => ({ part, bpm: choice.structure.bpm ?? 120 })));
-  const timeline = pdfPlaybackTimeline(selectedPart?.measures ?? []);
+  const playback = useMemo(() => {
+    try { return { timeline: pdfPlaybackTimeline(selectedPart?.measures ?? []), error: '' }; }
+    catch (cause) { return { timeline: [] as ReturnType<typeof pdfPlaybackTimeline<PdfStructure['parts'][number]['measures'][number]>>, error: cause instanceof Error ? cause.message : '반복 설정을 확인해주세요.' }; }
+  }, [selectedPart]);
+  const timeline = playback.timeline;
   const totalBeats = timeline.at(-1)?.end ?? 0;
   const firstBar = timeline[0]?.measure.number ?? 1;
-  const lastMeasure = timeline.at(-1)?.measure;
+  const lastMeasure = selectedPart?.measures.at(-1);
   const lastBar = lastMeasure ? lastMeasure.number + (lastMeasure.restCount ?? 1) - 1 : firstBar;
   const loopStartBar = Math.max(firstBar, Math.min(lastBar, Math.round(Number(loopFrom) || firstBar)));
   const loopEndBar = Math.max(loopStartBar, Math.min(lastBar, Math.round(Number(loopTo) || lastBar)));
   const loopStart = pdfMeasureBeat(timeline, loopStartBar);
-  const loopEnd = pdfMeasureBeat(timeline, loopEndBar + 1);
+  const loopEnd = pdfMeasureBeat(timeline, loopEndBar, loopStart, true);
   useEffect(() => {
     if (!selectedPart || loopReadyKey !== loopStorageKey) return;
     setLoopFrom((value) => value || String(firstBar));
@@ -299,17 +350,16 @@ export function PdfScoreReader({
   const { active: activeEntry, waiting: waitingEntry, remainingBars } = pdfTimelinePosition(timeline, position);
   const activeMeasure = activeEntry?.measure;
   const focusMeasure = activeMeasure ?? waitingEntry?.measure;
-  const measureProgress = activeEntry ? pdfMeasureProgress(position, activeEntry.start,
+  const measureProgress = activeEntry ? pdfMeasureProgress(position, activeEntry.start - (activeEntry.restOffset ?? 0) * activeEntry.measure.meter[0] * 4 / activeEntry.measure.meter[1],
     activeEntry.measure.meter, activeEntry.measure.restCount ?? 1) : null;
   const nextMeasure = activeEntry && measureProgress?.previewNext
     ? (timeline[timeline.indexOf(activeEntry) + 1]?.gapBars === 0 ? timeline[timeline.indexOf(activeEntry) + 1]?.measure : undefined)
     : remainingBars === 1 ? waitingEntry?.measure : undefined;
   const seekMeasure = (measure: PdfStructure['parts'][number]['measures'][number]) => {
-    const entry = timeline.find((entry) => entry.measure === measure);
-    if (!entry) return;
+    if (!timeline.some((entry) => entry.measure === measure)) return;
     setClickedMeasure(measure.number);
     skipCountIn.current = playing;
-    setPosition(entry.start);
+    setPosition(pdfMeasureBeat(timeline, measure.number, position));
     setCountdown(0);
     setSeekRevision((revision) => revision + 1);
   };
@@ -390,10 +440,16 @@ export function PdfScoreReader({
       if (!container || !region) return;
       const viewport = container.getBoundingClientRect();
       const bounds = region.getBoundingClientRect();
+      const previous = lastFocusedMeasure.current;
+      const jumped = previous !== null && previous.part === selectedPart?.id &&
+        (focusMeasure.number < previous.number || (focusMeasure.number !== previous.number && focusMeasure.number !== previous.nextNumber));
+      const sourceIndex = selectedPart?.measures.indexOf(focusMeasure) ?? -1;
+      lastFocusedMeasure.current = { part: selectedPart?.id ?? '', number: focusMeasure.number,
+        nextNumber: sourceIndex >= 0 ? selectedPart?.measures[sourceIndex + 1]?.number : undefined };
       container.scrollTo({
         top: container.scrollTop + bounds.top - viewport.top - (container.clientHeight - bounds.height) / 2,
         left: Math.max(0, container.scrollLeft + bounds.left - viewport.left - (container.clientWidth - bounds.width) / 2),
-        behavior: 'smooth',
+        behavior: jumped ? 'instant' : 'smooth',
       });
     });
     return () => cancelAnimationFrame(frame);
@@ -481,9 +537,15 @@ export function PdfScoreReader({
         <div className="performance-pdf-navigation">
         <header>
           <div className="performance-pdf-title">
+            <div className="pdf-library-actions">
             <button className="pdf-back-to-list" onClick={onClose}>← 악보 목록</button>
+            <a href={externalPdfUrl || undefined} target="_blank" rel="noopener noreferrer"
+              aria-disabled={!externalPdfUrl} onClick={(event) => { if (!externalPdfUrl) event.preventDefault(); }}>
+              새 창에서 열기
+            </a>
+            </div>
             <div className="pdf-title-controls">
-            <h2>{name}</h2>
+            <h2 title={name}>{name}</h2>
             <span className="pdf-title-divider" aria-hidden="true" />
             <div className="pdf-playback-part-label">
             <span>재생 마디 선택</span>
@@ -493,9 +555,13 @@ export function PdfScoreReader({
               const entry = parts[Number(e.target.value)];
               setPlaying(false);
               if (!entry) { setSelectedPart(null); setPosition(0); return; }
-              setPosition(nearestPdfPartPosition(focusMeasure, entry.part.measures));
+              const physical = pdfPlaybackTimeline(entry.part.measures.map((measure) => ({ ...measure, repeat: null })));
+              const nearest = nearestPdfPartPosition(focusMeasure, entry.part.measures);
+              const target = physical.find((bar) => bar.start === nearest)?.measure ?? entry.part.measures[0];
+              try { setPosition(target ? pdfMeasureBeat(pdfPlaybackTimeline(entry.part.measures), target.number, position) : 0); }
+              catch { setPosition(0); }
               setSelectedPart(entry.part);
-              setBpm(entry.bpm);
+              setBpm(bpmPreference.current.value ?? entry.bpm);
             }}><option value={-1}>선택 안함</option>{parts.map((entry, i) => <option key={i} value={i}>{entry.part.name}</option>)}</select>
             <button className="pdf-follow-analyze" disabled={preparingAnalysis || !pdf} onClick={() => void openAnalysis()}>마디 설정</button>
             </> : <button className="pdf-follow-analyze pdf-start-measure-analysis" disabled={preparingAnalysis || !pdf} onClick={() => void openAnalysis()}>
@@ -506,7 +572,7 @@ export function PdfScoreReader({
             <button className="pdf-follow-analyze" type="button" disabled={!highlightReady} onClick={() => { setHighlightError(''); setHighlightSettingsOpen(true); }}>강조 설정</button>
             </div>
           </div>
-          <div className="performance-reader-settings">
+          <div className="performance-reader-settings pdf-view-controls">
             <div className="performance-pdf-zoom" role="group" aria-label="PDF 배율 조정">
               <button
                 type="button"
@@ -526,10 +592,7 @@ export function PdfScoreReader({
                 +
               </button>
             </div>
-            <a href={externalPdfUrl || undefined} target="_blank" rel="noopener noreferrer"
-              aria-disabled={!externalPdfUrl} onClick={(event) => { if (!externalPdfUrl) event.preventDefault(); }}>
-              새 창에서 열기
-            </a>
+
             {embedded ? (
               <button onClick={() => setExpanded((value) => !value)}>
                 {expanded ? '작게 보기' : '전체화면'}
@@ -542,7 +605,7 @@ export function PdfScoreReader({
         {following && <div className="pdf-follow-toolbar" aria-label="박자 따라가기 도구">
             <div className="pdf-follow-source">
 
-            <label>BPM <BpmInput value={bpm} onChange={(next) => { setPlaying(false); setBpm(next); }} /></label>
+            <label>BPM <BpmInput value={bpm} onChange={changeBpm} disabled={!bpmReady} /></label>
             <div className="pdf-setting-toggle pdf-metronome-controls">
               <button type="button" className="pdf-listen-switch" role="switch" aria-label="메트로놈" aria-checked={metronome} onClick={() => void toggleMetronome()}><span /></button>
               <span title="메트로놈" style={{ display: 'flex' }}><ScoreTransportIcon name="metronome" /></span>
@@ -608,9 +671,9 @@ export function PdfScoreReader({
             </div>
         </div>}
         </div>
-        {error && (
+        {(error || playback.error) && (
           <p role="alert" className="performance-reader-error">
-            {error}
+            {error || playback.error}
           </p>
         )}
         <div className="pdf-follow-stage-wrap">

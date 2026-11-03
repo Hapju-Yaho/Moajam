@@ -5,6 +5,7 @@ import {
 } from './convert-recognition.js';
 import { RecognitionError } from './pdf-recognition.client.js';
 import type { TabScoreType } from './recognition-request.js';
+import { readMeasureRepeat } from './measure-repeats.js';
 
 export type ReviewIssue = {
   voice?: 'upper' | 'lower';
@@ -211,6 +212,8 @@ export function readStructure(value: unknown, pages: number, requireBounds = tru
       tabLines: (p as typeof p & { tabLines?: number | null }).tabLines ?? null,
       measures: p.measures.map((m) => ({
         number: m.number,
+        repeat: readMeasureRepeat((m as typeof m & { repeat?: unknown }).repeat, m.number,
+          p.measures.at(-1)!.number + (p.measures.at(-1)!.restCount ?? 1) - 1, p.measures[0].number, m.number + (m.restCount ?? 1) - 1),
         ...(m.restCount != null ? { restCount: m.restCount } : {}),
         page: m.page,
         meter: m.meter,

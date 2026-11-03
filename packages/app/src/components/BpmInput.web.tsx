@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export function BpmInput({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+export function BpmInput({ value, onChange, disabled = false }: { value: number; onChange: (value: number) => void; disabled?: boolean }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
   const commit = () => {
@@ -9,7 +9,7 @@ export function BpmInput({ value, onChange }: { value: number; onChange: (value:
     setDraft(String(next));
     if (next !== value) onChange(next);
   };
-  return <input type="number" min={20} max={300} value={draft}
+  return <input type="number" min={20} max={300} value={draft} disabled={disabled}
     onChange={(event) => setDraft(event.target.value)} onBlur={commit}
     onKeyDown={(event) => {
       if (event.key === 'Enter') {
