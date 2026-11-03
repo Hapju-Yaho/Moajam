@@ -1,3 +1,4 @@
+import { BpmInput } from './BpmInput.web';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { waveformPeaks } from '../lib/practiceTimeline';
 import { signatures } from '../lib/practiceTimeline';
@@ -53,8 +54,7 @@ export function AudioSettingsWaveform({ file, duration, time, start, onSeek, bpm
   return <div className="audio-settings-waveform-editor">
     <div className="audio-settings-waveform-heading">
       <div className="audio-settings-waveform-caption"><span>음원 파형</span>
-        <label>BPM <input type="number" min={20} max={300} value={bpm}
-          onChange={(e) => onBpmChange(Math.max(20, Math.min(300, Number(e.target.value) || 120)))} /></label>
+        <label>BPM <BpmInput value={bpm} onChange={onBpmChange} /></label>
         <label>박자 <select value={signature} onChange={(e) => onSignatureChange(e.target.value)}>
           {signatures.map((value) => <option key={value} value={value}>{value}</option>)}
         </select></label>

@@ -1,3 +1,4 @@
+import { BpmInput } from './BpmInput.web';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ScorePdfImport } from './ScorePdfImport.web';
@@ -391,7 +392,7 @@ export function PdfScoreReader({
           {preparingAnalysis ? <span>마디 정보를 불러오는 중…</span> : parts.length ? <>
             <div className="pdf-follow-source">
 
-            <label>BPM <input type="number" min={20} max={300} value={bpm} onChange={(e) => { setPlaying(false); setBpm(Math.max(20, Math.min(300, Number(e.target.value) || 120))); }} /></label>
+            <label>BPM <BpmInput value={bpm} onChange={(next) => { setPlaying(false); setBpm(next); }} /></label>
             <div className="pdf-setting-toggle"><button type="button" className="pdf-listen-switch" role="switch" aria-label="악보에 박자 표시하기" aria-checked={showBeats} onClick={() => setShowBeats((value) => !value)}><span /></button>악보에 박자 표시하기</div>
             <div className="pdf-setting-toggle"><button type="button" className="pdf-listen-switch" role="switch" aria-label="카운트다운" aria-checked={countEnabled} onClick={() => { setPlaying(false); setCountEnabled((value) => !value); }}><span /></button>카운트다운</div>
             <input className="pdf-countdown-input" aria-label="카운트다운 박 수" type="number" min={1} max={32} disabled={!countEnabled} value={countBeats} onChange={(e) => { setPlaying(false); setCountBeats(Math.max(1, Math.min(32, Number(e.target.value) || 4))); }} />
