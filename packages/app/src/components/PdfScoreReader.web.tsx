@@ -1,7 +1,7 @@
 import { BpmInput } from './BpmInput.web';
 import { ScoreTransportIcon } from './ScoreTransportIcon.web';
 import { scheduleClick } from '../lib/metronome.web';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { ScorePdfImport } from './ScorePdfImport.web';
 import { PdfMeasureHighlightSettings, defaultPdfMeasureHighlight } from './PdfMeasureHighlightSettings.web';
@@ -576,12 +576,9 @@ export function PdfScoreReader({
               <button type="button" role="switch" aria-checked={listenAlong} aria-label="음원 같이 듣기" className="pdf-listen-switch" onClick={() => { const enabled = !listenAlong; setListenAlong(enabled); saveAudioPreferences(enabled, audioVolume); }}><span /></button>
               음원 같이 듣기
             </label>
-            <span className="pdf-follow-audio-name" title={songAudio?.name}>
-              {loadingSongAudio ? '음원 불러오는 중…' : songAudio?.name ?? '등록된 음원 없음'}
-            </span>
             <label className="pdf-follow-volume">음량
               <input type="range" aria-label="함께 듣는 음원 음량" min={0} max={1} step={0.01} value={audioVolume}
-                disabled={!audioUrl || loadingSongAudio} onChange={(e) => {
+                disabled={!listenAlong || !audioUrl || loadingSongAudio} onChange={(e) => {
                   const value = Number(e.target.value); setAudioVolume(value); saveAudioPreferences(listenAlong, value);
                   if (linkedAudio.current) linkedAudio.current.volume = value;
                 }} />
@@ -592,6 +589,7 @@ export function PdfScoreReader({
         </div>}
         {following && selectedPart && <div className="pdf-follow-progress">
           <input type="range" aria-label="PDF 악보 재생 위치" min={0} max={totalBeats || 1} step={0.01}
+            style={{ '--seek-progress': `${Math.max(0, Math.min(100, totalBeats ? position / totalBeats * 100 : 0))}%` } as CSSProperties}
             value={position} disabled={!totalBeats} onChange={(e) => {
               skipCountIn.current = playing;
               setPosition(Number(e.target.value));

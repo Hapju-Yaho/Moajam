@@ -62,7 +62,7 @@ export function BandSongPractice({
       <button className="band-song-pdf-tab" id="practice-pdf-open" aria-pressed={view === 'pdf'} onClick={() => choose('pdf')}>
         PDF 악보
       </button>
-      <button aria-pressed={view === 'lyrics'} onClick={() => choose('lyrics')}>
+      <button className="band-song-lyrics-tab" aria-pressed={view === 'lyrics'} onClick={() => choose('lyrics')}>
         가사 보기
       </button>
       <button className="band-song-help-tab" type="button" aria-label="곡 연습 도움말" title="도움말 준비 중" disabled>

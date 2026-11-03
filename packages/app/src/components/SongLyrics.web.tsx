@@ -80,7 +80,6 @@ function LyricsReader({
   const ownsFullscreen = useRef(false);
   const [expanded, setExpanded] = useState(false);
   const timingClose = useRef<(() => void) | null>(null);
-  const [lyricsWidth, setLyricsWidth] = useState(1000);
   const [draft, setDraft] = useState(lyrics);
   const [editing, setEditing] = useState(!lyrics);
   const [playing, setPlaying] = useState(false);
@@ -98,16 +97,11 @@ function LyricsReader({
   const [error, setError] = useState('');
   const [follow, setFollow] = useState(false);
   const [timingSettings, setTimingSettings] = useState(false);
-  const inline = embedded && !expanded && !timingSettings;
+  const editReturn = useRef({ timing: false, follow: false });
+  const inline = embedded && !expanded;
+  const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
   const [timingDirty, setTimingDirty] = useState(false);
   const dirty = (editing && draft !== lyrics) || timingDirty;
-  useEffect(() => {
-    const target = stage.current;
-    if (!target) return;
-    const observer = new ResizeObserver(([entry]) => setLyricsWidth(entry.contentRect.width));
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [inline]);
   useEffect(() => {
     try {
       savePreferences({ size, speed }, preferenceKey);
@@ -156,31 +150,11 @@ function LyricsReader({
       window.removeEventListener('beforeunload', unload);
     };
   }, [embedded, dirty]);
-  useEffect(() => {
-    if (!playing || editing) return;
-    let frame = 0,
-      previous = 0,
-      position = stage.current?.scrollTop ?? 0;
-    const tick = (now: number) => {
-      const target = stage.current;
-      if (!target) return;
-      if (previous) position += (Math.min(now - previous, 100) / 1000) * speed;
-      previous = now;
-      target.scrollTop = position;
-      if (target.scrollTop >= target.scrollHeight - target.clientHeight - 1) {
-        setPlaying(false);
-        return;
-      }
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [playing, editing, speed]);
   const content = (
     <div className="performance-reader-content">
-      <header style={timingSettings ? { display: 'none' } : undefined}>
+      <header>
         <div className="lyrics-reader-title">
-          <h2>{title} · 가사</h2>
+          <h2>{title} · 가사</h2><span className="lyrics-header-divider" aria-hidden="true" />
           <div className="performance-reader-settings">
             {editing ? (
               <>
@@ -188,6 +162,8 @@ function LyricsReader({
                   onClick={() => {
                     onSave(draft);
                     setEditing(false);
+                    setTimingSettings(editReturn.current.timing);
+                    setFollow(editReturn.current.follow);
                     setError('');
                   }}
                 >
@@ -197,6 +173,8 @@ function LyricsReader({
                   onClick={() => {
                     setDraft(lyrics);
                     setEditing(false);
+                    setTimingSettings(editReturn.current.timing);
+                    setFollow(editReturn.current.follow);
                   }}
                 >
                   편집 취소
@@ -212,6 +190,7 @@ function LyricsReader({
                     )
                       return;
                     setTimingDirty(false);
+                    editReturn.current = { timing: timingSettings, follow };
                     setTimingSettings(false);
                     setFollow(false);
                     setPlaying(false);
@@ -221,9 +200,17 @@ function LyricsReader({
                 >
                   가사 편집
                 </button>
+                <div className="lyrics-mode-switch" role="group" aria-label="가사 이동 방식">
+                  <button type="button" aria-pressed={follow} disabled={!lyrics.trim()}
+                    onClick={() => { setPlaying(false); setFollow(true); }}>박자 맞춤</button>
+                  <button type="button" aria-pressed={!follow} disabled={timingSettings || !lyrics.trim()}
+                    onClick={() => { setPlaying(false); setFollow(false); }}>자동 스크롤</button>
+                </div>
+                {follow && (<>
                 <button
                   aria-pressed={timingSettings}
                   onClick={() => {
+                    if (timingSettings) { timingClose.current?.(); return; }
                     setPlaying(false);
                     setTimingDirty(false);
                     setTimingSettings((value) => !value);
@@ -231,11 +218,33 @@ function LyricsReader({
                 >
                   가사 박자 설정
                 </button>
+                </>)}
+          {!follow && (
+            <label>
+              스크롤 속도 {speed}
+              <input disabled={follow || timingSettings}
+
+                aria-label="가사 스크롤 속도"
+                type="range"
+                min={5}
+                max={120}
+                value={speed}
+                onChange={(e) => setSpeed(Number(e.target.value))}
+              />
+            </label>
+          )}
+
+
               </>
             )}
           </div>
         </div>
         <div className="performance-reader-settings">
+          <div className="lyrics-zoom-controls" role="group" aria-label="가사 배율">
+            <button type="button" aria-label="가사 축소" disabled={size <= 20} onClick={() => setSize((value) => Math.max(20, value - 4))}>−</button>
+            <span>{Math.round(size / 40 * 100)}%</span>
+            <button type="button" aria-label="가사 확대" disabled={size >= 80} onClick={() => setSize((value) => Math.min(80, value + 4))}>+</button>
+          </div>
           {inline && (
             <button
               onClick={() => {
@@ -273,6 +282,7 @@ function LyricsReader({
           {!inline && <button onClick={close}>{embedded ? '작게 보기' : '닫기'}</button>}
         </div>
       </header>
+      <div ref={setToolbarHost} className="lyrics-follow lyrics-view-toolbar-host" data-toolbar-settings={timingSettings} />
       {error && <p role="alert">{error}</p>}
       <div
         ref={stage}
@@ -280,7 +290,7 @@ function LyricsReader({
           'performance-reader-stage' +
           (editing ? ' is-editing' : '') +
           (timingSettings && !editing ? ' is-timing-settings' : '') +
-          (follow && !timingSettings ? ' is-following' : '')
+          (!timingSettings && !editing ? ' is-following' : '')
         }
         onWheel={() => setPlaying(false)}
         onTouchStart={() => setPlaying(false)}
@@ -293,7 +303,7 @@ function LyricsReader({
             maxLength={50000}
             onChange={(e) => setDraft(e.target.value)}
           />
-        ) : timingSettings || follow ? (
+        ) : (
           <LyricsFollow
             songId={songId}
             lyrics={lyrics}
@@ -301,85 +311,23 @@ function LyricsReader({
             onDirtyChange={setTimingDirty}
             settingsOpen={timingSettings}
             followEnabled={follow}
+            toolbarHost={toolbarHost}
+            autoScroll={!follow}
+            scrollSpeed={speed}
             closeRequestRef={timingClose}
             onCloseSettings={() => {
               setTimingSettings(false);
               setTimingDirty(false);
             }}
           />
-        ) : (
-          <div
-            className="lyrics-paper"
-            style={{ fontSize: Math.max(12, (size * lyricsWidth) / 1000) }}
-          >
-            {lyrics || '가사 편집을 눌러 가사를 등록해주세요.'}
-          </div>
         )}
       </div>
-      <footer style={timingSettings ? { display: 'none' } : undefined}>
-        <div className="performance-reader-settings">
-          <button
-            aria-pressed={follow}
-            disabled={editing || timingSettings || !lyrics.trim()}
-            onClick={() => {
-              setPlaying(false);
-              setFollow((value) => !value);
-            }}
-          >
-            가사 따라가기
-          </button>
-          <button
-            disabled={editing || timingSettings || !lyrics.trim()}
-            onClick={() => {
-              setFollow(false);
-              setPlaying(!playing);
-            }}
-          >
-            {playing ? '일시 정지' : '자동 스크롤'}
-          </button>
-          <button
-            disabled={editing || follow || timingSettings}
-            onClick={() => {
-              setPlaying(false);
-              stage.current?.scrollTo(0, 0);
-            }}
-          >
-            처음으로
-          </button>
-        </div>
 
-        <div className="performance-reader-settings">
-          <label>
-            글자 {size}
-            <input
-              aria-label="가사 글자 크기"
-              type="range"
-              min={20}
-              max={80}
-              value={size}
-              onChange={(e) => setSize(Number(e.target.value))}
-            />
-          </label>
-          {!follow && !timingSettings && (
-            <label>
-              속도 {speed}
-              <input
-                aria-label="가사 스크롤 속도"
-                type="range"
-                min={5}
-                max={120}
-                value={speed}
-                onChange={(e) => setSpeed(Number(e.target.value))}
-              />
-            </label>
-          )}
-        </div>
-      </footer>
     </div>
   );
   const reader = inline ? (
     <section
-      className="performance-reader performance-reader-embedded"
+      className="performance-reader performance-reader-embedded lyrics-reader"
       aria-label={title + ' 가사 프롬프터'}
     >
       {content}
@@ -387,7 +335,7 @@ function LyricsReader({
   ) : (
     <dialog
       ref={dialog}
-      className="performance-reader"
+      className="performance-reader lyrics-reader"
       aria-label={title + ' 가사 프롬프터'}
       onCancel={(e) => {
         e.preventDefault();
@@ -397,5 +345,5 @@ function LyricsReader({
       {content}
     </dialog>
   );
-  return embedded && (expanded || timingSettings) ? createPortal(reader, document.body) : reader;
+  return embedded && expanded ? createPortal(reader, document.body) : reader;
 }

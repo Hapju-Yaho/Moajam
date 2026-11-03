@@ -16,7 +16,7 @@ export type LyricsTransport = {
   setMetronome(value: boolean): void;
   readBeat(): number;
   toggle(): void;
-  seek(beat: number): void;
+  seek(beat: number, keepPlaying?: boolean): void;
   location(beat: number): { bar: number; offset: number };
 };
 export function lyricsSections(text: string): string[] {

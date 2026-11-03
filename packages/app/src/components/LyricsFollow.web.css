@@ -34,6 +34,26 @@
 .lyrics-playback-buttons {
   display: contents;
 }
+.lyrics-toolbar-settings, .lyrics-toolbar-record { display: contents; }
+.lyrics-follow[data-settings='true'] .lyrics-toolbar-settings,
+.lyrics-follow[data-settings='true'] .lyrics-toolbar-record { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; width: 100%; }
+.lyrics-follow[data-settings='true'] .lyrics-playback-buttons { display: flex; align-items: center; gap: 8px; }
+.lyrics-follow[data-settings='true'] .lyrics-toolbar-record .lyrics-timing-undo { margin-left: auto; }
+.lyrics-follow[data-settings='true'] .lyrics-toolbar-record { flex-shrink: 0; margin-top: 8px; }
+.lyrics-follow[data-settings='true'] .lyrics-toolbar-record button { background: #505762; border-color: #717b89; color: #f4f6f9; }
+.lyrics-toolbar-divider { width: 1px; height: 20px; background: #717b89; margin: 0 4px; flex-shrink: 0; }
+.lyrics-metronome-controls, .lyrics-listen-controls { display: flex; align-items: center; gap: 6px; font-size: 11px; white-space: nowrap; }
+.lyrics-listen-controls { margin-left: 0; }
+.lyrics-song-audio-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.lyrics-metronome-controls input[type='range'], .lyrics-listen-controls input[type='range'] { width: 64px; margin: 0; accent-color: #93afd5; }
+.lyrics-follow[data-settings='true'] .lyrics-follow-toolbar button.lyrics-audio-switch { width: 28px; height: 16px; min-height: 16px; padding: 2px; border: 0; border-radius: 10px; background: #727c8b; flex-shrink: 0; }
+.lyrics-audio-switch span { display: block; width: 12px; height: 12px; background: #fff; border-radius: 50%; transition: transform .15s; }
+.lyrics-follow[data-settings='true'] .lyrics-follow-toolbar button.lyrics-audio-switch[aria-checked='true'] { background: #3b78c3; }
+.lyrics-audio-switch[aria-checked='true'] span { transform: translateX(12px); }
+.lyrics-follow[data-settings='true'] .lyrics-toolbar-settings { gap: 6px; font-size: 11px; }
+.lyrics-follow[data-settings='true'] .lyrics-toolbar-settings input[type='number'] { width: 44px; box-sizing: border-box; height: 26px; padding: 3px; border-radius: 4px; }
+.lyrics-follow[data-settings='true'] .lyrics-toolbar-settings button { font-size: 11px; min-height: 26px; padding: 4px 6px; }
+.lyrics-follow[data-settings='true'] .lyrics-countdown-settings { display: flex; align-items: center; gap: 6px; }
 .lyrics-follow[data-settings='false'] .lyrics-follow-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -125,6 +145,7 @@
   gap: 8px;
 }
 .lyrics-follow-layout {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   margin: 12px 0;
@@ -140,10 +161,29 @@
 }
 .lyrics-follow[data-settings='true'] {
   display: flex;
+  background: #34383e;
+  color: #edf0f4;
   flex-direction: column;
   height: 100%;
   min-height: 0;
 }
+.performance-reader:has(.is-timing-settings) { background: #34383e; }
+.performance-reader:has(.is-timing-settings) > .performance-reader-content > header,
+.performance-reader-stage.is-timing-settings { background: #34383e; color: #edf0f4; }
+.lyrics-follow[data-settings='true'] .lyrics-follow-toolbar button {
+  background: #505762;
+  border-color: #717b89;
+  color: #f4f6f9;
+}
+.lyrics-follow[data-settings='true'] .lyrics-follow-toolbar input,
+.lyrics-follow[data-settings='true'] .lyrics-follow-toolbar select {
+  background: #30353c;
+  border: 1px solid #717b89;
+  color: #edf0f4;
+}
+.lyrics-follow[data-settings='true'] .lyrics-cue-bar-label { color: #c6cdd7; }
+.lyrics-follow[data-settings='true'] .lyrics-follow-toolbar .lyrics-setting-button { background: #30353c; border-color: #59616d; color: #aeb7c4; }
+.lyrics-follow[data-settings='true'] .lyrics-follow-toolbar .lyrics-setting-button[aria-pressed='true'] { background: #365b7e; border-color: #86acd0; color: #fff; }
 .lyrics-follow[data-settings='true'] .lyrics-follow-toolbar,
 .lyrics-follow[data-settings='true'] > p,
 .lyrics-follow[data-settings='true'] > small {
@@ -156,7 +196,9 @@
   margin: 8px 0 0;
 }
 .lyrics-follow[data-settings='true'] .lyrics-cue-timeline {
-  max-height: 112px;
+  background: #555d67;
+  border-color: #717b89;
+  max-height: 88px;
   box-sizing: border-box;
   margin-top: 8px;
 }
@@ -216,7 +258,7 @@
 .lyrics-cue-timeline-track {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   width: max-content;
 }
 .lyrics-timeline-cursor {
@@ -239,11 +281,14 @@
   border-top: 7px solid #2477ce;
 }
 .lyrics-cue-bar {
-  width: 96px;
-  flex: 0 0 96px;
+  width: 72px;
+  flex: 0 0 72px;
+  display: flex;
+  flex-direction: column;
 }
 .lyrics-cue-markers {
   position: relative;
+  order: 2;
 }
 .lyrics-follow .lyrics-cue-marker {
   touch-action: none;
@@ -251,8 +296,8 @@
   cursor: ew-resize;
   position: absolute;
   transform: translateX(-50%);
-  min-width: 24px;
-  height: 24px;
+  min-width: 20px;
+  height: 20px;
   padding: 0 3px;
   box-sizing: border-box;
   display: flex;
@@ -266,12 +311,13 @@
   font-weight: 700;
 }
 .lyrics-follow .lyrics-cue-bar-beats {
+  order: 1;
   width: 100%;
   padding: 0;
   border-radius: 0;
   display: grid;
-  height: 18px;
-  border: 1px solid #a9bbc7;
+  height: 14px;
+  border: 1px solid #586775;
   border-right: 0;
   background: #edf3f7;
 }
@@ -282,18 +328,27 @@
   box-shadow: 0 0 0 2px #edc89e;
 }
 .lyrics-cue-bar:last-child .lyrics-cue-bar-beats {
-  border-right: 1px solid #a9bbc7;
+  border-right: 1px solid #586775;
 }
 .lyrics-cue-bar-beats > span + span {
-  border-left: 1px solid #d2dce3;
+  border-left: 1px solid #86939f;
 }
 .lyrics-follow .lyrics-cue-bar[data-current='true'] .lyrics-cue-bar-beats {
   background: #f5d6ae;
 }
 .lyrics-cue-bar-label {
+  order: 0;
+  padding-bottom: 3px;
   font-size: 11px;
   color: #526b7a;
 }
+.lyrics-follow[data-settings='true'] .lyrics-cue-timeline { max-height: 70px; padding: 4px 10px; margin-top: 0; }
+.lyrics-follow .lyrics-cue-timeline .lyrics-cue-bar-beats { height: 10px; min-height: 10px; background: transparent; border: 0; border-top: 2px solid #a5afbb; border-radius: 0; }
+.lyrics-follow .lyrics-cue-timeline .lyrics-cue-bar-beats > span { height: 5px; border-left: 1px solid #a5afbb; }
+.lyrics-follow .lyrics-cue-timeline .lyrics-cue-bar-beats > span:first-child { height: 9px; border-left: 2px solid #d6dde6; }
+.lyrics-follow .lyrics-cue-timeline .lyrics-cue-bar:last-child .lyrics-cue-bar-beats { border-right: 2px solid #d6dde6; }
+.lyrics-follow .lyrics-cue-timeline .lyrics-cue-bar[data-current='true'] .lyrics-cue-bar-beats { background: transparent; border-top-color: #e1ae70; }
+.lyrics-follow .lyrics-cue-timeline .lyrics-cue-bar-label { font-size: 10px; padding-bottom: 2px; }
 .lyrics-cue-list {
   position: relative;
   flex: 1;
@@ -419,6 +474,9 @@
   text-align: right;
   font-size: 12px;
 }
+.lyrics-progress-times { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+.lyrics-progress-times > span:first-child { text-align: left; }
+.lyrics-toolbar-position { margin-left: auto; white-space: nowrap; color: #c6cdd7; font-size: 11px; font-variant-numeric: tabular-nums; }
 .lyrics-reading-paper > [role='button'] {
   cursor: pointer;
 }
@@ -458,15 +516,16 @@
 }
 .lyrics-count-in {
   position: absolute;
-  inset: 55px 0 0;
+  inset: 0;
   z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  background: rgba(245, 248, 250, 0.82);
-  color: #c16a1c;
+  background: rgba(52, 59, 67, 0.65);
+  color: #fff;
 }
+.lyrics-missing-timing { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; width: max-content; max-width: calc(100% - 32px); box-sizing: border-box; padding: 12px 18px; border: 1px solid #8893a066; border-radius: 6px; background: rgba(27, 33, 41, .75); color: #edf0f4; font-size: 13px; text-align: center; pointer-events: none; }
 .lyrics-count-in strong {
   font-size: clamp(80px, 15vw, 160px);
   line-height: 1;
@@ -480,6 +539,11 @@
   width: 48px;
 }
 .lyrics-countdown-settings input:disabled {
-  background: #e0e5e9;
-  color: #89939b;
+  background: #262a30;
+  border-color: #454d59;
+  color: #747d8b;
+  opacity: .65;
+  cursor: not-allowed;
 }
+.performance-reader.lyrics-reader .lyrics-follow .lyrics-countdown-settings input:disabled { background: #262a30; border-color: #454d59; color: #747d8b; }
+.lyrics-listen-controls input[type='range']:disabled { opacity: .4; cursor: not-allowed; }

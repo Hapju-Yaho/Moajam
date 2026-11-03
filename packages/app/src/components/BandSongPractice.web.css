@@ -53,4 +53,6 @@
 .band-song-practice-tabs .band-song-score-tab[aria-pressed='true'] { background: #fff; color: #293b55; border-color: #8d9fba; box-shadow: 0 2px 0 #fff; }
 .band-song-practice-tabs .band-song-pdf-tab { background: #f8e3e1; color: #a8443d; border-color: #dbaba6; }
 .band-song-practice-tabs .band-song-pdf-tab[aria-pressed='true'] { background: #fff; color: #b84740; border-color: #dbaba6; box-shadow: 0 2px 0 #fff; }
+.band-song-practice-tabs .band-song-lyrics-tab { background: #dfe2e7; color: #505762; border-color: #929ba7; }
+.band-song-practice-tabs .band-song-lyrics-tab[aria-pressed='true'] { background: #fff; color: #34383e; border-color: #929ba7; box-shadow: 0 2px 0 #fff; }
 .band-song-practice-tabs .band-song-help-tab { background: #fff0bf; color: #946b17; border-color: #dec17a; }
