@@ -272,10 +272,10 @@ export function PdfScoreReader({
     setPlaying(false);
     setSelectedPart(null);
     setSavedChoices(null);
-    void import('pdfjs-dist')
+    void import('pdfjs-dist/legacy/build/pdf.mjs')
       .then(async (engine) => {
         engine.GlobalWorkerOptions.workerSrc = new URL(
-          'pdfjs-dist/build/pdf.worker.min.mjs',
+          'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
           import.meta.url,
         ).toString();
         if (!active) return;
@@ -286,9 +286,11 @@ export function PdfScoreReader({
         const document = await task.promise;
         if (active) setPdf(document);
       })
-      .catch(() => {
-        if (active)
-          setError('PDF를 읽지 못했어요. 암호가 없는 PDF인지 확인하거나 새 창에서 열어주세요.');
+      .catch((cause: unknown) => {
+        if (!active) return;
+        console.error('PDF loading failed', cause);
+        const reason = cause instanceof Error ? cause.message : '';
+        setError(`PDF를 읽지 못했어요. 암호가 없는 PDF인지 확인하거나 새 창에서 열어주세요.${reason ? ` (${reason})` : ''}`);
       });
     return () => {
       active = false;
