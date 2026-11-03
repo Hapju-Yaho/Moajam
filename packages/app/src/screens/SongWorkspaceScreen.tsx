@@ -135,10 +135,7 @@ export function SongWorkspaceScreen({
                 <SongActions song={song} onDeleted={() => navigate('songs', { workspaceId })} />
               </FlexRow>
             </FlexBetween>
-            <Copy>
-              {song.artist} · 내 파트 {song.participants?.[currentUserId]?.part || '미배정'} · Key{' '}
-              {arrangement.key || '미정'} · BPM {arrangement.bpm || '미정'}
-            </Copy>
+            <Copy>{song.artist}</Copy>
             {!!message && <Meta accessibilityLiveRegion="polite">{message}</Meta>}
             <View style={{ marginTop: 'auto' }}>
               <SongAudioPlayer songId={song.id} />
