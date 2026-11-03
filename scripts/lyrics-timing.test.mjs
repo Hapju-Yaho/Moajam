@@ -9,7 +9,18 @@ const {
   lyricsCueLabel,
   moveLyricsCue,
   recordLyricsCue,
+  updateLyricsTimingText,
 } = await import(moduleUrl(new URL('../packages/app/src/lib/lyricsTiming.ts', import.meta.url)));
+
+test('lyric edits preserve recorded timings and shift them around inserted or removed sections', () => {
+  const original = { version: 1, lyrics: 'first\n\nsecond\n\nthird', tracks: { metronome: { bpm: 120, meter: [4, 4], cues: [{ section: 0, beat: 0 }, { section: 1, beat: 8 }, { section: 2, beat: 16 }] } } };
+  const changed = updateLyricsTimingText(original, 'first edited\n\nsecond edited\n\nthird');
+  assert.deepEqual(changed.tracks.metronome.cues, original.tracks.metronome.cues);
+  const inserted = updateLyricsTimingText(original, 'first\n\nnew\n\nsecond\n\nthird');
+  assert.deepEqual(inserted.tracks.metronome.cues, [{ section: 0, beat: 0 }, { section: 2, beat: 8 }, { section: 3, beat: 16 }]);
+  const removed = updateLyricsTimingText(original, 'first\n\nthird');
+  assert.deepEqual(removed.tracks.metronome.cues, [{ section: 0, beat: 0 }, { section: 1, beat: 16 }]);
+});
 
 test('redo clears only one cue, restores it before the next cue and rejects late recording', () => {
   const original = [
