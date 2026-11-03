@@ -493,7 +493,7 @@ export function PdfScoreReader({
                     fill={active ? highlight.beatColor : nextMeasure === m ? highlight.beatPreviewColor : highlight.beatIdleColor} />;
                 })}
                 {((activeMeasure === m && (m.restCount ?? 1) > 1) || waitingEntry?.measure === m) && <g>
-                  <g transform={`translate(${(m.bounds[0] + m.bounds[2]) / 2}, ${m.bounds[1] + 14 * pageRatio}) scale(1, ${pageRatio})`}>
+                  <g transform={`translate(${(m.bounds[0] + m.bounds[2]) / 2}, ${waitingEntry?.measure === m ? m.bounds[1] + 14 * pageRatio : m.bounds[3] - 14 * pageRatio}) scale(1, ${pageRatio})`}>
                   <rect x={waitingEntry?.measure === m ? -48 : -82} y={-12}
                     width={waitingEntry?.measure === m ? 96 : 164} height={24} rx={3} fill="#343b43" fillOpacity={0.8} />
                   <text x={0} y={0} dominantBaseline="middle" textAnchor="middle" fill="#fff" fontSize={13} fontWeight="600">
