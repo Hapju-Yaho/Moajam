@@ -123,8 +123,27 @@ export function PdfScoreReader({
   const [audioStart, setAudioStart] = useState(0);
   const [audioUrl, setAudioUrl] = useState('');
   const [audioVolume, setAudioVolume] = useState(1);
+  useEffect(() => {
+    let enabled = false;
+    let volume = 1;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`moajam/pdf-audio/${user}`) ?? 'null');
+      if (typeof saved?.listenAlong === 'boolean') enabled = saved.listenAlong;
+      if (typeof saved?.volume === 'number' && Number.isFinite(saved.volume)) volume = Math.max(0, Math.min(1, saved.volume));
+    } catch { /* Use defaults when browser storage is unavailable or invalid. */ }
+    setListenAlong(enabled);
+    setAudioVolume(volume);
+  }, [user]);
+  const saveAudioPreferences = (enabled: boolean, volume: number) => {
+    try {
+      localStorage.setItem(`moajam/pdf-audio/${user}`, JSON.stringify({ listenAlong: enabled, volume }));
+    } catch { /* Playback remains available when browser storage is unavailable. */ }
+  };
   const [loadingSongAudio, setLoadingSongAudio] = useState(false);
   const linkedAudio = useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    if (linkedAudio.current) linkedAudio.current.volume = audioVolume;
+  }, [audioVolume, audioUrl]);
   const audioConfig = useRef({ enabled: listenAlong, start: audioStart });
   audioConfig.current = { enabled: listenAlong, start: audioStart };
   useEffect(() => {
@@ -408,7 +427,7 @@ export function PdfScoreReader({
             </div>
             <div className="pdf-follow-settings">
             <label className="pdf-listen-along">
-              <button type="button" role="switch" aria-checked={listenAlong} aria-label="음원 같이 듣기" className="pdf-listen-switch" onClick={() => setListenAlong((value) => !value)}><span /></button>
+              <button type="button" role="switch" aria-checked={listenAlong} aria-label="음원 같이 듣기" className="pdf-listen-switch" onClick={() => { const enabled = !listenAlong; setListenAlong(enabled); saveAudioPreferences(enabled, audioVolume); }}><span /></button>
               음원 같이 듣기
             </label>
             <span className="pdf-follow-audio-name" title={songAudio?.name}>
@@ -417,7 +436,7 @@ export function PdfScoreReader({
             <label className="pdf-follow-volume">음량
               <input type="range" aria-label="함께 듣는 음원 음량" min={0} max={1} step={0.01} value={audioVolume}
                 disabled={!audioUrl || loadingSongAudio} onChange={(e) => {
-                  const value = Number(e.target.value); setAudioVolume(value);
+                  const value = Number(e.target.value); setAudioVolume(value); saveAudioPreferences(listenAlong, value);
                   if (linkedAudio.current) linkedAudio.current.volume = value;
                 }} />
             </label>
