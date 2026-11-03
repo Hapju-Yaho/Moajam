@@ -492,14 +492,15 @@ export function PdfScoreReader({
                     fillOpacity={highlight.beatOpacity}
                     fill={active ? highlight.beatColor : nextMeasure === m ? highlight.beatPreviewColor : highlight.beatIdleColor} />;
                 })}
-                {activeMeasure === m && (m.restCount ?? 1) > 1 && <text
-                  x={(m.bounds[0] + m.bounds[2]) / 2 + 18}
-                  y={m.bounds[1] + (m.bounds[3] - m.bounds[1]) * 0.28}
-                  fill="#737b79" fontSize={13}>
-                  {measureProgress?.ordinal} / {m.restCount}마디 진행 중
-                </text>}
-                {waitingEntry?.measure === m && <text x={m.bounds[0] + 4} y={Math.max(16, m.bounds[1] - 22)}
-                  fill="#697687" fontSize={15} fontWeight="600">{remainingBars}마디 다음</text>}
+                {((activeMeasure === m && (m.restCount ?? 1) > 1) || waitingEntry?.measure === m) && <g>
+                  <g transform={`translate(${(m.bounds[0] + m.bounds[2]) / 2}, ${m.bounds[1] + 14 * pageRatio}) scale(1, ${pageRatio})`}>
+                  <rect x={waitingEntry?.measure === m ? -48 : -82} y={-12}
+                    width={waitingEntry?.measure === m ? 96 : 164} height={24} rx={3} fill="#343b43" fillOpacity={0.8} />
+                  <text x={0} y={0} dominantBaseline="middle" textAnchor="middle" fill="#fff" fontSize={13} fontWeight="600">
+                    {waitingEntry?.measure === m ? `${remainingBars}마디 다음` : `${measureProgress?.ordinal} / ${m.restCount}마디 진행 중`}
+                  </text>
+                  </g>
+                </g>}
                 {focusMeasure === m && countdown > 0 && <g role="status" aria-label={`재생 시작까지 ${countdown}박`}>
                   <rect x={m.bounds[0]} y={Math.max(0, m.bounds[1] - 60)} width={56} height={54} rx={12} fill="rgba(52,56,62,.72)" />
                   <text x={m.bounds[0] + 28} y={Math.max(0, m.bounds[1] - 60) + 39} textAnchor="middle" fill="white" fontSize={42} fontWeight="bold">{countdown}</text>
