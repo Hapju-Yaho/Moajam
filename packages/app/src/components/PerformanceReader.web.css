@@ -29,10 +29,11 @@
   padding: 80px 12px 320px;
 }
 .performance-reader.performance-pdf-embedded {
-  height: auto;
+  height: clamp(420px, 90dvh, 1100px);
 }
 .performance-pdf-embedded .performance-reader-content {
-  height: auto;
+  height: 100%;
+  min-height: 0;
 }
 .performance-pdf-embedded .performance-reader-stage {
   flex: none;
@@ -300,8 +301,9 @@
 .pdf-audio-settings > p[role="alert"] { color: #a02d2d; padding: 0 16px; }
 .pdf-audio-settings footer { justify-content: flex-end; }
 .performance-pdf-navigation { flex-shrink: 0; }
-.pdf-following .performance-pdf-navigation { position: sticky; top: 0; z-index: 10; background: #26332c; }
-.performance-reader.performance-pdf-embedded.pdf-following { overflow: visible; }
+.pdf-following .performance-pdf-navigation { position: relative; z-index: 10; background: #26332c; }
+.performance-reader.performance-pdf-embedded.pdf-following { overflow: hidden; }
+.performance-pdf-reader .performance-reader-stage { box-sizing: border-box; }
 .pdf-audio-settings.song-audio-settings { padding: 18px; border: 1px solid #e5eaf2; border-radius: 16px; background: white; color: #111d38; box-shadow: 0 12px 40px #0f172a26; }
 .song-audio-settings::backdrop { background: #0f172a80; }
 .song-audio-settings header, .song-audio-settings footer { background: white; padding: 0; }
@@ -347,6 +349,7 @@
 .performance-pdf-reader .performance-pdf-navigation > header .pdf-follow-analyze { font-size: 12px; padding: 6px 10px; }
 .pdf-follow-source { justify-self: start; }
 .pdf-setting-toggle { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.pdf-metronome-controls input[type="range"] { margin: 0; accent-color: #93afd5; cursor: pointer; }
 .performance-pdf-reader .pdf-follow-toolbar .pdf-countdown-input:disabled { background: #262a30; border-color: #454d59; color: #747d8b; opacity: .65; cursor: not-allowed; }
 .pdf-follow-toolbar .pdf-follow-settings { justify-content: flex-end; }
 .pdf-title-divider { width: 1px; height: 22px; background: #69717d; margin: 0 3px; flex-shrink: 0; }

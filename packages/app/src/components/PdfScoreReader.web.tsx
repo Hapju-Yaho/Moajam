@@ -1,4 +1,6 @@
 import { BpmInput } from './BpmInput.web';
+import { ScoreTransportIcon } from './ScoreTransportIcon.web';
+import { scheduleClick } from '../lib/metronome.web';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ScorePdfImport } from './ScorePdfImport.web';
@@ -119,6 +121,42 @@ export function PdfScoreReader({
     } finally { if (activeUser.current === owner) setHighlightSaving(false); }
   };
   const [listenAlong, setListenAlong] = useState(false);
+  const [metronome, setMetronome] = useState(false);
+  const [metronomeVolume, setMetronomeVolume] = useState(0.5);
+  const metronomeContext = useRef<AudioContext | null>(null);
+  useEffect(() => {
+    let enabled = false;
+    let volume = 0.5;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`moajam/pdf-metronome/${user}`) ?? 'null');
+      if (typeof saved?.enabled === 'boolean') enabled = saved.enabled;
+      if (typeof saved?.volume === 'number' && Number.isFinite(saved.volume)) volume = Math.max(0, Math.min(1, saved.volume));
+    } catch { /* Keep defaults when storage is unavailable. */ }
+    setMetronome(enabled);
+    setMetronomeVolume(volume);
+  }, [user]);
+  const saveMetronome = (enabled: boolean, volume: number) => {
+    try { localStorage.setItem(`moajam/pdf-metronome/${user}`, JSON.stringify({ enabled, volume })); } catch { /* Optional device preferences. */ }
+  };
+  const resumeMetronome = () => {
+    if (!metronomeConfig.current.enabled) return;
+    try {
+      metronomeContext.current ??= new AudioContext();
+      void metronomeContext.current.resume().catch(() => {});
+    } catch { setError('메트로놈을 재생하지 못했어요.'); }
+  };
+  const metronomeConfig = useRef({ enabled: false, volume: 0.5 });
+  metronomeConfig.current = { enabled: metronome, volume: metronomeVolume };
+  useEffect(() => () => { void metronomeContext.current?.close(); }, []);
+  const toggleMetronome = async () => {
+    if (metronome) { setMetronome(false); saveMetronome(false, metronomeVolume); return; }
+    try {
+      metronomeContext.current ??= new AudioContext();
+      await metronomeContext.current.resume();
+      setMetronome(true);
+      saveMetronome(true, metronomeVolume);
+    } catch { setError('메트로놈을 재생하지 못했어요.'); }
+  };
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioStart, setAudioStart] = useState(0);
   const [audioUrl, setAudioUrl] = useState('');
@@ -242,8 +280,22 @@ export function PdfScoreReader({
     const start = performance.now();
     let frame = 0;
     let audioStarted = false;
+    let lastClick = '';
     const tick = () => {
       const elapsed = (performance.now() - start) * bpm / 60000;
+      const clickPosition = initial + Math.max(0, elapsed - lead);
+      const clickEntry = pdfTimelinePosition(timeline, clickPosition).active;
+      const meter = clickEntry?.measure.meter ?? [4, 4];
+      const beatLength = 4 / meter[1];
+      const clickBeat = elapsed < lead ? Math.floor(elapsed) : Math.floor((clickPosition - (clickEntry?.start ?? 0)) / beatLength);
+      const clickKey = elapsed < lead ? `count:${clickBeat}` : `${clickEntry?.start ?? 'gap'}:${clickBeat}`;
+      if (clickKey !== lastClick) {
+        lastClick = clickKey;
+        const context = metronomeContext.current;
+        if (metronomeConfig.current.enabled && context && context.state === 'running') {
+          scheduleClick(context, context.currentTime, clickBeat % meter[0] === 0, metronomeConfig.current.volume);
+        }
+      }
       setCountdown(Math.max(0, Math.ceil(lead - elapsed)));
       if (elapsed >= lead) {
         const next = Math.min(totalBeats, initial + elapsed - lead);
@@ -264,9 +316,18 @@ export function PdfScoreReader({
   }, [playing, bpm, countEnabled, countBeats, totalBeats, seekRevision]);
   useEffect(() => {
     if (!following || !focusMeasure) return;
-    const frame = requestAnimationFrame(() => activeRegion.current?.scrollIntoView({
-      block: 'center', inline: 'nearest', behavior: 'smooth',
-    }));
+    const frame = requestAnimationFrame(() => {
+      const container = stage.current;
+      const region = activeRegion.current;
+      if (!container || !region) return;
+      const viewport = container.getBoundingClientRect();
+      const bounds = region.getBoundingClientRect();
+      container.scrollTo({
+        top: container.scrollTop + bounds.top - viewport.top - (container.clientHeight - bounds.height) / 2,
+        left: Math.max(0, container.scrollLeft + bounds.left - viewport.left - (container.clientWidth - bounds.width) / 2),
+        behavior: 'smooth',
+      });
+    });
     return () => cancelAnimationFrame(frame);
   }, [following, selectedPart, focusMeasure?.number, focusMeasure?.page, width, zoom, expanded, layoutRevision]);
   const inline = embedded && !expanded;
@@ -335,6 +396,7 @@ export function PdfScoreReader({
         e.preventDefault();
         e.stopPropagation();
         if (e.repeat || !selectedPart || preparingAnalysis) return;
+        if (!playing) resumeMetronome();
         if (!playing && position >= totalBeats) setPosition(0);
         setPlaying((value) => !value);
       }}
@@ -410,17 +472,26 @@ export function PdfScoreReader({
           </div>
         </header>
         {following && <div className="pdf-follow-toolbar" aria-label="박자 따라가기 도구">
-          {preparingAnalysis ? <span>마디 정보를 불러오는 중…</span> : parts.length ? <>
             <div className="pdf-follow-source">
 
             <label>BPM <BpmInput value={bpm} onChange={(next) => { setPlaying(false); setBpm(next); }} /></label>
-            <div className="pdf-setting-toggle"><button type="button" className="pdf-listen-switch" role="switch" aria-label="악보에 박자 표시하기" aria-checked={showBeats} onClick={() => setShowBeats((value) => !value)}><span /></button>악보에 박자 표시하기</div>
+            <div className="pdf-setting-toggle pdf-metronome-controls">
+              <button type="button" className="pdf-listen-switch" role="switch" aria-label="메트로놈" aria-checked={metronome} onClick={() => void toggleMetronome()}><span /></button>
+              <span title="메트로놈" style={{ display: 'flex' }}><ScoreTransportIcon name="metronome" /></span>
+              <input type="range" aria-label="메트로놈 음량" min={0} max={1} step={0.01} value={metronomeVolume}
+                style={{ width: 58, minWidth: 58 }} onChange={(e) => { const volume = Number(e.target.value); setMetronomeVolume(volume); saveMetronome(metronome, volume); }} />
+            </div>
+            {!!parts.length && <>
+            <div className="pdf-setting-toggle"><button type="button" className="pdf-listen-switch" role="switch" aria-label="악보에 표기" aria-checked={showBeats} onClick={() => setShowBeats((value) => !value)}><span /></button>악보에 표기</div>
             <div className="pdf-setting-toggle"><button type="button" className="pdf-listen-switch" role="switch" aria-label="카운트다운" aria-checked={countEnabled} onClick={() => { setPlaying(false); setCountEnabled((value) => !value); }}><span /></button>카운트다운</div>
             <input className="pdf-countdown-input" aria-label="카운트다운 박 수" type="number" min={1} max={32} disabled={!countEnabled} value={countBeats} onChange={(e) => { setPlaying(false); setCountBeats(Math.max(1, Math.min(32, Number(e.target.value) || 4))); }} />
+            </>}
             </div>
+          {preparingAnalysis ? <span>마디 정보를 불러오는 중…</span> : parts.length ? <>
             <div className="pdf-follow-transport">
               <button disabled={!selectedPart} title="처음으로" aria-label="처음으로" onClick={() => { setPlaying(false); setPosition(0); }}>│◀</button>
               <button disabled={!selectedPart} title={playing ? '일시정지' : '재생'} aria-label={playing ? '일시정지' : '재생'} onClick={() => {
+                if (!playing) resumeMetronome();
                 if (!playing && position >= totalBeats) setPosition(0); setPlaying(!playing);
               }}>{playing ? 'Ⅱ' : '▶'}</button>
               <button disabled={!selectedPart} title="끝으로" aria-label="끝으로" onClick={() => { setPlaying(false); setPosition(totalBeats); }}>▶│</button>
@@ -461,7 +532,7 @@ export function PdfScoreReader({
             {error}
           </p>
         )}
-        <div className="pdf-follow-stage-wrap" style={inline ? { flex: 'none', height: `clamp(420px, ${width * Math.SQRT2}px, 85dvh)` } : undefined}>
+        <div className="pdf-follow-stage-wrap">
         <div className="performance-reader-stage" ref={stage}>
           {!pdf && !error && <p>PDF를 불러오는 중…</p>}
           {pdf && Array.from({ length: pdf.numPages }, (_, i) => i + 1).map((page) => (
