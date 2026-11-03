@@ -33,6 +33,8 @@ export function PdfScoreReader({
   songKey: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const embeddedAnchor = useRef<HTMLDivElement>(null);
+  const wasExpanded = useRef(false);
   const user = useIdentity();
   const activeUser = useRef(user);
   activeUser.current = user;
@@ -78,6 +80,13 @@ export function PdfScoreReader({
   const [width, setWidth] = useState(600);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    const returning = embedded && wasExpanded.current && !expanded;
+    wasExpanded.current = expanded;
+    if (!returning) return;
+    const frame = requestAnimationFrame(() => embeddedAnchor.current?.scrollIntoView({ block: 'start', behavior: 'instant' }));
+    return () => cancelAnimationFrame(frame);
+  }, [embedded, expanded]);
   const following = true;
   const [playing, setPlaying] = useState(false);
   const [bpm, setBpm] = useState(120);
@@ -539,10 +548,7 @@ export function PdfScoreReader({
           <div className="performance-pdf-title">
             <div className="pdf-library-actions">
             <button className="pdf-back-to-list" onClick={onClose}>← 악보 목록</button>
-            <a href={externalPdfUrl || undefined} target="_blank" rel="noopener noreferrer"
-              aria-disabled={!externalPdfUrl} onClick={(event) => { if (!externalPdfUrl) event.preventDefault(); }}>
-              새 창에서 열기
-            </a>
+
             </div>
             <div className="pdf-title-controls">
             <h2 title={name}>{name}</h2>
@@ -572,6 +578,11 @@ export function PdfScoreReader({
             <button className="pdf-follow-analyze" type="button" disabled={!highlightReady} onClick={() => { setHighlightError(''); setHighlightSettingsOpen(true); }}>강조 설정</button>
             </div>
           </div>
+          <div className="pdf-view-area">
+            <a href={externalPdfUrl || undefined} target="_blank" rel="noopener noreferrer"
+              aria-disabled={!externalPdfUrl} onClick={(event) => { if (!externalPdfUrl) event.preventDefault(); }}>
+              새 창에서 열기
+            </a>
           <div className="performance-reader-settings pdf-view-controls">
             <div className="performance-pdf-zoom" role="group" aria-label="PDF 배율 조정">
               <button
@@ -600,6 +611,7 @@ export function PdfScoreReader({
             ) : (
               <button onClick={onClose}>닫기</button>
             )}
+          </div>
           </div>
         </header>
         {following && <div className="pdf-follow-toolbar" aria-label="박자 따라가기 도구">
@@ -760,12 +772,15 @@ export function PdfScoreReader({
           onClose={() => { setAnalysisFile(null); setForceStructureAnalysis(false); if (following) void lookupSaved(); }}
         />
       )}
-      <audio ref={linkedAudio} src={audioUrl || undefined} preload="metadata" />
       {highlightSettingsOpen && <PdfMeasureHighlightSettings value={highlight} onClose={() => setHighlightSettingsOpen(false)}
         busy={highlightSaving} error={highlightError} onApply={(value) => void saveHighlight(value)} />}
     </dialog>
   );
-  return embedded && expanded ? createPortal(reader, document.body) : reader;
+  return <>
+    {embedded && <div ref={embeddedAnchor} className="pdf-reader-anchor" />}
+    {embedded && expanded ? createPortal(reader, document.body) : reader}
+    {createPortal(<audio ref={linkedAudio} src={audioUrl || undefined} preload="metadata" hidden />, document.body, 'pdf-linked-audio')}
+  </>;
 }
 
 function PdfContinuousPage({ pdf, page, width, zoom, inline, children, onLayout }: {
