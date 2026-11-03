@@ -1,5 +1,7 @@
 import { BpmInput } from './BpmInput.web';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ScoreTransportIcon } from './ScoreTransportIcon.web';
+import { scheduleClick } from '../lib/metronome.web';
+import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { ScorePdfImport } from './ScorePdfImport.web';
 import { PdfMeasureHighlightSettings, defaultPdfMeasureHighlight } from './PdfMeasureHighlightSettings.web';
@@ -11,7 +13,7 @@ import { readPersonal, writePersonal } from '../lib/personal-store';
 import { useIdentity } from '../state/Identity';
 import { nearestPdfPartPosition } from '../lib/pdf-part-position';
 import { pdfMeasureProgress } from '../lib/pdf-measure-progress';
-import { pdfPlaybackTimeline, pdfTimelinePosition } from '../lib/pdf-playback-timeline';
+import { pdfPlaybackTimeline, pdfTimelinePosition, pdfMeasureBeat } from '../lib/pdf-playback-timeline';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import './PerformanceReader.web.css';
 
@@ -21,12 +23,14 @@ export function PdfScoreReader({
   onClose,
   embedded = false,
   songAudio = null,
+  songKey,
 }: {
   url: string;
   name: string;
   onClose: () => void;
   embedded?: boolean;
   songAudio?: SongAudio | null;
+  songKey: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const user = useIdentity();
@@ -78,7 +82,43 @@ export function PdfScoreReader({
   const [bpm, setBpm] = useState(120);
   const [countEnabled, setCountEnabled] = useState(true);
   const [countBeats, setCountBeats] = useState(4);
+  const [loopEnabled, setLoopEnabled] = useState(false);
+  const [loopFrom, setLoopFrom] = useState('');
+  const [loopTo, setLoopTo] = useState('');
+  const loopStorageKey = `moajam/pdf-loop/${user}/${songKey}`;
+  const [loopReadyKey, setLoopReadyKey] = useState('');
+  useEffect(() => {
+    let enabled = false;
+    let from = '';
+    let to = '';
+    try {
+      const saved = JSON.parse(localStorage.getItem(loopStorageKey) ?? 'null');
+      if (typeof saved?.enabled === 'boolean') enabled = saved.enabled;
+      if (Number.isInteger(saved?.from) && saved.from > 0) from = String(saved.from);
+      if (Number.isInteger(saved?.to) && saved.to > 0) to = String(saved.to);
+    } catch { /* Use defaults when device storage is unavailable. */ }
+    setLoopEnabled(enabled);
+    setLoopFrom(from);
+    setLoopTo(to);
+    setLoopReadyKey(loopStorageKey);
+  }, [loopStorageKey]);
+  useEffect(() => {
+    if (loopReadyKey !== loopStorageKey || !loopFrom || !loopTo) return;
+    const from = Number(loopFrom);
+    const to = Number(loopTo);
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from) return;
+    try { localStorage.setItem(loopStorageKey, JSON.stringify({ enabled: loopEnabled, from, to })); } catch { /* Optional device preferences. */ }
+  }, [loopReadyKey, loopStorageKey, loopEnabled, loopFrom, loopTo]);
   const [position, setPosition] = useState(0);
+  const [clickedMeasure, setClickedMeasure] = useState<number | null>(null);
+  useEffect(() => {
+    const clearMeasureNotice = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest('[data-pdf-measure-hit]')) return;
+      setClickedMeasure(null);
+    };
+    document.addEventListener('click', clearMeasureNotice, true);
+    return () => document.removeEventListener('click', clearMeasureNotice, true);
+  }, []);
   const [countdown, setCountdown] = useState(0);
   const [showBeats, setShowBeats] = useState(true);
   const [highlightSettingsOpen, setHighlightSettingsOpen] = useState(false);
@@ -119,12 +159,67 @@ export function PdfScoreReader({
     } finally { if (activeUser.current === owner) setHighlightSaving(false); }
   };
   const [listenAlong, setListenAlong] = useState(false);
+  const [metronome, setMetronome] = useState(false);
+  const [metronomeVolume, setMetronomeVolume] = useState(0.5);
+  const metronomeContext = useRef<AudioContext | null>(null);
+  useEffect(() => {
+    let enabled = false;
+    let volume = 0.5;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`moajam/pdf-metronome/${user}`) ?? 'null');
+      if (typeof saved?.enabled === 'boolean') enabled = saved.enabled;
+      if (typeof saved?.volume === 'number' && Number.isFinite(saved.volume)) volume = Math.max(0, Math.min(1, saved.volume));
+    } catch { /* Keep defaults when storage is unavailable. */ }
+    setMetronome(enabled);
+    setMetronomeVolume(volume);
+  }, [user]);
+  const saveMetronome = (enabled: boolean, volume: number) => {
+    try { localStorage.setItem(`moajam/pdf-metronome/${user}`, JSON.stringify({ enabled, volume })); } catch { /* Optional device preferences. */ }
+  };
+  const resumeMetronome = () => {
+    if (!metronomeConfig.current.enabled) return;
+    try {
+      metronomeContext.current ??= new AudioContext();
+      void metronomeContext.current.resume().catch(() => {});
+    } catch { setError('메트로놈을 재생하지 못했어요.'); }
+  };
+  const metronomeConfig = useRef({ enabled: false, volume: 0.5 });
+  metronomeConfig.current = { enabled: metronome, volume: metronomeVolume };
+  useEffect(() => () => { void metronomeContext.current?.close(); }, []);
+  const toggleMetronome = async () => {
+    if (metronome) { setMetronome(false); saveMetronome(false, metronomeVolume); return; }
+    try {
+      metronomeContext.current ??= new AudioContext();
+      await metronomeContext.current.resume();
+      setMetronome(true);
+      saveMetronome(true, metronomeVolume);
+    } catch { setError('메트로놈을 재생하지 못했어요.'); }
+  };
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioStart, setAudioStart] = useState(0);
   const [audioUrl, setAudioUrl] = useState('');
   const [audioVolume, setAudioVolume] = useState(1);
+  useEffect(() => {
+    let enabled = false;
+    let volume = 1;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`moajam/pdf-audio/${user}`) ?? 'null');
+      if (typeof saved?.listenAlong === 'boolean') enabled = saved.listenAlong;
+      if (typeof saved?.volume === 'number' && Number.isFinite(saved.volume)) volume = Math.max(0, Math.min(1, saved.volume));
+    } catch { /* Use defaults when browser storage is unavailable or invalid. */ }
+    setListenAlong(enabled);
+    setAudioVolume(volume);
+  }, [user]);
+  const saveAudioPreferences = (enabled: boolean, volume: number) => {
+    try {
+      localStorage.setItem(`moajam/pdf-audio/${user}`, JSON.stringify({ listenAlong: enabled, volume }));
+    } catch { /* Playback remains available when browser storage is unavailable. */ }
+  };
   const [loadingSongAudio, setLoadingSongAudio] = useState(false);
   const linkedAudio = useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    if (linkedAudio.current) linkedAudio.current.volume = audioVolume;
+  }, [audioVolume, audioUrl]);
   const audioConfig = useRef({ enabled: listenAlong, start: audioStart });
   audioConfig.current = { enabled: listenAlong, start: audioStart };
   useEffect(() => {
@@ -141,6 +236,7 @@ export function PdfScoreReader({
   const [preparingAnalysis, setPreparingAnalysis] = useState(false);
   const [savedChoices, setSavedChoices] = useState<{ name: string; scoreType?: string; structure: PdfStructure }[] | null>(null);
   const [selectedPart, setSelectedPart] = useState<PdfStructure['parts'][number] | null>(null);
+  useEffect(() => setClickedMeasure(null), [url, selectedPart?.id]);
   const [layoutRevision, setLayoutRevision] = useState(0);
   useEffect(() => {
     let active = true;
@@ -188,6 +284,18 @@ export function PdfScoreReader({
   const parts = (savedChoices ?? []).flatMap((choice) => choice.structure.parts.map((part) => ({ part, bpm: choice.structure.bpm ?? 120 })));
   const timeline = pdfPlaybackTimeline(selectedPart?.measures ?? []);
   const totalBeats = timeline.at(-1)?.end ?? 0;
+  const firstBar = timeline[0]?.measure.number ?? 1;
+  const lastMeasure = timeline.at(-1)?.measure;
+  const lastBar = lastMeasure ? lastMeasure.number + (lastMeasure.restCount ?? 1) - 1 : firstBar;
+  const loopStartBar = Math.max(firstBar, Math.min(lastBar, Math.round(Number(loopFrom) || firstBar)));
+  const loopEndBar = Math.max(loopStartBar, Math.min(lastBar, Math.round(Number(loopTo) || lastBar)));
+  const loopStart = pdfMeasureBeat(timeline, loopStartBar);
+  const loopEnd = pdfMeasureBeat(timeline, loopEndBar + 1);
+  useEffect(() => {
+    if (!selectedPart || loopReadyKey !== loopStorageKey) return;
+    setLoopFrom((value) => value || String(firstBar));
+    setLoopTo((value) => value || String(lastBar));
+  }, [selectedPart?.id, firstBar, lastBar, loopReadyKey, loopStorageKey]);
   const { active: activeEntry, waiting: waitingEntry, remainingBars } = pdfTimelinePosition(timeline, position);
   const activeMeasure = activeEntry?.measure;
   const focusMeasure = activeMeasure ?? waitingEntry?.measure;
@@ -199,6 +307,7 @@ export function PdfScoreReader({
   const seekMeasure = (measure: PdfStructure['parts'][number]['measures'][number]) => {
     const entry = timeline.find((entry) => entry.measure === measure);
     if (!entry) return;
+    setClickedMeasure(measure.number);
     skipCountIn.current = playing;
     setPosition(entry.start);
     setCountdown(0);
@@ -217,17 +326,47 @@ export function PdfScoreReader({
   };
   useEffect(() => {
     if (!playing) { setCountdown(0); return; }
-    const initial = position;
+    const initial = loopEnabled && (position < loopStart || position >= loopEnd) ? loopStart : position;
+    if (initial !== position) setPosition(initial);
     const lead = countEnabled && !skipCountIn.current ? countBeats : 0;
     skipCountIn.current = false;
     const start = performance.now();
     let frame = 0;
     let audioStarted = false;
+    let lastClick = '';
+    let previousCycle = 0;
     const tick = () => {
       const elapsed = (performance.now() - start) * bpm / 60000;
-      setCountdown(Math.max(0, Math.ceil(lead - elapsed)));
-      if (elapsed >= lead) {
-        const next = Math.min(totalBeats, initial + elapsed - lead);
+      const rawPosition = initial + Math.max(0, elapsed - lead);
+      const repeatLead = countEnabled ? countBeats : 0;
+      const repeatElapsed = Math.max(0, elapsed - lead - (loopEnd - initial));
+      const cycleLength = loopEnd - loopStart + repeatLead;
+      const cycle = loopEnabled && loopEnd > loopStart && rawPosition >= loopEnd
+        ? 1 + Math.floor(repeatElapsed / cycleLength) : 0;
+      const phase = cycle ? repeatElapsed % cycleLength : 0;
+      const counting = cycle ? phase < repeatLead : elapsed < lead;
+      const remaining = cycle ? repeatLead - phase : lead - elapsed;
+      const clickPosition = cycle ? loopStart + Math.max(0, phase - repeatLead) : rawPosition;
+      if (cycle !== previousCycle) { audioStarted = false; lastClick = ''; previousCycle = cycle; }
+      const clickEntry = pdfTimelinePosition(timeline, clickPosition).active;
+      const meter = clickEntry?.measure.meter ?? [4, 4];
+      const beatLength = 4 / meter[1];
+      const clickBeat = counting ? Math.floor(cycle ? phase : elapsed) : Math.floor((clickPosition - (clickEntry?.start ?? 0)) / beatLength);
+      const clickKey = counting ? `count:${cycle}:${clickBeat}` : `${clickEntry?.start ?? 'gap'}:${clickBeat}`;
+      if (clickKey !== lastClick) {
+        lastClick = clickKey;
+        const context = metronomeContext.current;
+        if (metronomeConfig.current.enabled && context && context.state === 'running') {
+          scheduleClick(context, context.currentTime, clickBeat % meter[0] === 0, metronomeConfig.current.volume);
+        }
+      }
+      setCountdown(counting ? Math.ceil(remaining) : 0);
+      if (counting) {
+        linkedAudio.current?.pause();
+        audioStarted = false;
+        setPosition(Math.min(totalBeats, clickPosition));
+      } else {
+        const next = Math.min(totalBeats, clickPosition);
         const audio = linkedAudio.current;
         if (!audioConfig.current.enabled) { audio?.pause(); audioStarted = false; }
         else if (audio?.getAttribute('src') && !audioStarted) {
@@ -236,18 +375,27 @@ export function PdfScoreReader({
           void audio.play().catch(() => setError('음원을 재생하지 못했어요. 곡 정보 수정에서 등록된 음원을 확인해주세요.'));
         }
         setPosition(next);
-        if (next >= totalBeats) { setPlaying(false); return; }
+        if (!loopEnabled && next >= totalBeats) { setPlaying(false); return; }
       }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => { cancelAnimationFrame(frame); linkedAudio.current?.pause(); };
-  }, [playing, bpm, countEnabled, countBeats, totalBeats, seekRevision]);
+  }, [playing, bpm, countEnabled, countBeats, totalBeats, seekRevision, loopEnabled, loopStart, loopEnd]);
   useEffect(() => {
     if (!following || !focusMeasure) return;
-    const frame = requestAnimationFrame(() => activeRegion.current?.scrollIntoView({
-      block: 'center', inline: 'nearest', behavior: 'smooth',
-    }));
+    const frame = requestAnimationFrame(() => {
+      const container = stage.current;
+      const region = activeRegion.current;
+      if (!container || !region) return;
+      const viewport = container.getBoundingClientRect();
+      const bounds = region.getBoundingClientRect();
+      container.scrollTo({
+        top: container.scrollTop + bounds.top - viewport.top - (container.clientHeight - bounds.height) / 2,
+        left: Math.max(0, container.scrollLeft + bounds.left - viewport.left - (container.clientWidth - bounds.width) / 2),
+        behavior: 'smooth',
+      });
+    });
     return () => cancelAnimationFrame(frame);
   }, [following, selectedPart, focusMeasure?.number, focusMeasure?.page, width, zoom, expanded, layoutRevision]);
   const inline = embedded && !expanded;
@@ -316,6 +464,7 @@ export function PdfScoreReader({
         e.preventDefault();
         e.stopPropagation();
         if (e.repeat || !selectedPart || preparingAnalysis) return;
+        if (!playing) resumeMetronome();
         if (!playing && position >= totalBeats) setPosition(0);
         setPlaying((value) => !value);
       }}
@@ -391,33 +540,46 @@ export function PdfScoreReader({
           </div>
         </header>
         {following && <div className="pdf-follow-toolbar" aria-label="박자 따라가기 도구">
-          {preparingAnalysis ? <span>마디 정보를 불러오는 중…</span> : parts.length ? <>
             <div className="pdf-follow-source">
 
             <label>BPM <BpmInput value={bpm} onChange={(next) => { setPlaying(false); setBpm(next); }} /></label>
-            <div className="pdf-setting-toggle"><button type="button" className="pdf-listen-switch" role="switch" aria-label="악보에 박자 표시하기" aria-checked={showBeats} onClick={() => setShowBeats((value) => !value)}><span /></button>악보에 박자 표시하기</div>
-            <div className="pdf-setting-toggle"><button type="button" className="pdf-listen-switch" role="switch" aria-label="카운트다운" aria-checked={countEnabled} onClick={() => { setPlaying(false); setCountEnabled((value) => !value); }}><span /></button>카운트다운</div>
+            <div className="pdf-setting-toggle pdf-metronome-controls">
+              <button type="button" className="pdf-listen-switch" role="switch" aria-label="메트로놈" aria-checked={metronome} onClick={() => void toggleMetronome()}><span /></button>
+              <span title="메트로놈" style={{ display: 'flex' }}><ScoreTransportIcon name="metronome" /></span>
+              <input type="range" aria-label="메트로놈 음량" min={0} max={1} step={0.01} value={metronomeVolume}
+                style={{ width: 58, minWidth: 58 }} onChange={(e) => { const volume = Number(e.target.value); setMetronomeVolume(volume); saveMetronome(metronome, volume); }} />
+            </div>
+            {!!parts.length && <>
+            <button type="button" className="pdf-setting-button" aria-pressed={showBeats} onClick={() => setShowBeats((value) => !value)}>악보에 표기</button>
+            <button type="button" className="pdf-setting-button" aria-pressed={countEnabled} onClick={() => { setPlaying(false); setCountEnabled((value) => !value); }}>카운트다운</button>
             <input className="pdf-countdown-input" aria-label="카운트다운 박 수" type="number" min={1} max={32} disabled={!countEnabled} value={countBeats} onChange={(e) => { setPlaying(false); setCountBeats(Math.max(1, Math.min(32, Number(e.target.value) || 4))); }} />
+            <span aria-hidden="true" style={{ width: 1, height: 20, background: '#717b89', margin: '0 4px', flexShrink: 0 }} />
+            <button type="button" className="pdf-setting-button" aria-pressed={loopEnabled} disabled={!selectedPart}
+              onClick={() => { setPlaying(false); setLoopEnabled((value) => !value); }}>구간 반복</button>
+            <div className="pdf-loop-range">
+              <input type="number" aria-label="반복 시작 마디" min={firstBar} max={lastBar} value={loopFrom}
+                onChange={(e) => { setPlaying(false); setLoopFrom(e.target.value); }}
+                onBlur={() => { setLoopFrom(String(loopStartBar)); setLoopTo(String(loopEndBar)); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }} />
+              <span>~</span>
+              <input type="number" aria-label="반복 끝 마디" min={loopStartBar} max={lastBar} value={loopTo}
+                onChange={(e) => { setPlaying(false); setLoopTo(e.target.value); }}
+                onBlur={() => setLoopTo(String(loopEndBar))}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }} />
+              <span>마디</span>
             </div>
-            <div className="pdf-follow-transport">
-              <button disabled={!selectedPart} title="처음으로" aria-label="처음으로" onClick={() => { setPlaying(false); setPosition(0); }}>│◀</button>
-              <button disabled={!selectedPart} title={playing ? '일시정지' : '재생'} aria-label={playing ? '일시정지' : '재생'} onClick={() => {
-                if (!playing && position >= totalBeats) setPosition(0); setPlaying(!playing);
-              }}>{playing ? 'Ⅱ' : '▶'}</button>
-              <button disabled={!selectedPart} title="끝으로" aria-label="끝으로" onClick={() => { setPlaying(false); setPosition(totalBeats); }}>▶│</button>
+            </>}
             </div>
+          {preparingAnalysis ? <span>마디 정보를 불러오는 중…</span> : parts.length ? <>
             <div className="pdf-follow-settings">
             <label className="pdf-listen-along">
-              <button type="button" role="switch" aria-checked={listenAlong} aria-label="음원 같이 듣기" className="pdf-listen-switch" onClick={() => setListenAlong((value) => !value)}><span /></button>
+              <button type="button" role="switch" aria-checked={listenAlong} aria-label="음원 같이 듣기" className="pdf-listen-switch" onClick={() => { const enabled = !listenAlong; setListenAlong(enabled); saveAudioPreferences(enabled, audioVolume); }}><span /></button>
               음원 같이 듣기
             </label>
-            <span className="pdf-follow-audio-name" title={songAudio?.name}>
-              {loadingSongAudio ? '음원 불러오는 중…' : songAudio?.name ?? '등록된 음원 없음'}
-            </span>
             <label className="pdf-follow-volume">음량
               <input type="range" aria-label="함께 듣는 음원 음량" min={0} max={1} step={0.01} value={audioVolume}
-                disabled={!audioUrl || loadingSongAudio} onChange={(e) => {
-                  const value = Number(e.target.value); setAudioVolume(value);
+                disabled={!listenAlong || !audioUrl || loadingSongAudio} onChange={(e) => {
+                  const value = Number(e.target.value); setAudioVolume(value); saveAudioPreferences(listenAlong, value);
                   if (linkedAudio.current) linkedAudio.current.volume = value;
                 }} />
             </label>
@@ -427,6 +589,7 @@ export function PdfScoreReader({
         </div>}
         {following && selectedPart && <div className="pdf-follow-progress">
           <input type="range" aria-label="PDF 악보 재생 위치" min={0} max={totalBeats || 1} step={0.01}
+            style={{ '--seek-progress': `${Math.max(0, Math.min(100, totalBeats ? position / totalBeats * 100 : 0))}%` } as CSSProperties}
             value={position} disabled={!totalBeats} onChange={(e) => {
               skipCountIn.current = playing;
               setPosition(Number(e.target.value));
@@ -435,6 +598,14 @@ export function PdfScoreReader({
             }} />
           <div><span>{Math.floor(position * 60 / bpm / 60)}:{String(Math.floor(position * 60 / bpm) % 60).padStart(2, '0')}</span>
             <span>{Math.floor(totalBeats * 60 / bpm / 60)}:{String(Math.floor(totalBeats * 60 / bpm) % 60).padStart(2, '0')}</span></div>
+            <div className="pdf-follow-transport">
+              <button disabled={!selectedPart} title="처음으로" aria-label="처음으로" onClick={() => { setPlaying(false); setPosition(0); }}>│◀</button>
+              <button disabled={!selectedPart} title={playing ? '일시정지' : '재생'} aria-label={playing ? '일시정지' : '재생'} onClick={() => {
+                if (!playing) resumeMetronome();
+                if (!playing && position >= totalBeats) setPosition(0); setPlaying(!playing);
+              }}>{playing ? 'Ⅱ' : '▶'}</button>
+              <button disabled={!selectedPart} title="끝으로" aria-label="끝으로" onClick={() => { setPlaying(false); setPosition(totalBeats); }}>▶│</button>
+            </div>
         </div>}
         </div>
         {error && (
@@ -442,7 +613,9 @@ export function PdfScoreReader({
             {error}
           </p>
         )}
-        <div className="pdf-follow-stage-wrap" style={inline ? { flex: 'none', height: `clamp(420px, ${width * Math.SQRT2}px, 85dvh)` } : undefined}>
+        <div className="pdf-follow-stage-wrap">
+        {clickedMeasure !== null && <div className="pdf-clicked-measure" role="status">{clickedMeasure}마디</div>}
+        {loopEnabled && selectedPart && <div className="pdf-loop-status" role="status">{loopStartBar}~{loopEndBar} 구간반복 진행중</div>}
         <div className="performance-reader-stage" ref={stage}>
           {!pdf && !error && <p>PDF를 불러오는 중…</p>}
           {pdf && Array.from({ length: pdf.numPages }, (_, i) => i + 1).map((page) => (
@@ -456,6 +629,7 @@ export function PdfScoreReader({
               {selectedPart.measures.filter((m) => m.page === page).map((m) => <g key={m.number}>
                 <rect x={m.bounds[0]} y={m.bounds[1]} width={m.bounds[2] - m.bounds[0]} height={m.bounds[3] - m.bounds[1]}
                   ref={focusMeasure === m ? activeRegion : undefined}
+                  data-pdf-measure-hit="true"
                   role="button" tabIndex={0} aria-label={`${m.number}마디 첫 박으로 이동`}
                   style={{ pointerEvents: 'all', cursor: 'pointer' }}
                   onClick={() => seekMeasure(m)}
@@ -473,19 +647,36 @@ export function PdfScoreReader({
                     fillOpacity={highlight.beatOpacity}
                     fill={active ? highlight.beatColor : nextMeasure === m ? highlight.beatPreviewColor : highlight.beatIdleColor} />;
                 })}
-                {activeMeasure === m && (m.restCount ?? 1) > 1 && <text
-                  x={(m.bounds[0] + m.bounds[2]) / 2 + 18}
-                  y={m.bounds[1] + (m.bounds[3] - m.bounds[1]) * 0.28}
-                  fill="#737b79" fontSize={13}>
-                  {measureProgress?.ordinal} / {m.restCount}마디 진행 중
-                </text>}
-                {waitingEntry?.measure === m && <text x={m.bounds[0] + 4} y={Math.max(16, m.bounds[1] - 22)}
-                  fill="#697687" fontSize={15} fontWeight="600">{remainingBars}마디 다음</text>}
+                {((activeMeasure === m && (m.restCount ?? 1) > 1) || waitingEntry?.measure === m) && <g>
+                  <g transform={`translate(${(m.bounds[0] + m.bounds[2]) / 2}, ${waitingEntry?.measure === m ? m.bounds[1] + 14 * pageRatio : m.bounds[3] - 14 * pageRatio}) scale(1, ${pageRatio})`}>
+                  <rect x={waitingEntry?.measure === m ? -48 : -82} y={-12}
+                    width={waitingEntry?.measure === m ? 96 : 164} height={24} rx={3} fill="#343b43" fillOpacity={0.8} />
+                  <text x={0} y={0} dominantBaseline="middle" textAnchor="middle" fill="#fff" fontSize={13} fontWeight="600">
+                    {waitingEntry?.measure === m ? `${remainingBars}마디 다음` : `${measureProgress?.ordinal} / ${m.restCount}마디 진행 중`}
+                  </text>
+                  </g>
+                </g>}
                 {focusMeasure === m && countdown > 0 && <g role="status" aria-label={`재생 시작까지 ${countdown}박`}>
                   <rect x={m.bounds[0]} y={Math.max(0, m.bounds[1] - 60)} width={56} height={54} rx={12} fill="rgba(52,56,62,.72)" />
                   <text x={m.bounds[0] + 28} y={Math.max(0, m.bounds[1] - 60) + 39} textAnchor="middle" fill="white" fontSize={42} fontWeight="bold">{countdown}</text>
                 </g>}
                 <text x={m.bounds[0] + 3} y={m.bounds[1] + 15} fill="#226aa8" fontSize="13">{m.number}</text>
+                {loopEnabled && loopStartBar >= m.number && loopStartBar < m.number + (m.restCount ?? 1) && <g>
+                  <line x1={m.bounds[0]} x2={m.bounds[0]} y1={m.bounds[1] - 6 * pageRatio} y2={m.bounds[3] + 6 * pageRatio}
+                    stroke="#2674cc" strokeWidth={3} vectorEffect="non-scaling-stroke" />
+                  <g transform={`translate(${m.bounds[0]}, ${m.bounds[3] + 7 * pageRatio}) scale(1, ${pageRatio})`}>
+                    <rect width={106} height={23} rx={3} fill="#343b43" fillOpacity={0.8} />
+                    <text x={53} y={12} dominantBaseline="middle" textAnchor="middle" fill="white" fontSize={12} fontWeight="600">구간 반복 시작</text>
+                  </g>
+                </g>}
+                {loopEnabled && loopEndBar >= m.number && loopEndBar < m.number + (m.restCount ?? 1) && <g>
+                  <line x1={m.bounds[2]} x2={m.bounds[2]} y1={m.bounds[1] - 6 * pageRatio} y2={m.bounds[3] + 6 * pageRatio}
+                    stroke="#2674cc" strokeWidth={3} vectorEffect="non-scaling-stroke" />
+                  <g transform={`translate(${m.bounds[2] - 106}, ${m.bounds[3] + 7 * pageRatio}) scale(1, ${pageRatio})`}>
+                    <rect width={106} height={23} rx={3} fill="#343b43" fillOpacity={0.8} />
+                    <text x={53} y={12} dominantBaseline="middle" textAnchor="middle" fill="white" fontSize={12} fontWeight="600">구간 반복 끝</text>
+                  </g>
+                </g>}
               </g>)}
             </svg>}
             </>}

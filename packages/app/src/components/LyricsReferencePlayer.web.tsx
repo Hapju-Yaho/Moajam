@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { LyricsTransport } from '../lib/lyricsTiming';
 import { scheduleClick } from '../lib/metronome.web';
 import { ScoreYouTubeBacking, type ScoreYouTubeHandle } from './ScoreYouTubeBacking.web';
@@ -15,6 +16,8 @@ export function LyricsReferencePlayer({
   compactControls = false,
   countIn = false,
   countInBeats = 4,
+  metronomeVolume = 0.5,
+  countdownHost,
 }: {
   video: string;
   bpm: number;
@@ -27,6 +30,8 @@ export function LyricsReferencePlayer({
   compactControls?: boolean;
   countIn?: boolean;
   countInBeats?: number;
+  metronomeVolume?: number;
+  countdownHost?: HTMLElement | null;
 }) {
   const player = useRef<ScoreYouTubeHandle | null>(null),
     audio = useRef<AudioContext | null>(null);
@@ -92,7 +97,7 @@ export function LyricsReferencePlayer({
           if (attempt !== generation.current) return;
           setCountdown(count - index);
           if (metronome)
-            scheduleClick(audio.current, audio.current.currentTime + 0.025, index === 0, 0.5);
+            scheduleClick(audio.current, audio.current.currentTime + 0.025, index === 0, metronomeVolume);
           await new Promise<void>((resolve) =>
             setTimeout(resolve, Math.max(0, start + (index + 1) * interval - performance.now())),
           );
@@ -113,7 +118,7 @@ export function LyricsReferencePlayer({
           audio.current,
           audio.current.currentTime + 0.025,
           Math.round(cursor.current / (4 / meter[1])) % meter[0] === 0,
-          0.5,
+          metronomeVolume,
         );
       if (!metronomeOnly)
         player.current?.sync((cursor.current * 60) / bpm, audio.current.currentTime, true);
@@ -139,7 +144,14 @@ export function LyricsReferencePlayer({
       toggle: () => {
         void toggle();
       },
-      seek: (beat) => {
+      seek: (beat, keepPlaying = false) => {
+        if (keepPlaying && running.current) {
+          cursor.current = Math.max(0, beat);
+          base.current = cursor.current;
+          startedAt.current = audio.current?.currentTime ?? 0;
+          if (!metronomeOnly) player.current?.sync(cursor.current * 60 / bpm, startedAt.current, true);
+          return;
+        }
         pause();
         cursor.current = Math.max(0, beat);
       },
@@ -159,6 +171,7 @@ export function LyricsReferencePlayer({
     metronome,
     countIn,
     countInBeats,
+    metronomeVolume,
   ]);
   useEffect(() => {
     if (!playing) return;
@@ -185,14 +198,14 @@ export function LyricsReferencePlayer({
             audio.current,
             audio.current.currentTime + Math.max(0, wait),
             index % meter[0] === 0,
-            0.5,
+            metronomeVolume,
           );
           next = index;
         }
       }
     }, 25);
     return () => clearInterval(timer);
-  }, [playing, bpm, meter, metronome, metronomeOnly]);
+  }, [playing, bpm, meter, metronome, metronomeOnly, metronomeVolume]);
   useEffect(
     () => () => {
       running.current = false;
@@ -207,10 +220,10 @@ export function LyricsReferencePlayer({
   );
   return (
     <div className={`lyrics-reference-player${compactControls ? ' is-inline' : ''}`}>
-      {countdown !== null && (
+      {countdown !== null && countdownHost && createPortal(
         <div className="lyrics-count-in" role="status" aria-label={`재생 준비 ${countdown}`}>
           <strong>{countdown}</strong>
-        </div>
+        </div>, countdownHost
       )}
       <div className="lyrics-timing-fields">
         <label>

@@ -21,3 +21,13 @@ export function pdfTimelinePosition<T extends Measure>(timeline: ReturnType<type
   const remainingBars = waiting ? Math.max(1, Math.ceil((waiting.start - position) / waiting.gapBarLength - 1e-8)) : 0;
   return { active, waiting, remainingBars };
 }
+
+export function pdfMeasureBeat<T extends Measure>(timeline: ReturnType<typeof pdfPlaybackTimeline<T>>, number: number) {
+  for (const entry of timeline) {
+    const first = entry.measure.number ?? 1;
+    const length = entry.measure.meter[0] * 4 / entry.measure.meter[1];
+    if (number >= first && number < first + (entry.measure.restCount ?? 1)) return entry.start + (number - first) * length;
+    if (number < first && entry.gapBars) return entry.start - (first - number) * entry.gapBarLength;
+  }
+  return timeline.at(-1)?.end ?? 0;
+}

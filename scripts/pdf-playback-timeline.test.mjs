@@ -1,7 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pdfPlaybackTimeline, pdfTimelinePosition } from '../packages/app/src/lib/pdf-playback-timeline.ts';
+import { pdfPlaybackTimeline, pdfTimelinePosition, pdfMeasureBeat } from '../packages/app/src/lib/pdf-playback-timeline.ts';
 const bar = (number, restCount = 1, meter = [4, 4]) => ({ number, restCount, meter });
+test('loop boundaries include individual bars in rests and unprinted gaps', () => {
+  const timeline = pdfPlaybackTimeline([bar(1, 4), bar(8, 1, [3, 4])]);
+  assert.equal(pdfMeasureBeat(timeline, 3), 8);
+  assert.equal(pdfMeasureBeat(timeline, 6), 20);
+  assert.equal(pdfMeasureBeat(timeline, 8), 28);
+  assert.equal(pdfMeasureBeat(timeline, 9), 31);
+});
 test('missing measures 17–20 occupy four full bars before measure 21', () => {
   const timeline = pdfPlaybackTimeline([bar(16), bar(21)]);
   assert.equal(timeline[1].start, 20);

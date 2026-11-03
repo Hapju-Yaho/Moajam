@@ -106,9 +106,10 @@ export function ScorePdfStructureReview({
       dispose?.();
     };
   }, [file]);
-  useEffect(() => {
-    pageElements.current.get(page)?.scrollIntoView({ block: 'nearest' });
-  }, [page]);
+  const navigatePage = (next: number) => {
+    setPage(next);
+    pageElements.current.get(next)?.scrollIntoView({ block: 'nearest' });
+  };
   const current = draft.parts[part];
   const bar = current?.measures[selected];
   const update = (
@@ -179,7 +180,7 @@ export function ScorePdfStructureReview({
             onChange={(e) => {
               setPart(Number(e.target.value));
               setSelected(0);
-              setPage(draft.parts[Number(e.target.value)].measures[0]?.page ?? 1);
+              navigatePage(draft.parts[Number(e.target.value)].measures[0]?.page ?? 1);
             }}
           >
             {draft.parts.map((p, i) => (
@@ -196,7 +197,7 @@ export function ScorePdfStructureReview({
             min={1}
             max={pages}
             value={page}
-            onChange={(e) => setPage(Math.max(1, Math.min(pages, Number(e.target.value) || 1)))}
+            onChange={(e) => navigatePage(Math.max(1, Math.min(pages, Number(e.target.value) || 1)))}
           />
         </label>
         <button type="button" aria-pressed={mode === 'select'} onClick={() => setMode('select')}>

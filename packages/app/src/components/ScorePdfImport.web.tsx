@@ -80,6 +80,23 @@ export function ScorePdfImport({
   initialScoreType?: string;
 }) {
   const measureOnly = mode === 'measures';
+  const measureSession = useRef({ closed: false, jobs: new Set<string>() });
+  const discardMeasureJobs = () => {
+    if (!measureOnly) return;
+    measureSession.current.closed = true;
+    for (const id of measureSession.current.jobs) {
+      void api(`/score-pdf/jobs/${id}`, 'DELETE').catch(() => {});
+    }
+    measureSession.current.jobs.clear();
+  };
+  const closeImport = () => {
+    discardMeasureJobs();
+    onClose();
+  };
+  useEffect(() => {
+    measureSession.current.closed = false;
+    return () => discardMeasureJobs();
+  }, [measureOnly]);
   const [structureFooter, setStructureFooter] = useState<HTMLDivElement | null>(null);
   const [measurePreviewUrl, setMeasurePreviewUrl] = useState('');
   const dialog = useRef<HTMLDialogElement>(null);
@@ -393,6 +410,13 @@ export function ScorePdfImport({
       data.append('file', extracted);
       const previous = job;
       const next = await api<Prepared>(`/score-pdf/jobs?scoreType=${scoreType}`, 'POST', data);
+      if (measureOnly) {
+        if (measureSession.current.closed) {
+          await api(`/score-pdf/jobs/${next.id}`, 'DELETE');
+          return;
+        }
+        measureSession.current.jobs.add(next.id);
+      }
       const original = new FormData();
       original.append('file', file);
       await api(`/score-pdf/jobs/${next.id}/source-link?pages=${selectedPages.join(',')}`, 'POST', original);
@@ -654,7 +678,7 @@ export function ScorePdfImport({
       {temporaryError && <small role="alert">{temporaryError}</small>}
     </div>
   );
-  if (measureOnly && structureSaved) return <MeasureSavedNotice onClose={onClose} />;
+  if (measureOnly && structureSaved) return <MeasureSavedNotice onClose={closeImport} />;
   return (
     <dialog
       ref={dialog}
@@ -665,11 +689,11 @@ export function ScorePdfImport({
         e.stopPropagation();
         if (e.target !== e.currentTarget) return;
         e.preventDefault();
-        onClose();
+        closeImport();
       }}
       onKeyDown={(e) => e.stopPropagation()}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) closeImport();
       }}
     >
       <section>
@@ -680,7 +704,7 @@ export function ScorePdfImport({
           <button
             className="score-pdf-close"
             type="button"
-            onClick={onClose}
+            onClick={closeImport}
             aria-label={measureOnly ? 'PDF 악보 마디 분석 닫기' : 'PDF 악보 변환 닫기'}
           >
             ×

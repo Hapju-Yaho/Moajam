@@ -461,6 +461,7 @@ export function SongPdfLibrary({
       {preview &&
         render(
           <PdfScoreReader
+            songKey={`${workspaceId}/${songId}`}
             songAudio={songAudio}
             embedded={embedded}
             key={preview.url}
