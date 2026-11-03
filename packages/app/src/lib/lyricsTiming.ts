@@ -27,6 +27,31 @@ export function lyricsSections(text: string): string[] {
     .map((v) => v.trim())
     .filter(Boolean);
 }
+export function updateLyricsTimingText(document: LyricsTimingDocument, lyrics: string): LyricsTimingDocument {
+  const before = lyricsSections(document.lyrics);
+  const after = lyricsSections(lyrics);
+  const mapping = new Map<number, number>();
+  if (before.length === after.length) {
+    before.forEach((_, index) => mapping.set(index, index));
+  } else {
+    const anchors: [number, number][] = [[-1, -1]];
+    let next = 0;
+    before.forEach((text, index) => {
+      const match = after.findIndex((value, i) => i >= next && value === text);
+      if (match >= 0) { anchors.push([index, match]); next = match + 1; }
+    });
+    anchors.push([before.length, after.length]);
+    for (let i = 1; i < anchors.length; i++) {
+      const [oldStart, newStart] = anchors[i - 1];
+      const [oldEnd, newEnd] = anchors[i];
+      for (let offset = 1; offset < Math.min(oldEnd - oldStart, newEnd - newStart); offset++) mapping.set(oldStart + offset, newStart + offset);
+      if (oldEnd < before.length) mapping.set(oldEnd, newEnd);
+    }
+  }
+  return { ...document, lyrics, tracks: Object.fromEntries(Object.entries(document.tracks).map(([key, track]) => [key, {
+    ...track, cues: track.cues.filter((cue) => mapping.has(cue.section)).map((cue) => ({ ...cue, section: mapping.get(cue.section)! })),
+  }])) };
+}
 export function snapLyricsBeat(beat: number): number {
   return Math.round(Math.max(0, Number.isFinite(beat) ? beat : 0) * 2) / 2;
 }

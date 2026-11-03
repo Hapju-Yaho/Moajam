@@ -27,6 +27,7 @@ export function LyricsFollow({
   followEnabled,
   onCloseSettings,
   closeRequestRef,
+  saveRequestRef,
   toolbarHost,
   autoScroll = false,
   scrollSpeed = 30,
@@ -39,6 +40,7 @@ export function LyricsFollow({
   followEnabled: boolean;
   onCloseSettings?: () => void;
   closeRequestRef?: { current: (() => void) | null };
+  saveRequestRef?: { current: (() => boolean) | null };
   toolbarHost?: HTMLElement | null;
   autoScroll?: boolean;
   scrollSpeed?: number;
@@ -313,6 +315,11 @@ export function LyricsFollow({
     onCloseSettings?.();
   };
   useEffect(() => {
+    if (!saveRequestRef) return;
+    saveRequestRef.current = () => !dirty || save();
+    return () => { saveRequestRef.current = null; };
+  });
+  useEffect(() => {
     if (!closeRequestRef) return;
     closeRequestRef.current = closeSettings;
     return () => {
@@ -463,7 +470,7 @@ export function LyricsFollow({
           <span>음원 같이 듣기</span>
           <input type="range" aria-label="곡 음원 음량" min={0} max={1} step={0.01} value={songVolume} disabled={!listenAlong || !audioUrl} onChange={(e) => setSongVolume(Number(e.target.value))} />
         </div>}
-        {!settingsOpen && <span className="lyrics-toolbar-position">{lyricsCueLabel(beat, meter)} / {lyricsCueLabel(playbackEnd, meter)}</span>}
+        {!settingsOpen && <span className="lyrics-toolbar-position">{lyricsCueLabel(Math.floor(beat / (4 / meter[1])) * (4 / meter[1]), meter)} / {lyricsCueLabel(Math.floor(playbackEnd / (4 / meter[1])) * (4 / meter[1]), meter)}</span>}
         {settingsOpen && recordingActions}
         </div>
       </div>
@@ -814,7 +821,12 @@ function LyricsCueTimeline({
                 className="lyrics-cue-bar-beats"
                 aria-label={`${bar + 1}마디 선택`}
                 aria-pressed={bar === currentBar}
-                onClick={() => onSelect(bar * barLength)}
+                onClick={(event) => {
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  const fraction = event.detail === 0 || !bounds.width ? 0 : Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+                  const beatIndex = Math.min(meter[0], Math.round(fraction * meter[0]));
+                  onSelect(bar * barLength + beatIndex * (4 / meter[1]));
+                }}
                 style={{ gridTemplateColumns: `repeat(${meter[0]}, 1fr)` }}
               >
                 {Array.from({ length: meter[0] }, (_, index) => (

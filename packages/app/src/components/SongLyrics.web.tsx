@@ -5,6 +5,7 @@ import { ActionButton } from './ProductUI';
 import { useWorkspaceValue } from '../state/MockAppState';
 import { useIdentity } from '../state/Identity';
 import { loadPreferences, savePreferences } from '../state/preferencesStorage';
+import { updateLyricsTimingText, type LyricsTimingDocument } from '../lib/lyricsTiming';
 import './PerformanceReader.web.css';
 
 export function SongLyrics({ songId, title }: { songId: string; title: string }) {
@@ -80,6 +81,8 @@ function LyricsReader({
   const ownsFullscreen = useRef(false);
   const [expanded, setExpanded] = useState(false);
   const timingClose = useRef<(() => void) | null>(null);
+  const timingSave = useRef<(() => boolean) | null>(null);
+  const [, setTimingDocument] = useWorkspaceValue<LyricsTimingDocument>(`song/${songId}/lyrics-timing`, { version: 1, lyrics: '', tracks: {} });
   const [draft, setDraft] = useState(lyrics);
   const [editing, setEditing] = useState(!lyrics);
   const [playing, setPlaying] = useState(false);
@@ -160,6 +163,7 @@ function LyricsReader({
               <>
                 <button
                   onClick={() => {
+                    setTimingDocument((previous) => updateLyricsTimingText(previous, draft));
                     onSave(draft);
                     setEditing(false);
                     setTimingSettings(editReturn.current.timing);
@@ -184,11 +188,7 @@ function LyricsReader({
               <>
                 <button
                   onClick={() => {
-                    if (
-                      timingDirty &&
-                      !window.confirm('가사 타이밍을 저장하지 않고 가사를 편집할까요?')
-                    )
-                      return;
+                    if (timingDirty && !timingSave.current?.()) return;
                     setTimingDirty(false);
                     editReturn.current = { timing: timingSettings, follow };
                     setTimingSettings(false);
@@ -315,6 +315,7 @@ function LyricsReader({
             autoScroll={!follow}
             scrollSpeed={speed}
             closeRequestRef={timingClose}
+            saveRequestRef={timingSave}
             onCloseSettings={() => {
               setTimingSettings(false);
               setTimingDirty(false);
