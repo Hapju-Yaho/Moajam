@@ -1,5 +1,5 @@
 import { api, serverConfigured } from './remote';
-import { loadPreferences, savePreferences } from '../state/preferencesStorage';
+import { loadPreferences, savePreferences } from '@state/preferencesStorage';
 
 export function localWorkspaceOrder(user: string): string[] {
   const ids = loadPreferences(`team-order/${user}`)?.ids;

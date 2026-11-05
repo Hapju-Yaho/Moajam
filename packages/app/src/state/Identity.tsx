@@ -1,3 +1,4 @@
+import styledNative from '@emotion/native';
 import { createContext, useContext, useEffect, useState, type PropsWithChildren } from 'react';
 import { View } from 'react-native';
 import {
@@ -6,11 +7,14 @@ import {
   serverConfigured,
   clientConfig,
   api,
-} from '../lib/remote';
+} from '@lib/remote';
 import { activatePreferences, loadRemotePreferences } from './preferences';
-import { Meta } from '../components/ProductUI';
-import { LoginScreen } from '../screens/LoginScreen';
-import { OnboardingScreen, type OnboardingState } from '../screens/OnboardingScreen';
+import { Meta } from '@component/shared/ui/ProductUI';
+import { LoginScreen } from '@screens/account/login/LoginScreen';
+import {
+  OnboardingScreen,
+  type OnboardingState,
+} from '@screens/account/onboarding/OnboardingScreen';
 const Identity = createContext('m1');
 export function IdentityProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<string | null>(serverConfigured ? null : 'm1');
@@ -66,9 +70,9 @@ export function IdentityProvider({ children }: PropsWithChildren) {
   }, [retry]);
   if (loading)
     return (
-      <View style={{ padding: 40 }}>
+      <IdentityProviderContainer>
         <Meta>Moajam을 준비하고 있어요…</Meta>
-      </View>
+      </IdentityProviderContainer>
     );
   if (!user)
     return (
@@ -102,3 +106,10 @@ export function IdentityProvider({ children }: PropsWithChildren) {
 export function useIdentity() {
   return useContext(Identity);
 }
+
+const IdentityProviderContainer = styledNative(View)({
+  paddingTop: 40,
+  paddingRight: 40,
+  paddingBottom: 40,
+  paddingLeft: 40,
+});

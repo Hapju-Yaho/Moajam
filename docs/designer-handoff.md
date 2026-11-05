@@ -264,4 +264,4 @@
 - [개인 음악 도구 목표 명세](./personal-tools-spec.md)
 - [기존 화면 시안 목록](./README.md#화면-시안)
 
-기존 문서 일부에는 과거 구현 상태가 남아 있다. 현재 화면 구성은 `packages/app/src/navigation.ts`, `screens/`, `components/song/` 및 관련 컴포넌트와 대조했다. 이 문서는 디자인 협의용이며 배포 완료 보고서가 아니다.
+기존 문서 일부에는 과거 구현 상태가 남아 있다. 현재 화면 구성은 `packages/app/src/navigation.ts`, `screens/`, `components/song-detail/` 및 관련 컴포넌트와 대조했다. 이 문서는 디자인 협의용이며 배포 완료 보고서가 아니다.

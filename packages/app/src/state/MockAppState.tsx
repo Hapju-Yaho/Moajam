@@ -10,13 +10,13 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react';
-import { type RecommendationItem, members as initialMembers } from '../mocks/data';
+import { type RecommendationItem, members as initialMembers } from '@mocks/data';
 import {
   createWorkspaces,
   type Workspace,
   type WorkspaceSong,
   type Rehearsal,
-} from '../mocks/workspaces';
+} from '@mocks/workspaces';
 
 import {
   personalSongs,
@@ -25,18 +25,18 @@ import {
   summarizeSong,
 } from './workspaceModel';
 import { useIdentity } from './Identity';
-import { deleteWorkspaceMedia } from '../lib/mediaStore';
+import { deleteWorkspaceMedia } from '@lib/mediaStore';
 import {
   api,
   serverConfigured,
   loadRemoteWorkspaces,
   saveRemoteWorkspace,
   createRemoteWorkspace,
-} from '../lib/remote';
+} from '@lib/remote';
 import { usePreferences } from './preferences';
 import { loadWorkspaceState, saveWorkspaceState } from './workspaceStorage';
-import { loadWorkspaceOrder, localWorkspaceOrder, saveWorkspaceOrder } from '../lib/workspaceOrder';
-import { orderPracticeSongs } from '../lib/practiceSongOrder';
+import { loadWorkspaceOrder, localWorkspaceOrder, saveWorkspaceOrder } from '@lib/workspaceOrder';
+import { orderPracticeSongs } from '@lib/practiceSongOrder';
 
 export type MockMember = (typeof initialMembers)[number];
 export type AdoptedSong = WorkspaceSong;

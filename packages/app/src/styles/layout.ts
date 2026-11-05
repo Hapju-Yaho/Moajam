@@ -1,7 +1,7 @@
 import styled from '@emotion/native';
 import { theme } from '@moajam/ui';
 import { createElement } from 'react';
-import { View, type ViewProps } from 'react-native';
+import { View, useWindowDimensions, type ViewProps } from 'react-native';
 
 export const Shell = styled.SafeAreaView`
   flex: 1;
@@ -11,10 +11,13 @@ export const Shell = styled.SafeAreaView`
 
 export const Main = styled.View`
   flex: 1;
+  min-width: 0;
+  min-height: 0;
 `;
 
 export const PageScroll = styled.ScrollView`
   flex: 1;
+  min-width: 0;
 `;
 
 export const PageHeader = styled.View`
@@ -47,33 +50,39 @@ export const Caption = styled.Text`
 `;
 
 export function Grid({ stacked, style, ...props }: ViewProps & { stacked?: boolean }) {
-  return createElement(View, {
-    ...props,
-    style: [
-      { gap: 20, flexDirection: stacked ? 'column' : 'row', alignItems: 'flex-start' },
-      style,
-    ],
-  });
+  return createElement(GridBase, { ...props, $stacked: stacked, style });
 }
+
+const GridBase = styled(View, { shouldForwardProp: (prop) => !prop.startsWith('$') })<{
+  $stacked?: boolean;
+}>(({ $stacked }) => ({
+  minWidth: 0,
+  rowGap: 20,
+  columnGap: 20,
+  flexDirection: $stacked ? 'column' : 'row',
+  alignItems: 'stretch',
+}));
 
 export function Column({ style, ...props }: ViewProps) {
-  return createElement(View, { ...props, style: [{ width: '100%', gap: 20 }, style] });
+  return createElement(ColumnBase, { ...props, style });
 }
 
+const ColumnBase = styled.View({ width: '100%', minWidth: 0, rowGap: 20, columnGap: 20 });
+
 export function Between({ style, ...props }: ViewProps) {
-  return createElement(View, {
-    ...props,
-    style: [
-      {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 12,
-      },
-      style,
-    ],
-  });
+  return createElement(BetweenBase, { ...props, style });
 }
+
+const BetweenBase = styled.View({
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  flexWrap: 'wrap',
+  minWidth: 0,
+  maxWidth: '100%',
+  rowGap: 12,
+  columnGap: 12,
+});
 
 export function Inline({
   wrap,
@@ -81,14 +90,27 @@ export function Inline({
   style,
   ...props
 }: ViewProps & { wrap?: boolean; gap?: number }) {
-  return createElement(View, {
+  const { width } = useWindowDimensions();
+  return createElement(InlineBase, {
     ...props,
-    style: [
-      { flexDirection: 'row', alignItems: 'center', flexWrap: wrap ? 'wrap' : 'nowrap', gap },
-      style,
-    ],
+    $wrap: wrap ?? width < 480,
+    $gap: gap,
+    style,
   });
 }
+
+const InlineBase = styled(View, { shouldForwardProp: (prop) => !prop.startsWith('$') })<{
+  $wrap: boolean;
+  $gap: number;
+}>(({ $wrap, $gap }) => ({
+  minWidth: 0,
+  maxWidth: '100%',
+  flexDirection: 'row',
+  alignItems: 'center',
+  flexWrap: $wrap ? 'wrap' : 'nowrap',
+  rowGap: $gap,
+  columnGap: $gap,
+}));
 
 export const Divider = styled.View`
   height: 1px;
@@ -96,6 +118,9 @@ export const Divider = styled.View`
 `;
 
 export const Input = styled.TextInput`
+  min-width: 0;
+  max-width: 100%;
+  font-size: 16px;
   font-weight: 400;
   min-height: 44px;
   padding: 10px 13px;
@@ -106,6 +131,8 @@ export const Input = styled.TextInput`
 `;
 
 export const SearchInput = styled.TextInput`
+  min-width: 0;
+  font-size: 16px;
   font-weight: 400;
   flex: 1;
   min-height: 42px;
@@ -117,12 +144,14 @@ export const SearchInput = styled.TextInput`
 `;
 
 export const Chip = styled.Pressable<{ active?: boolean }>`
+  max-width: 100%;
   padding: 7px 12px;
   border-radius: 999px;
   background-color: ${({ active }) => (active ? theme.colors.primary : '#eef3fb')};
 `;
 
 export const ChipText = styled.Text<{ active?: boolean }>`
+  flex-shrink: 1;
   color: ${({ active }) => (active ? 'white' : theme.colors.textMuted)};
   font-size: 13px;
   font-weight: 500;
@@ -134,12 +163,18 @@ export const LinkText = styled.Text`
   font-weight: 500;
 `;
 
-const ArtworkBase = styled.View`
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-`;
+const ArtworkBase = styled(View, { shouldForwardProp: (prop) => !prop.startsWith('$') })<{
+  $size: number;
+  $tint: string;
+}>(({ $size, $tint }) => ({
+  flexShrink: 0,
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 10,
+  width: $size,
+  height: $size,
+  backgroundColor: $tint,
+}));
 
 export function Artwork({
   tint = '#e86545',
@@ -149,7 +184,9 @@ export function Artwork({
 }: ViewProps & { tint?: string; size?: number }) {
   return createElement(ArtworkBase, {
     ...props,
-    style: [{ width: size, height: size, backgroundColor: tint }, style],
+    $size: size,
+    $tint: tint,
+    style,
   });
 }
 
@@ -180,12 +217,18 @@ export const ProgressFill = styled.View<{ value: number }>`
   background-color: ${theme.colors.primary};
 `;
 
-const AvatarBase = styled.View`
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-`;
+const AvatarBase = styled(View, { shouldForwardProp: (prop) => !prop.startsWith('$') })<{
+  $size: number;
+  $color: string;
+}>(({ $size, $color }) => ({
+  flexShrink: 0,
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 999,
+  width: $size,
+  height: $size,
+  backgroundColor: $color,
+}));
 
 export function Avatar({
   color = '#d7e8ff',
@@ -195,7 +238,9 @@ export function Avatar({
 }: ViewProps & { color?: string; size?: number }) {
   return createElement(AvatarBase, {
     ...props,
-    style: [{ width: size, height: size, backgroundColor: color }, style],
+    $size: size,
+    $color: color,
+    style,
   });
 }
 

@@ -9,8 +9,8 @@ apps/
 packages/
   app/       공유 Provider와 Screen 조합
     src/
-      components/  앱 셸과 기능 공통 컴포넌트
-      screens/     웹·모바일 공통 화면
+      components/  화면별 UI와 shared/ 공통 컴포넌트
+      screens/     영역·하위 화면 깊이별 웹·모바일 공통 화면
       styles/      화면 레이아웃과 공통 스타일
       mocks/       API 연결 전 목 데이터
   api/       API 경계, TanStack Query 설정과 query options
@@ -64,3 +64,27 @@ docs/        제품·도메인·기술 기준 문서
 현재 API 패키지는 화면 개발을 위한 mock gateway를 사용한다. 백엔드가 준비되면 같은 함수 계약을
 HTTP 구현으로 교체한다. Query key는 Workspace와 Song 식별자를 항상 포함해 팀 간 캐시가 섞이지
 않도록 한다.
+
+화면별 컴포넌트와 디자인 수정 위치는 [컴포넌트 안내](../packages/app/src/components/README.md)를 참고하세요.
+
+화면 폴더 깊이와 진입 파일은 [Screen 안내](../packages/app/src/screens/README.md), 홈 공통 UI와 데이터 경계는 [홈 컴포넌트 안내](../packages/app/src/components/home/README.md)를 참고하세요.
+
+## Import alias
+
+| Alias          | 실제 경로                       |
+| -------------- | ------------------------------- |
+| `@component/*` | `packages/app/src/components/*` |
+| `@lib/*`       | `packages/app/src/lib/*`        |
+| `@mocks/*`     | `packages/app/src/mocks/*`      |
+| `@screens/*`   | `packages/app/src/screens/*`    |
+| `@state/*`     | `packages/app/src/state/*`      |
+| `@styles/*`    | `packages/app/src/styles/*`     |
+| `@assets/*`    | `packages/app/assets/*`         |
+
+예: `import { HomeHeader } from '@component/home/HomeHeader';`, `import logo from '@assets/logo.png';`
+
+다른 폴더의 파일은 위 별칭을 사용하고, 같은 폴더 파일은 `./HomeHeader`처럼 상대 경로를 유지합니다. src 루트의 navigation.ts 같은 파일은 `@app/navigation`을 사용합니다. `@moajam/ui`, `@moajam/domain` 등 워크스페이스 패키지 이름은 유지합니다.
+
+웹 DOM의 이미지 URL이 필요한 경우 `@assets/help/audio-track.png?url`처럼 가져옵니다. React Native Image의 source에는 `@assets/logo.png`를 그대로 사용합니다. Expo app.json의 icon 등 설정 파일 경로는 Metro import가 아니므로 기존 상대 경로를 유지합니다.
+
+TypeScript는 루트 tsconfig.base.json, 웹은 apps/web/vite.config.ts, 모바일은 apps/mobile/metro.config.js에서 해석합니다. 확장자 없는 import는 기존 플랫폼별 선택 규칙을 따릅니다. scripts/load-typescript.mjs의 단위 테스트 로더는 tsconfig의 paths를 읽습니다. Metro 설정 변경 후에는 실행 중인 Expo 개발 서버를 재시작합니다.

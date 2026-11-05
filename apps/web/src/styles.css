@@ -26,6 +26,50 @@ body {
 
 #root > div {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Keep the app inside the visible viewport, including mobile browser chrome. */
+@supports (height: 100dvh) {
+  #root {
+    height: 100dvh;
+  }
+}
+
+#mobile-bottom-nav {
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+#tablet-navigation-drawer #app-sidebar {
+  box-shadow: 12px 0 40px #15243926;
+  animation: navigation-drawer-enter 180ms ease-out;
+  padding-top: max(16px, env(safe-area-inset-top));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+@keyframes navigation-drawer-enter {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #tablet-navigation-drawer #app-sidebar {
+    animation: none;
+  }
+}
+
+@media (max-width: 600px) {
+  input:not([type='range']):not([type='checkbox']):not([type='radio']),
+  textarea,
+  select {
+    min-width: 0;
+    max-width: 100%;
+  }
 }
 
 * {

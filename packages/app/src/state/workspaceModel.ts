@@ -1,4 +1,4 @@
-import type { Preparation, Workspace } from '../mocks/workspaces';
+import type { Preparation, Workspace } from '@mocks/workspaces';
 
 export function personalSongs(workspaces: Workspace[], userId = 'm1') {
   return workspaces.flatMap((band) =>

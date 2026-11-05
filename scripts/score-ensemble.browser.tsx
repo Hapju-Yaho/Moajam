@@ -1,10 +1,10 @@
 // In-memory fixture; never reads or changes a user's stored score.
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ScoreEditorViewport } from '../packages/app/src/components/ScoreEditorViewport.web';
-import { ScoreParts } from '../packages/app/src/components/ScoreParts.web';
-import { GuitarTabEditor } from '../packages/app/src/components/GuitarTabEditor.web';
-import { ScoreFileActions } from '../packages/app/src/components/ScoreFileActions.web';
+import { ScoreEditorViewport } from '../packages/app/src/components/score-editor/ScoreEditorViewport.web';
+import { ScoreParts } from '../packages/app/src/components/score-editor/ScoreParts.web';
+import { GuitarTabEditor } from '../packages/app/src/components/score-editor/GuitarTabEditor.web';
+import { ScoreFileActions } from '../packages/app/src/components/score-editor/ScoreFileActions.web';
 import { addInstrumentPart, scorePartOwner } from '../packages/app/src/lib/scoreParts';
 import { scoreFromMusicXml } from '../packages/app/src/lib/scoreImport.web';
 import { createScorePdf } from '../packages/app/src/lib/scorePdf.web';

@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { moduleUrl } from './load-typescript.mjs';
 
 const { GuitarStaff } = await import(
-  moduleUrl(new URL('../packages/app/src/components/GuitarStaff.web.tsx', import.meta.url))
+  moduleUrl(new URL('../packages/app/src/components/score-editor/GuitarStaff.web.tsx', import.meta.url))
 );
 const score = {
   title: 'TAB',

@@ -1,4 +1,4 @@
-import type { Workspace } from '../mocks/workspaces';
+import type { Workspace } from '@mocks/workspaces';
 import { api, currentIdentity } from './remote-client';
 type RemoteBand = {
   id: string;

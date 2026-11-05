@@ -1,8 +1,8 @@
 ﻿import React, { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { configureRemote } from '../packages/app/src/lib/remote-client';
-import { BandDawProjects } from '../packages/app/src/components/BandDawProjects.web';
-import { PracticeStudioSession } from '../packages/app/src/components/PracticeStudio.web';
+import { BandDawProjects } from '../packages/app/src/components/practice/BandDawProjects.web';
+import { PracticeStudioSession } from '../packages/app/src/components/practice/PracticeStudio.web';
 import { MockAppStateProvider } from '../packages/app/src/state/MockAppState';
 import { readMedia } from '../packages/app/src/lib/mediaStore.web';
 import { projectMediaKey, type BandDawProject } from '../packages/app/src/lib/bandDawProjects';

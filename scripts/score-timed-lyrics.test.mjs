@@ -7,9 +7,9 @@ const { scoreTimedLyrics, layoutScoreTimedLyrics } = await import(
   moduleUrl(new URL('../packages/app/src/lib/scoreTimedLyrics.ts', import.meta.url))
 );
 const { GuitarStaff } = await import(
-  moduleUrl(new URL('../packages/app/src/components/GuitarStaff.web.tsx', import.meta.url))
+  moduleUrl(new URL('../packages/app/src/components/score-editor/GuitarStaff.web.tsx', import.meta.url))
 );
-const { ScoreEnsemble } = await import(moduleUrl(new URL('../packages/app/src/components/ScoreEnsemble.web.tsx', import.meta.url)));
+const { ScoreEnsemble } = await import(moduleUrl(new URL('../packages/app/src/components/score-editor/ScoreEnsemble.web.tsx', import.meta.url)));
 
 test('explicit lyric line breaks stack at the same beat rather than moving to the next system', () => {
   const systems = [{ start:0, end:4, xAt:beat=>beat*80 }, { start:4, end:8, xAt:beat=>(beat-4)*80 }];

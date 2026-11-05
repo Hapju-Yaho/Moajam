@@ -1,9 +1,9 @@
 // Isolated in-memory editor: browser checks never modify a user's saved score.
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ScoreEditorViewport } from '../packages/app/src/components/ScoreEditorViewport.web';
-import { GuitarTabEditor } from '../packages/app/src/components/GuitarTabEditor.web';
-import { ScoreFileActions } from '../packages/app/src/components/ScoreFileActions.web';
+import { ScoreEditorViewport } from '../packages/app/src/components/score-editor/ScoreEditorViewport.web';
+import { GuitarTabEditor } from '../packages/app/src/components/score-editor/GuitarTabEditor.web';
+import { ScoreFileActions } from '../packages/app/src/components/score-editor/ScoreFileActions.web';
 import {
   cleanScoreConnections,
   setScoreSlur,
@@ -17,7 +17,7 @@ import { scheduleScorePassage } from '../packages/app/src/lib/scoreAudio.web';
 import {
   ScoreYouTubeBacking,
   type ScoreYouTubeHandle,
-} from '../packages/app/src/components/ScoreYouTubeBacking.web';
+} from '../packages/app/src/components/score-editor/ScoreYouTubeBacking.web';
 const ignoreBusy = () => {};
 
 export function Fixture() {

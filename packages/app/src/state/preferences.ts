@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { loadPreferences, savePreferences } from './preferencesStorage';
-import { api, serverConfigured } from '../lib/remote';
-import { readPersonal, writePersonal } from '../lib/personal-store';
-import { mockProfile } from '../mocks/preferences';
+import { api, serverConfigured } from '@lib/remote';
+import { readPersonal, writePersonal } from '@lib/personal-store';
+import { mockProfile } from '@mocks/preferences';
 import type { MemberPart } from '@moajam/domain';
 export type Preferences = {
   name: string;

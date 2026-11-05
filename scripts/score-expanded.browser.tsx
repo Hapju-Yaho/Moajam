@@ -1,10 +1,10 @@
 import { scorePartOwner } from '../packages/app/src/lib/scoreParts';
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ScoreEditorViewport } from '../packages/app/src/components/ScoreEditorViewport.web';
-import { GuitarTabEditor } from '../packages/app/src/components/GuitarTabEditor.web';
-import { ScoreParts } from '../packages/app/src/components/ScoreParts.web';
-import { ScoreFileActions } from '../packages/app/src/components/ScoreFileActions.web';
+import { ScoreEditorViewport } from '../packages/app/src/components/score-editor/ScoreEditorViewport.web';
+import { GuitarTabEditor } from '../packages/app/src/components/score-editor/GuitarTabEditor.web';
+import { ScoreParts } from '../packages/app/src/components/score-editor/ScoreParts.web';
+import { ScoreFileActions } from '../packages/app/src/components/score-editor/ScoreFileActions.web';
 import type { Score, ScoreClipboardNote } from '../packages/app/src/lib/score';
 const noop = () => {};
 export function Fixture() {

@@ -1,4 +1,4 @@
-import { readNative, writeNative } from '../lib/nativeStorage';
+import { readNative, writeNative } from '@lib/nativeStorage';
 export function loadPreferences(scope = 'm1'): Record<string, unknown> {
   try {
     return readNative(`preferences/${scope}`) ?? {};

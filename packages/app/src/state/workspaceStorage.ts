@@ -1,5 +1,5 @@
-import type { Workspace } from '../mocks/workspaces';
-import { readNative, writeNative } from '../lib/nativeStorage';
+import type { Workspace } from '@mocks/workspaces';
+import { readNative, writeNative } from '@lib/nativeStorage';
 export type SavedWorkspaceState = {
   version: 1;
   workspaces: Workspace[];

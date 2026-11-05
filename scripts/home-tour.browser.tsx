@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { HomeTour } from '../packages/app/src/components/HomeTour.web';
+import { HomeTour } from '../packages/app/src/components/shared/help/HomeTour.web';
 export function App() {
   const [open, setOpen] = useState(true);
   const [band, setBand] = useState(false);

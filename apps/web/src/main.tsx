@@ -1,3 +1,4 @@
+import styledWeb from '@emotion/styled';
 import {
   AppProviders,
   AppScreen,
@@ -20,6 +21,7 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import './styles.css';
+import './mobile.css';
 
 function RoutedScreen({ route }: { route: AppRoute }) {
   const navigate = useNavigate();
@@ -171,11 +173,11 @@ function MobileKakaoCallback() {
     window.location.assign(url);
   }, [url]);
   return (
-    <main style={{ padding: 40 }}>
+    <MobileKakaoCallbackMain>
       <h1>Moajam으로 돌아가기</h1>
       <p>앱에서 로그인을 마무리해주세요.</p>
       <a href={url}>앱 열기</a>
-    </main>
+    </MobileKakaoCallbackMain>
   );
 }
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -187,3 +189,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     )}
   </React.StrictMode>,
 );
+
+const MobileKakaoCallbackMain = styledWeb('main')({ '&&&&': { padding: 40 } });

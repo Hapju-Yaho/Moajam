@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
+import { Buffer } from 'node:buffer';
+import { URL } from 'node:url';
 import ts from 'typescript';
 const url = (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 async function fixture(serverConfigured) {
@@ -30,7 +32,7 @@ async function fixture(serverConfigured) {
       { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } },
     )
     .outputText.replaceAll("'./remote'", JSON.stringify(remote))
-    .replaceAll("'../state/preferencesStorage'", JSON.stringify(preferences));
+    .replaceAll("'@state/preferencesStorage'", JSON.stringify(preferences));
   return { ...(await import(url(source))), records, local, calls };
 }
 test('server workspace order is per-user, migrates local order once and wins on other devices', async () => {

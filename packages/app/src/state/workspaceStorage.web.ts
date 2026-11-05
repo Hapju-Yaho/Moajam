@@ -1,5 +1,5 @@
 import type { SavedWorkspaceState } from './workspaceStorage';
-import type { Workspace } from '../mocks/workspaces';
+import type { Workspace } from '@mocks/workspaces';
 const key = 'moajam-workspaces-v1';
 function validWorkspace(value: unknown): value is Workspace {
   if (!value || typeof value !== 'object') return false;

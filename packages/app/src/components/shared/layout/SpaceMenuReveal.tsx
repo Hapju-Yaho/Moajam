@@ -1,0 +1,58 @@
+import styled from '@emotion/native';
+import { useEffect, useRef, useState, type PropsWithChildren } from 'react';
+import { AccessibilityInfo, Animated, View } from 'react-native';
+
+const previousVisibility = new Map<string, boolean>();
+export function SpaceMenuReveal({
+  id,
+  visible,
+  children,
+  animate = true,
+}: PropsWithChildren<{ id: string; visible: boolean; animate?: boolean }>) {
+  const progress = useRef(
+    new Animated.Value((previousVisibility.get(id) ?? visible) ? 1 : 0),
+  ).current;
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    previousVisibility.set(id, visible);
+    let active = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
+      if (!active) return;
+      if (reduce || !animate) progress.setValue(visible ? 1 : 0);
+      else
+        Animated.timing(progress, {
+          toValue: visible ? 1 : 0,
+          duration: 260,
+          useNativeDriver: false,
+        }).start();
+    });
+    return () => {
+      active = false;
+      progress.stopAnimation();
+    };
+  }, [id, visible, progress, animate]);
+  return (
+    <RevealFrame
+      pointerEvents={visible ? 'auto' : 'none'}
+      accessibilityElementsHidden={!visible}
+      importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
+      style={spaceRevealMotion(progress, height, visible)}
+    >
+      <View onLayout={(event) => setHeight(event.nativeEvent.layout.height)}>{children}</View>
+    </RevealFrame>
+  );
+}
+
+const RevealFrame = styled(Animated.View)({ overflow: 'hidden' });
+
+// Animated values must reach the native animation driver through the style prop.
+function spaceRevealMotion(progress: Animated.Value, height: number, visible: boolean) {
+  return {
+    height: height
+      ? progress.interpolate({ inputRange: [0, 1], outputRange: [0, height] })
+      : visible
+        ? undefined
+        : 0,
+    opacity: progress,
+  };
+}

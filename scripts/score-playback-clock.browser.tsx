@@ -1,9 +1,9 @@
 // In-memory playback fixture: no accounts, DB, media storage or audio output.
 import React, { Profiler, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { GuitarTabEditor } from '../packages/app/src/components/GuitarTabEditor.web';
-import { ScorePartMixer } from '../packages/app/src/components/ScorePartMixer.web';
-import { ScoreReferencePosition } from '../packages/app/src/components/ScoreReferencePosition.web';
+import { GuitarTabEditor } from '../packages/app/src/components/score-editor/GuitarTabEditor.web';
+import { ScorePartMixer } from '../packages/app/src/components/score-editor/ScorePartMixer.web';
+import { ScoreReferencePosition } from '../packages/app/src/components/score-editor/ScoreReferencePosition.web';
 import type { Score } from '../packages/app/src/lib/score';
 
 const ignore = () => {};

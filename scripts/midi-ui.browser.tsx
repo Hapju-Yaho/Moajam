@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { TrackTimeline } from '../packages/app/src/components/TrackTimeline.web';
-import { MidiClipEditor } from '../packages/app/src/components/MidiClipEditor.web';
-import { ClipLibrary } from '../packages/app/src/components/ClipLibrary.web';
+import { TrackTimeline } from '../packages/app/src/components/practice/TrackTimeline.web';
+import { MidiClipEditor } from '../packages/app/src/components/practice/MidiClipEditor.web';
+import { ClipLibrary } from '../packages/app/src/components/shared/media/ClipLibrary.web';
 import { renderMidi } from '../packages/app/src/lib/midiAudio.web';
 import { encodeMidi, type MidiSequence } from '../packages/app/src/lib/midi';
 import {

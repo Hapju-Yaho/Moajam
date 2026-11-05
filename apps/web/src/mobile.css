@@ -1,0 +1,205 @@
+/* Compact layouts for the web-only music tools. Shared screens use native styles. */
+@media screen and (max-width: 600px) {
+  .score-editor-viewport .score-project-header {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .score-editor-viewport .score-project-header .score-project-identity {
+    padding-right: 40px;
+  }
+
+  .score-editor-viewport .score-project-header .score-project-actions-toggle {
+    left: auto;
+    right: 8px;
+    top: 8px;
+    bottom: auto;
+    width: 32px;
+    height: 36px;
+  }
+
+  .score-editor-viewport .score-project-header .score-project-actions:not([hidden]) {
+    position: static;
+    grid-column: 1;
+    width: 100%;
+    min-height: 0;
+    flex-wrap: wrap;
+  }
+
+  .score-editor-viewport .score-project-mixer-area {
+    grid-column: 1;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .score-editor-viewport .score-project-mixer-area .score-project-mixer-host {
+    flex: auto;
+    width: 100%;
+  }
+
+  .score-editor-viewport .score-project-edit-action {
+    align-self: flex-end;
+  }
+
+  .score-editor-viewport .score-transport-main {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .score-editor-viewport .score-transport-main .score-transport-tempo {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .score-editor-viewport .score-transport-main .score-transport-buttons {
+    justify-content: center;
+    flex-wrap: wrap;
+    padding-top: 12px;
+  }
+
+  .score-editor-viewport .score-transport-main .score-zoom {
+    align-self: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 100%;
+  }
+
+  .score-editor-viewport .score-editor-view-actions {
+    flex-wrap: wrap;
+    max-width: 100%;
+    margin-left: 0;
+  }
+
+  /* Full-screen editing keeps the paper usable below the tool panel. */
+  .score-editor-viewport[data-expanded='true'] {
+    overflow: auto;
+  }
+
+  .score-editor-viewport[data-expanded='true'] .score-editor-content,
+  .score-editor-viewport[data-expanded='true'] .score-editor-tools-host {
+    flex: none;
+    overflow: visible;
+  }
+
+  .score-editor-viewport[data-expanded='true'] .score-transport-main {
+    flex: 1 0 100%;
+  }
+
+  .score-editor-viewport[data-expanded='true'] .guitar-editor {
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+    flex: none;
+  }
+
+  .score-editor-viewport[data-expanded='true'] .guitar-editor > .score-left-tools-header {
+    flex-shrink: 0;
+  }
+
+  .score-editor-viewport[data-expanded='true'] .guitar-editor > .score-detail-inspector {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    max-height: 40dvh;
+    overflow: auto;
+    flex-shrink: 0;
+  }
+
+  .score-editor-viewport[data-expanded='true'] .guitar-editor > .score-workspace {
+    min-height: 360px;
+    flex-shrink: 0;
+    overflow: auto;
+  }
+
+  .score-editor-viewport[data-expanded='true'] .score-transport-identity {
+    flex-basis: 100%;
+    width: 100%;
+    margin: 0 0 8px;
+    border-right: 0;
+  }
+
+  .track-studio .studio-heading-actions {
+    justify-content: flex-start;
+    max-width: 100%;
+  }
+
+  .track-studio.is-readonly .studio-heading-info {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .track-studio.is-readonly .studio-heading-info h2 {
+    white-space: normal;
+  }
+
+  .studio-heading-actions button,
+  .studio-add-actions select,
+  .studio-tools-end {
+    max-width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  /* Preserve timeline coordinates; let the track controls scroll with the audio. */
+  .studio-track-head,
+  .studio-add-track-control,
+  .studio-add-track-row {
+    position: relative;
+  }
+
+  .studio-timeline-overlays {
+    clip-path: none;
+  }
+
+  .studio-transport-buttons {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+
+  .studio-footer,
+  .studio-tools-end {
+    gap: 8px;
+  }
+
+  .song-score-control {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .song-score-control select {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .song-score-canvas {
+    padding: 6px;
+  }
+  .song-score-paper {
+    min-width: 0;
+  }
+
+  .pdf-playback-part-controls {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .pdf-playback-part-controls > select {
+    flex-basis: 100%;
+  }
+
+  .audio-settings-transport,
+  .pdf-highlight-settings > footer > div,
+  .lyrics-recording-actions,
+  .lyrics-view-toolbar-host .lyrics-countdown-settings {
+    flex-wrap: wrap;
+  }
+
+  .personal-practice-toolbar {
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+  }
+}

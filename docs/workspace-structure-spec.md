@@ -219,7 +219,7 @@ legacy는 웹 DOM 기반이고 현재 앱은 웹·모바일 공유 구조이므�
 - [legacy 개인 화면](../legacy/Moajam/app/page.tsx)
 - [legacy 연습실](../legacy/Moajam/components/studio.tsx)
 - [legacy 데이터 구조](../legacy/Moajam/lib/moajam.ts)
-- [현재 사이드바](../packages/app/src/components/AppShell.tsx)
+- [현재 사이드바](../packages/app/src/components/shared/layout/MainLayout.tsx)
 - [현재 웹 라우팅](../apps/web/src/main.tsx)
 - [기존 제품 요구사항](./product-requirements.md)
 - [기존 개인 도구 기획](./personal-tools-spec.md)

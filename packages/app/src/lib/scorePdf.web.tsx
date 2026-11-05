@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { jsPDF } from 'jspdf';
-import { ScoreEnsemble } from '../components/ScoreEnsemble.web';
+import { ScoreEnsemble } from '@component/score-editor/ScoreEnsemble.web';
 import { scorePartStaves, scoreVisibleParts } from './scoreParts';
-import { GuitarStaff } from '../components/GuitarStaff.web';
+import { GuitarStaff } from '@component/score-editor/GuitarStaff.web';
 import { pitchName, scoreInstrument, scoreMeasureCount, type Score } from './score';
 
 const ignore = () => {};

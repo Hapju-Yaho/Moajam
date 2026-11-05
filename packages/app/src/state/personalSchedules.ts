@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIdentity } from './Identity';
 import { loadPreferences, savePreferences } from './preferencesStorage';
-import { api, serverConfigured } from '../lib/remote';
-import type { Rehearsal } from '../mocks/workspaces';
+import { api, serverConfigured } from '@lib/remote';
+import type { Rehearsal } from '@mocks/workspaces';
 
 export function usePersonalSchedules() {
   const user = useIdentity();

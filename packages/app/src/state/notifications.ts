@@ -5,7 +5,7 @@ import {
   useQueryClient,
   type InfiniteData,
 } from '@tanstack/react-query';
-import { api, serverConfigured } from '../lib/remote';
+import { api, serverConfigured } from '@lib/remote';
 import { useIdentity } from './Identity';
 export type NotificationItem = {
   id: string;

@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { TrackTimeline } from '../packages/app/src/components/TrackTimeline.web';
-import { MidiClipEditor } from '../packages/app/src/components/MidiClipEditor.web';
+import { TrackTimeline } from '../packages/app/src/components/practice/TrackTimeline.web';
+import { MidiClipEditor } from '../packages/app/src/components/practice/MidiClipEditor.web';
 import { useUndoState } from '../packages/app/src/lib/useUndoState';
 import { mergeClips } from '../packages/app/src/lib/clipMerge.web';
 import type { TimelineTrack } from '../packages/app/src/lib/practiceClips';

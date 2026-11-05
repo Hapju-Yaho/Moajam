@@ -1,25 +1,27 @@
-import { PersonalPracticeScreen } from './screens/PersonalPracticeScreen';
-import { WorkManagementScreen } from './screens/WorkManagementScreen';
+import { PersonalPracticeScreen } from '@screens/personal/practice/PersonalPracticeScreen';
+import { WorkManagementScreen } from '@screens/tools/projects/WorkManagementScreen';
 import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import type { AppRoute, NavigationOptions, SongTab } from './navigation';
-import { PersonalScreen } from './screens/PersonalScreen';
-import { WorkspaceScopeProvider, useMockAppState } from './state/MockAppState';
-import { AppShell } from './components/AppShell';
-import { ActionButton, Heading, Meta, Surface } from './components/ProductUI';
-import { HomeScreen } from './screens/HomeScreen';
-import { HelpScreen } from './screens/HelpScreen';
-import { InstrumentExtractorScreen } from './screens/InstrumentExtractorScreen';
-import { MembersScreen } from './screens/MembersScreen';
-import { MusicToolsScreen } from './screens/MusicToolsScreen';
-import { RecordingScreen } from './screens/RecordingScreen';
-import { TeamManagementScreen } from './screens/TeamManagementScreen';
-import { RecommendationDetailScreen } from './screens/RecommendationDetailScreen';
-import { RehearsalsScreen } from './screens/RehearsalsScreen';
-import { PersonalScoreEditorScreen } from './screens/PersonalScoreEditorScreen';
-import { BandScoreEditorScreen } from './screens/BandScoreEditorScreen';
-import { SettingsScreen } from './screens/SettingsScreen';
-import { SongsScreen } from './screens/SongsScreen';
-import { SongWorkspaceScreen } from './screens/SongWorkspaceScreen';
+import { PersonalScreen } from '@screens/personal/PersonalScreen';
+import { WorkspaceScopeProvider, useMockAppState } from '@state/MockAppState';
+import { MainLayout } from '@component/shared/layout/MainLayout';
+import { ActionButton, Heading, Meta, Surface } from '@component/shared/ui/ProductUI';
+import { HomeScreen } from '@screens/band/HomeScreen';
+import { HelpScreen } from '@screens/help/HelpScreen';
+import { InstrumentExtractorScreen } from '@screens/tools/instrument-extractor/InstrumentExtractorScreen';
+import { MembersScreen } from '@screens/band/members/MembersScreen';
+import { MusicToolsScreen } from '@screens/tools/MusicToolsScreen';
+import { RecordingScreen } from '@screens/tools/tracks/RecordingScreen';
+import { TeamManagementScreen } from '@screens/personal/teams/TeamManagementScreen';
+import { RecommendationDetailScreen } from '@screens/band/songs/recommendations/detail/RecommendationDetailScreen';
+import { RehearsalsScreen } from '@screens/band/rehearsals/RehearsalsScreen';
+import { PersonalScoreEditorScreen } from '@screens/tools/scores/PersonalScoreEditorScreen';
+import { BandScoreEditorScreen } from '@screens/band/songs/detail/score/BandScoreEditorScreen';
+import { SettingsScreen } from '@screens/account/settings/SettingsScreen';
+import { SongsScreen } from '@screens/band/songs/SongsScreen';
+import { SongWorkspaceScreen } from '@screens/band/songs/detail/SongWorkspaceScreen';
+import { getScreenLayout } from '@component/shared/layout/main-layout/screenLayout';
 
 interface AppScreenProps {
   focusId?: string;
@@ -44,11 +46,40 @@ export function AppScreen(props: AppScreenProps) {
   }, [props.workspaceId, selectWorkspace, workspaces]);
   return (
     <WorkspaceScopeProvider id={props.workspaceId}>
-      <ScopedScreen
-        key={`${props.workspaceId ?? 'personal'}/${props.route}/${props.entityId ?? ''}/${props.scoreView ?? ''}/${props.scorePart ?? ''}/${props.focusId ?? ''}/${props.assetId ?? ''}`}
-        {...props}
-      />
+      <ScopedLayout {...props} />
     </WorkspaceScopeProvider>
+  );
+}
+function ScopedLayout(props: AppScreenProps) {
+  const { workspaces, workspace, adoptedSongs } = useMockAppState();
+  const unavailable = !!props.workspaceId && !workspace;
+  const fallback =
+    !unavailable &&
+    !workspaces.length &&
+    [
+      'home',
+      'recommendations',
+      'recommendation',
+      'songs',
+      'song',
+      'rehearsals',
+      'members',
+      'practice',
+      'band-score-editor',
+    ].includes(props.route);
+  const screenProps = fallback ? { ...props, route: 'personal-home' as const } : props;
+  const layout = unavailable
+    ? { activeRoute: props.route }
+    : getScreenLayout({
+        ...screenProps,
+        hasSong: adoptedSongs.some((song) => song.id === props.entityId),
+        web: Platform.OS === 'web',
+      });
+  const contentKey = `${props.workspaceId ?? 'personal'}/${props.route}/${props.entityId ?? ''}/${props.scoreView ?? ''}/${props.scorePart ?? ''}/${props.focusId ?? ''}/${props.assetId ?? ''}`;
+  return (
+    <MainLayout {...layout} onNavigate={props.navigate} contentKey={contentKey}>
+      <ScopedScreen key={contentKey} {...screenProps} />
+    </MainLayout>
   );
 }
 function ScopedScreen({
@@ -65,32 +96,17 @@ function ScopedScreen({
   assetId,
   projectId,
 }: AppScreenProps) {
-  const { workspaces, workspace } = useMockAppState();
+  const { workspace } = useMockAppState();
   if (workspaceId && !workspace)
     return (
-      <AppShell activeRoute={route} onNavigate={navigate}>
+      <>
         <Surface>
           <Heading>이 밴드에 접근할 수 없어요</Heading>
           <Meta>참여 중인 밴드인지 확인해주세요.</Meta>
           <ActionButton onPress={() => navigate('personal-home')}>개인 홈으로</ActionButton>
         </Surface>
-      </AppShell>
+      </>
     );
-  if (
-    !workspaces.length &&
-    [
-      'home',
-      'recommendations',
-      'recommendation',
-      'songs',
-      'song',
-      'rehearsals',
-      'members',
-      'practice',
-      'band-score-editor',
-    ].includes(route)
-  )
-    return <PersonalScreen route="personal-home" navigate={navigate} />;
   switch (route) {
     case 'personal-home':
     case 'personal-rehearsals':

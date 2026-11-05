@@ -8,6 +8,16 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "paths": {
+      "@app/*": ["./packages/app/src/*"],
+      "@component/*": ["./packages/app/src/components/*"],
+      "@lib/*": ["./packages/app/src/lib/*"],
+      "@mocks/*": ["./packages/app/src/mocks/*"],
+      "@screens/*": ["./packages/app/src/screens/*"],
+      "@state/*": ["./packages/app/src/state/*"],
+      "@styles/*": ["./packages/app/src/styles/*"],
+      "@assets/*": ["./packages/app/assets/*"]
+    },
     "noEmit": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,

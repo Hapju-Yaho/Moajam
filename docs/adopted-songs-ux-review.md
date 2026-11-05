@@ -83,9 +83,9 @@
 
 ## 확인한 구현
 
-- [채택곡 목록](../packages/app/src/screens/SongsScreen.tsx), [채택곡 상세](../packages/app/src/screens/SongWorkspaceScreen.tsx)
-- [의견](../packages/app/src/components/Discussion.tsx), [문서별 권한](../apps/server/src/workspaces/document-policy.ts)
-- [자료 보관함](../packages/app/src/components/MediaLibrary.web.tsx), [서버 자료 보관함](../packages/app/src/components/RemoteMediaLibrary.web.tsx)
-- [연습 화면](../packages/app/src/screens/PracticeScreen.tsx), [웹 연습 도구](../packages/app/src/components/PracticeStudio.web.tsx), [모바일 연습 도구](../packages/app/src/components/PracticeStudio.tsx)
-- [악보 편집](../packages/app/src/screens/ScoreEditorScreen.web.tsx), [합주 화면](../packages/app/src/screens/RehearsalsScreen.tsx)
+- [채택곡 목록](../packages/app/src/screens/band/songs/SongsScreen.tsx), [채택곡 상세](../packages/app/src/screens/band/songs/detail/SongWorkspaceScreen.tsx)
+- [의견](../packages/app/src/components/shared/discussion/Discussion.tsx), [문서별 권한](../apps/server/src/workspaces/document-policy.ts)
+- [자료 보관함](../packages/app/src/components/shared/media/MediaLibrary.web.tsx), [서버 자료 보관함](../packages/app/src/components/shared/media/RemoteMediaLibrary.web.tsx)
+- [연습 화면](../packages/app/src/screens/band/songs/detail/practice/PracticeScreen.tsx), [웹 연습 도구](../packages/app/src/components/practice/PracticeStudio.web.tsx), [모바일 연습 도구](../packages/app/src/components/practice/PracticeStudio.tsx)
+- [악보 편집](../packages/app/src/screens/shared/score-editor/ScoreEditorScreen.web.tsx), [합주 화면](../packages/app/src/screens/band/rehearsals/RehearsalsScreen.tsx)
 - [워크스페이스 상태](../packages/app/src/state/MockAppState.tsx), [준비 상태 집계](../packages/app/src/state/workspaceModel.ts), [모바일 서버 연결](../packages/app/src/lib/remote.ts)

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { moduleUrl } from './load-typescript.mjs';
-const { PdfAnalysisLoading } = await import(moduleUrl(new URL('../packages/app/src/components/PdfAnalysisLoading.web.tsx', import.meta.url)));
+const { PdfAnalysisLoading } = await import(moduleUrl(new URL('../packages/app/src/components/score-editor/PdfAnalysisLoading.web.tsx', import.meta.url)));
 
 test('PDF analysis displays provider state, elapsed time, last check and cancel action', () => {
   const now = Date.now();

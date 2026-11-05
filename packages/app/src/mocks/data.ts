@@ -1,5 +1,5 @@
 import type { PreparationStatus } from '@moajam/domain';
-import { songMedia } from '../lib/songMedia';
+import { songMedia } from '@lib/songMedia';
 
 export interface RecommendationItem {
   likedBy?: string[];

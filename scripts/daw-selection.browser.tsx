@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { TrackTimeline } from '../packages/app/src/components/TrackTimeline.web';
-import { MidiClipEditor } from '../packages/app/src/components/MidiClipEditor.web';
+import { TrackTimeline } from '../packages/app/src/components/practice/TrackTimeline.web';
+import { MidiClipEditor } from '../packages/app/src/components/practice/MidiClipEditor.web';
 const blank = { notes: [], duration: 2 };
 const initial: import('../packages/app/src/lib/practiceClips').TimelineTrack[] = [
   {

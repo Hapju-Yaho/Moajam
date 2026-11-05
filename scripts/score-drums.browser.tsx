@@ -1,7 +1,7 @@
 // In-memory fixture: no account, stored scores, or external audio is touched.
 import React, { Profiler, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { GuitarTabEditor } from '../packages/app/src/components/GuitarTabEditor.web';
+import { GuitarTabEditor } from '../packages/app/src/components/score-editor/GuitarTabEditor.web';
 import {
   scoreToMusicXml,
   scoreDrums,
